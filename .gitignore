@@ -10,3 +10,5 @@ dist
 .DS_Store
 *.tsbuildinfo
 runs/index.json
+.claude/
+luup-snapshot-*.tar.gz
