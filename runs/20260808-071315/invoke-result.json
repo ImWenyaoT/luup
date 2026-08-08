@@ -1,0 +1,16 @@
+{
+  "status": "ready",
+  "outcome": {
+    "status": "completed",
+    "message": "## 流水线完成报告\n\n### 胜出假设（一句话）\nLLM 的媚俗性与推理僵化分别源于训练对齐与架构解码的独立瓶颈，二者在指令式提示范式下被放大为统一的\"窄化输出\"现象；突破该窄化需设计多模态、多时间尺度的交互界面，使 LLM 在不同约束条件下切换生成策略。\n\n### `verify_references` 结论\n**`ok: true`** — 10 字段契约完整，10 篇引用全部通过 arXiv 反查（标题重合度均 1.00，作者与年份均与落盘卡片一致）。\n\n### 各节点轮次\n| 节点 | 轮次 | 结果 |\n|---|---|---|\n| literature | R1 | ✅ accept（10 张事实卡片，覆盖 3 个侧面） |\n| hypothesis | R1 | ✅ accept（3 个候选假设，推导链完整） |\n| critique | R1 | ✅ accept（每假设 3 条批判 + arXiv 反查，选出修改版 H2） |\n| proposal | R1 | ✅ accept（格式修正 1 次后通过契约校验） |\n\n### 工件路径清单\n- `evidence.md` — 10 张事实卡片\n- `hypotheses.md` — 3 个候选假设\n- `critique.md` — 逐假设批判 + 胜出假设 + 强制修改要求\n- `proposal.json` — 完整 10 字段研究计划\n- `verdicts/literature-r1.json`\n- `verdicts/hypothesis-r1.json`\n- `verdicts/critique-r1.json`\n- `verdicts/proposal-r1.json`\n- `memory/papers/` — 17 篇已保存文献"
+  },
+  "resume": {
+    "session": {
+      "sessionId": "wrun_01KZG3G2J2TWR8DPB6624NRBR0",
+      "streamIndex": 395
+    },
+    "target": {
+      "kind": "local"
+    }
+  }
+}

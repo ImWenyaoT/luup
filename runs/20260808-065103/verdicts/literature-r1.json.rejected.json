@@ -1,0 +1,11 @@
+{
+  "node": "literature",
+  "round": 1,
+  "verdict": "accept",
+  "checks": [
+    {"criterion": "事实卡片≥8张", "result": "pass", "detail": "10张卡片"},
+    {"criterion": "每张含arXiv id+相关性", "result": "pass", "detail": "F1-F10均含arxivId和relevance"},
+    {"criterion": "id在paper index中", "result": "pass", "detail": "10个id全部在索引中"},
+    {"criterion": "覆盖至少2个侧面", "result": "pass", "detail": "现状方法(F1,F3,F4,F5,F7,F8,F10) + 已知局限(F2,F6,F9)"}
+  ]
+}

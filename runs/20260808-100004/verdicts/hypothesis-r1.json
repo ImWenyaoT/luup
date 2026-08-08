@@ -1,0 +1,11 @@
+{
+  "node": "hypothesis",
+  "round": 1,
+  "verdict": "pass",
+  "checks": [
+    {"criterion": "2-3 candidates", "pass": true, "reason": "3 candidates: H1 (EC SN pulsar subgroup), H2 (AIC origin of magnetars/MSPs), H3 (dual magnetar formation channels)"},
+    {"criterion": "explicit derivation chain per hypothesis", "pass": true, "reason": "Each hypothesis lists specific fact cards (F3/F4/F7, F8/F10/F9, F5/F6) with induction/deduction labels"},
+    {"criterion": "all cited facts exist in evidence", "pass": true, "reason": "H1→F3,F4,F7; H2→F8,F10,F9; H3→F5,F6 — all present in evidence.md"},
+    {"criterion": "no external common-sense premises as key assumptions", "pass": true, "reason": "All key premises trace back to cited fact cards"}
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "node": "literature",
+  "verdict": "accept",
+  "round": 1,
+  "checks": [
+    {"criterion": "≥8 fact cards", "result": "pass", "detail": "12 cards returned (F1-F12)"},
+    {"criterion": "each card has arXiv id + relevance", "result": "pass", "detail": "all 12 cards have arxivId, claim, relevance"},
+    {"criterion": "all ids in paper index", "result": "pass", "detail": "all 12 ids verified against paper_index (16 papers saved)"},
+    {"criterion": "cover ≥2 facets", "result": "pass", "detail": "covers 现状方法 (F2,F3,F4,F5,F6,F10,F11) and 已知局限 (F1,F7,F8,F9,F12)"}
+  ]
+}

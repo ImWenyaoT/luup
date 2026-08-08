@@ -1,0 +1,12 @@
+{
+  "node": "proposal",
+  "round": 1,
+  "verdict": "reject",
+  "checks": [
+    {"criterion": "10字段全量非空", "pass": false, "reason": "subagent返回结构不符合10字段契约：缺少question、hypothesis、risks字段；返回了problemStatement、technicalDetails、datasets、paperTitle、paperAbstract、methods、results等非契约字段"},
+    {"criterion": "References只允许paper index中的id", "pass": true, "reason": "6个引用id均在paper index中"},
+    {"criterion": "Experiments含baselines与metrics", "pass": true, "reason": "experiments字段包含baselines和metrics"},
+    {"criterion": "Rationale逐条回应requiredChanges", "pass": true, "reason": "rationale字段逐条回应了6条requiredChanges"}
+  ],
+  "rework": "subagent返回的JSON结构不符合10字段契约。必须返回包含以下10个字段的JSON：title, question, hypothesis, background, rationale, approach, experiments, expectedOutcomes, risks, references。当前返回的结构缺少question、hypothesis、risks字段，且包含了非契约字段(problemStatement, technicalDetails, datasets, paperTitle, paperAbstract, methods, results)。请将内容重新组织为正确的10字段结构后重试。"
+}

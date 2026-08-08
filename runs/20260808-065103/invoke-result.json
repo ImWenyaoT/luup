@@ -1,0 +1,18 @@
+[eve:dev] change detected (1 event: change package.json), rebuilding authored artifacts...
+[eve:dev] authored artifacts updated.
+{
+  "status": "ready",
+  "outcome": {
+    "status": "completed",
+    "message": "`verify_references` 返回 `ok: true`，全部检查通过。流水线完成。\n\n---\n\n## 流水线完成报告\n\n### 胜出假设（一句话）\n宇宙线从银河系源主导到河外源主导的过渡发生在膝(~4 PeV)到踝(~5 EeV)之间的能区，过渡位置和成分演化取决于银河系源最大加速刚度截断与邻近暂态源调制的竞争；膝以下以 SNR 贡献为主，膝到第二膝(~0.1 EeV)为银河系重核刚度截断叠加河外成分渗入的过渡区，>EeV 由河外源（星暴星系、射电星系等）主导。\n\n### `verify_references` 结论\n**全部通过**：10 字段契约完整，7 篇引用逐条反查 arXiv 标题重合度均为 1.00，作者与年份与落盘卡片一致。\n\n### 各节点轮次\n\n| 节点 | 轮次 | 结果 |\n|---|---|---|\n| literature | 1 | ✅ pass（10 张事实卡片，覆盖现状方法 + 已知局限） |\n| hypothesis | 1 | ✅ pass（3 个候选假设，均有显式推导链） |\n| critique | 1 | ✅ pass（每假设 4 条批判，含 arXiv 反查；选出 H1 修改版 + 6 项强制修改要求） |\n| proposal | 1 (语义) + 3 次格式返工 | ✅ pass（语义内容首轮合格；格式经返工后通过契约校验） |\n\n### 工件路径清单\n\n| 工件 | 路径 |\n|---|---|\n| 事实卡片 | `evidence.md` |\n| 候选假设 | `hypotheses.md` |\n| 对抗式批判 | `critique.md` |\n| 最终研究计划 | `proposal.json` |\n| verdicts | `verdicts/literature-r1.json`, `verdicts/hypothesis-r1.json`, `verdicts/critique-r1.json`, `verdicts/proposal-r1.json` |\n| 文献索引 | `memory/index.md`（11 篇论文） |"
+  },
+  "resume": {
+    "session": {
+      "sessionId": "wrun_01KZG27ECW239VF9Q4HG6NPWZS",
+      "streamIndex": 513
+    },
+    "target": {
+      "kind": "local"
+    }
+  }
+}

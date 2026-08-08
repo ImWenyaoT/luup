@@ -1,0 +1,13 @@
+{
+  "node": "proposal",
+  "round": 1,
+  "verdict": "pass",
+  "checks": [
+    {"criterion": "artifact_write passed ProposalSchema validation", "pass": true, "reason": "ok:true, validatedAs:ProposalSchema"},
+    {"criterion": "References only use paper index ids", "pass": true, "reason": "8 references, all ids confirmed in paper index: 2205.03989, astro-ph/9704268, 2606.30839, 2003.06662, 2206.01269, 1406.4128, astro-ph/9708071, 1703.06895"},
+    {"criterion": "baselines are specific names", "pass": true, "reason": "4 specific baselines: Hobbs+2005 kick model, single-channel magnetar model, traditional AIC identification, uniform kick model without EC SN"},
+    {"criterion": "metrics are specific names", "pass": true, "reason": "5 specific metrics: KS statistic, Bayes factor, ROC AUC, posterior predictive p-value, statistical power"},
+    {"criterion": "Rationale addresses all requiredChanges", "pass": true, "reason": "RC1(H1 novelty vs Stevenson 2022): addressed with Gaia DR4 + star-population ratios. RC2(H2 AIC degeneracy): addressed with 3 degeneracy-breaking observables. RC3(H3 population synthesis): addressed with rate ratios, magnetic braking, power analysis. RC4(falsifiability specifics): addressed with Gaia/eROSITA/SKA + sample sizes + confidence levels. RC5(derivation rigor): addressed with probabilistic treatment of F4 and fossil-evidence justification for F9"},
+    {"criterion": "Fields not empty/trivial", "pass": true, "reason": "All 10 fields contain substantive quantitative content with specific numbers, methods, and predictions"}
+  ]
+}

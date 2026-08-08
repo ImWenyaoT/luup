@@ -1,0 +1,11 @@
+{
+  "node": "critique",
+  "verdict": "pass",
+  "round": 1,
+  "checks": [
+    {"criterion": ">=3 substantive critiques per hypothesis", "pass": true, "reason": "H1: 3 critiques + prior art check; H2: 3 critiques + prior art check; H3: 3 critiques + prior art check"},
+    {"criterion": ">=1 critique with tool verification action", "pass": true, "reason": "Each hypothesis has arXiv prior art search: H1 found 2205.01418 as near-duplicate; H2 searched kitsch+creativity with 0 results confirming novelty; H3 found F7 itself as near-source"},
+    {"criterion": "winning hypothesis stated with reasoning", "pass": true, "reason": "H2 modified version selected; reasoning explains why H1 (novelty受损, 混淆变量) and H3 (F7直接推论, 概念问题) were rejected"},
+    {"criterion": "mandatory revision list provided", "pass": true, "reason": "6 specific revision items covering: respond to 2205.01418, disambiguate production vs perception, provide causal evidence for shared root, operationalize deep collaboration, resolve measurement deadlock, discuss competing explanations"}
+  ]
+}

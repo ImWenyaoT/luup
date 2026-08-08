@@ -1,0 +1,11 @@
+{
+  "node": "literature",
+  "round": 1,
+  "verdict": "pass",
+  "checks": [
+    {"criterion": "≥8 fact cards", "pass": true, "reason": "10 cards returned"},
+    {"criterion": "each card has arXiv id + relevance", "pass": true, "reason": "all 10 cards have valid arXiv id and relevance sentence"},
+    {"criterion": "all ids in paper index", "pass": true, "reason": "all 10 ids confirmed in paper_index_read (13 total in index)"},
+    {"criterion": "≥2 facets covered", "pass": true, "reason": "4 facets: 现状方法(F1,F2,F3), 已知局限(F4,F5,F6,F9), 观测约束(F7), 相邻领域(F8,F10)"}
+  ]
+}

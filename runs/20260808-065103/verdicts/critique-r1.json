@@ -1,0 +1,11 @@
+{
+  "node": "critique",
+  "round": 1,
+  "verdict": "pass",
+  "checks": [
+    {"criterion": "逐假设至少3条实质性批判", "pass": true, "reason": "H1有4条批判(推导链断裂/归纳跳跃/可行性/自洽性); H2有4条(新颖性/逻辑缺陷/可证伪性/能量预算); H3有4条(演绎过度/归纳跳跃/定量基础/光致蜕变)"},
+    {"criterion": "至少1条有工具核查动作支撑", "pass": true, "reason": "H1反查arXiv命中Dermer 2010(1003.5318)和Sigl 2008(0803.3800); H2核查F9=2305.10251即H2的原文复述; H3反查arXiv未命中但执行了检索动作"},
+    {"criterion": "给出胜出假设", "pass": true, "reason": "胜出H1修改版，将河外源扩展到星暴星系/射电星系，纳入F9邻近源效应"},
+    {"criterion": "给出强制修改要求", "pass": true, "reason": "6条强制修改要求(回应膝degeneracy/纳入F9/扩展河外源/讨论光致蜕变/可执行检验/定量定义过渡能区)"}
+  ]
+}

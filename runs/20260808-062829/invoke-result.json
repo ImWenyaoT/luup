@@ -1,0 +1,16 @@
+{
+  "status": "ready",
+  "outcome": {
+    "status": "completed",
+    "message": "## 流水线执行完成报告\n\n### 胜出假设\n双中子星至少通过两条不同的形成通道产生——共同包层抛射通道与连续II型超新星爆炸通道——因此双中子星群体中应同时存在近圆轨道与显著偏心轨道两类系统，且偏心率分布可作为区分两通道相对贡献的统计探针。\n\n### verify_references 结论\n**全部通过** ✓\n- 契约完整性：10字段全部符合规范\n- 引用数量：7篇（要求≥5）\n- 引用真实性：所有arXiv ID均存在于memory/papers/\n- 标题匹配：所有引用标题与arXiv实际标题100%重合\n- 作者与年份：所有元数据与arXiv记录一致\n\n### 各节点执行轮数\n- **literature节点**：1轮（通过）\n- **hypothesis节点**：1轮（通过）\n- **critique节点**：1轮（通过）\n- **proposal节点**：2轮（第1轮因字段名错误被拒，第2轮修正后通过）\n- **verify_references**：2轮（第1轮因6篇引用作者信息错误被拒，第2轮修正后全部通过）\n\n### 工件路径清单\n```\nevidence.md                          # 12张事实卡片\nhypotheses.md                        # 3个候选假设\ncritique.md                          # 对抗式批判报告\nproposal.json                        # 最终研究计划（10字段）\nverdicts/literature-r1.json          # literature节点第1轮判定\nverdicts/hypothesis-r1.json          # hypothesis节点第1轮判定\nverdicts/critique-r1.json            # critique节点第1轮判定\nverdicts/proposal-r1.json            # proposal节点第1轮判定\nverdicts/proposal-r2.json            # proposal节点第2轮判定\nmemory/papers/                       # 16篇文献元数据\nmemory/index.md                      # 文献索引\n```\n\n### 研究计划概要\n**标题**：双中子星偏心率分布作为共同包层与连续超新星形成通道的统计探针\n\n**核心方法**：\n- 基于MESA+COMPAS框架构建双星种群合成模型\n- 对CE通道和连续SN通道分别生成10^5个双中子星样本\n- 使用贝叶斯层次建模拟合观测偏心率分布\n- 通过Kolmogorov-Smirnov检验和贝叶斯因子进行模型选择\n\n**预期成果**：\n- 定量约束CE通道与连续SN通道的相对贡献比例（精度~13%）\n- 为理解脉冲星形成机制提供统计证据\n- 为引力波探测器的双中子星并合事件预测提供理论支持\n\n流水线已成功完成，所有工件已落盘，引用经过arXiv反查验证。"
+  },
+  "resume": {
+    "session": {
+      "sessionId": "wrun_01KZG0Y44F10Y251ZF9236HCMJ",
+      "streamIndex": 543
+    },
+    "target": {
+      "kind": "local"
+    }
+  }
+}
