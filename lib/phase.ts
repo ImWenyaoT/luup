@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { activeLock } from "./lock.ts";
+import { parseTableRows } from "./mdTable.ts";
 import { runDir } from "./paths.ts";
 import type {
   NodeKey,
@@ -127,14 +128,39 @@ export function parseVerdicts(scan: Scan): Verdict[] {
 /* 状态                                                                 */
 /* ------------------------------------------------------------------ */
 
-export const ALL_PASS = /结果:\s*ALL PASS/;
+/* ------------------------------------------------------------------ */
+/* 「通过」的判据：写出端与读入端同一份                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * verification-report.md 头部的结论行前缀。写出端（scripts/verify-proposal.ts）
+ * 与所有读入端（web、run-batch 的续跑扫描、rebuild-memory 的回填）都从这里取。
+ */
+export const RESULT_PREFIX = "结果: ";
+const ALL_PASS_TEXT = "ALL PASS";
+
+/**
+ * 只认头部那一行 `结果: ALL PASS`，不做全文 includes——说明列里嵌的是 LLM 写的
+ * 标题/作者原文，全文匹配会把一份失败报告读成通过。
+ */
+const ALL_PASS = new RegExp(`${RESULT_PREFIX.trimEnd()}\\s*${ALL_PASS_TEXT}`);
+
+/** 写出端：failed=0 才是 ALL PASS。 */
+export function resultLine(failedCount: number, totalCount: number): string {
+  return `${RESULT_PREFIX}${failedCount === 0 ? ALL_PASS_TEXT : `${failedCount}/${totalCount} FAILED`}`;
+}
+
+/** 读入端：一份报告原文是否判通过。报告缺失一律不算通过。 */
+export function isAllPass(report: string | null | undefined): boolean {
+  return typeof report === "string" && ALL_PASS.test(report);
+}
 
 export function deriveStatus(scan: Scan): RunStatus {
   const lock = activeLock();
   if (lock?.runId === scan.id) return "running";
   if (scan.files.has("FAILED.md")) return "failed";
   const report = readText(scan, "verification-report.md");
-  if (scan.files.has("proposal.md")) return report && ALL_PASS.test(report) ? "passed" : "completed";
+  if (scan.files.has("proposal.md")) return isAllPass(report) ? "passed" : "completed";
   const exit = readJson<{ exitCode?: unknown }>(scan, "exit.json");
   if (typeof exit?.exitCode === "number" && exit.exitCode !== 0) return "failed";
   const meta = readJson<{ exitCode?: unknown }>(scan, "meta.json");
@@ -224,47 +250,16 @@ export function finishedAtMs(scan: Scan, status: RunStatus): number | null {
  */
 export function parseVerifyReport(text: string | null): VerifyReport | null {
   if (!text) return null;
-  const result = /结果:\s*(.+)/.exec(text)?.[1]?.trim() ?? "UNKNOWN";
+  const result = new RegExp(`${RESULT_PREFIX.trimEnd()}\\s*(.+)`).exec(text)?.[1]?.trim() ?? "UNKNOWN";
   const checks: VerifyCheck[] = [];
-  for (const line of text.split("\n")) {
-    if (!line.startsWith("|")) continue;
-    const cells = line.split("|").slice(1, -1).map((c) => c.trim());
-    if (cells.length < 3) continue;
-    if (cells[0] === "检查项" || /^-+$/.test(cells[0])) continue;
+  // 三列表；说明列里的 `|` 是转义写出的，必须走成对的反解式，否则整行读串位
+  for (const cells of parseTableRows(text, 3)) {
+    if (cells[0] === "检查项") continue;
     const pass = cells[1].includes("✅");
     if (!pass && !cells[1].includes("❌")) continue;
     checks.push({ id: cells[0], group: cells[0].split(".")[0], pass, detail: cells[2] });
   }
-  return { result, pass: ALL_PASS.test(text), checks };
-}
-
-/* ------------------------------------------------------------------ */
-/* 问题原文                                                             */
-/* ------------------------------------------------------------------ */
-
-const SOURCE_LINE = /第\s*(\d+)\s*题[，,]\s*([^。\n]+)。/;
-
-/** question.md 由 run.ts/run-batch.ts 按固定模板写，来源行里带题号与学科。 */
-export function parseQuestion(text: string | null): {
-  full: string;
-  short: string;
-  domain: string | null;
-  science125Id: number | null;
-} {
-  const full = (text ?? "").trim();
-  const m = SOURCE_LINE.exec(full);
-  const asked = /问题[:：]\s*(.+)/.exec(full)?.[1]?.trim();
-  const firstBody = full
-    .split("\n")
-    .map((l) => l.trim())
-    .find((l) => l.length > 0 && !l.startsWith("#") && !l.startsWith("来源"));
-  const short = (asked ?? firstBody ?? "(无问题原文)").slice(0, 160);
-  return {
-    full,
-    short,
-    domain: m?.[2]?.trim() ?? null,
-    science125Id: m ? Number(m[1]) : null,
-  };
+  return { result, pass: isAllPass(text), checks };
 }
 
 export function tailLines(text: string | null, n: number): string[] {

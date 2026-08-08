@@ -27,8 +27,14 @@
  *     卡片元数据、index 行数、B1 证据链都不受影响（index 每次整份重建，下一次
  *     upsert 自愈）。要上多进程并跑，先在这里加锁再说。
  *
- * 依赖方向单向：`paperStore` → `campaignMemory`。本模块对 paperStore 只有 type-only
- * import（编译期擦除），因此运行时没有循环。
+ * 与 paperStore 的关系：`savePaper` 调用本模块的 `upsertLibraryPaper`，本模块反过来
+ * 用 paperStore 的 `paperFilename` —— id↔文件名映射只能有一份实现，两层卡片才可能
+ * 一一对应。ESM 循环在这里是安全的：双方在**模块求值期**都不互相调用，
+ * 用到的都是被提升的函数声明，调用发生在运行期。
+ *
+ * 对外只暴露 6 个动词（memoryEnabled / upsertLibraryPaper / listLibraryCards /
+ * searchMemory / archiveRunOutcome / writeNote）加一个显式布局面 `describeLayout()`。
+ * 路径拼接、索引重建、append 三件套全部是私有的：它们是这些动词的实现，不是接口。
  */
 import {
   appendFileSync,
@@ -39,21 +45,20 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import type { PaperCard } from "./paperStore.ts";
+import { escapeCell } from "../../lib/mdTable.ts";
+import { REPO_ROOT } from "../../lib/paths.ts";
+import { type PaperCard, paperFilename } from "./paperStore.ts";
 
 /* ------------------------------------------------------------------ */
 /* 路径解析                                                             */
 /* ------------------------------------------------------------------ */
 
-/** 仓库根：本文件在 agent/lib/ 下，向上两级。与 cwd 无关，脚本从哪跑都对。 */
-const repoRoot = resolve(import.meta.dirname, "..", "..");
-
 /** 测试用：把 campaign memory 指到临时目录（生产不设，走仓库根 memory/）。 */
 export const MEMORY_DIR_ENV = "LUUP_MEMORY_DIR";
 
-export function resolveMemoryDir(): string {
+function resolveMemoryDir(): string {
   const fromEnv = process.env[MEMORY_DIR_ENV]?.trim();
-  return fromEnv ? resolve(process.cwd(), fromEnv) : join(repoRoot, "memory");
+  return fromEnv ? resolve(process.cwd(), fromEnv) : join(REPO_ROOT, "memory");
 }
 
 /**
@@ -65,15 +70,48 @@ export function memoryEnabled(memoryDir = resolveMemoryDir()): boolean {
   return existsSync(memoryDir);
 }
 
-export const libraryDir = (dir = resolveMemoryDir()) => join(dir, "library");
-export const libraryPapersDir = (dir = resolveMemoryDir()) => join(libraryDir(dir), "papers");
-export const libraryIndexPath = (dir = resolveMemoryDir()) => join(libraryDir(dir), "index.md");
-export const questionsDir = (dir = resolveMemoryDir()) => join(dir, "questions");
-export const questionPath = (questionId: number, dir = resolveMemoryDir()) =>
-  join(questionsDir(dir), `q${questionId}.md`);
-export const lessonsPath = (dir = resolveMemoryDir()) => join(dir, "lessons.md");
-export const logPath = (dir = resolveMemoryDir()) => join(dir, "log.md");
-export const memoryIndexPath = (dir = resolveMemoryDir()) => join(dir, "index.md");
+const libraryDir = (dir: string) => join(dir, "library");
+const libraryPapersDir = (dir: string) => join(libraryDir(dir), "papers");
+const libraryIndexPath = (dir: string) => join(libraryDir(dir), "index.md");
+const questionsDir = (dir: string) => join(dir, "questions");
+const questionPath = (questionId: number, dir: string) => join(questionsDir(dir), `q${questionId}.md`);
+const lessonsPath = (dir: string) => join(dir, "lessons.md");
+const logPath = (dir: string) => join(dir, "log.md");
+const memoryIndexPath = (dir: string) => join(dir, "index.md");
+
+/**
+ * 布局的**显式**对外面。
+ *
+ * 上一版把十个路径函数逐个 export 出去，唯一的消费者是自测里的断言 —— 于是「模块的
+ * 公开接口」与「测试想看的内部结构」混成了一摊，谁都不敢删。这里把它收成一个函数：
+ * 生产代码不需要它，自测拿它做布局断言，而模块自己仍然只在内部用私有拼接式。
+ */
+export type MemoryLayout = {
+  root: string;
+  index: string;
+  log: string;
+  lessons: string;
+  libraryIndex: string;
+  libraryPapers: string;
+  questions: string;
+  questionPage: (questionId: number) => string;
+  /** 全局卡文件名 = run 卡文件名（同一份映射，保证两层卡片一一对应）。 */
+  cardFilename: (arxivId: string) => string;
+};
+
+export function describeLayout(memoryDir = resolveMemoryDir()): MemoryLayout {
+  return {
+    root: memoryDir,
+    index: memoryIndexPath(memoryDir),
+    log: logPath(memoryDir),
+    lessons: lessonsPath(memoryDir),
+    libraryIndex: libraryIndexPath(memoryDir),
+    libraryPapers: libraryPapersDir(memoryDir),
+    questions: questionsDir(memoryDir),
+    questionPage: (questionId: number) => questionPath(questionId, memoryDir),
+    cardFilename: paperFilename,
+  };
+}
 
 /** 对外报路径一律用 `memory/...` 形式：稳定、可 grep，且不泄露临时目录。 */
 function display(abs: string, dir = resolveMemoryDir()): string {
@@ -81,9 +119,6 @@ function display(abs: string, dir = resolveMemoryDir()): string {
   const a = resolve(abs);
   return a === base ? "memory" : `memory/${a.slice(base.length + 1).split(/[\\/]/).join("/")}`;
 }
-
-/** 文件名映射与 paperStore 一致（`/` → `__`），保持两层卡片一一对应。 */
-export const libraryCardFilename = (arxivId: string) => `${arxivId.replace(/\//g, "__")}.md`;
 
 /* ------------------------------------------------------------------ */
 /* frontmatter（本地实现，不 import paperStore 的私有解析器）              */
@@ -170,7 +205,7 @@ function readLibraryCardFile(file: string): LibraryCard | null {
 /* ------------------------------------------------------------------ */
 
 /** Science-125 题号；不合法或未设返回 null（直接手跑的 run 没有题号）。 */
-export function resolveQuestionId(raw = process.env.LUUP_QUESTION_ID): number | null {
+function resolveQuestionId(raw = process.env.LUUP_QUESTION_ID): number | null {
   const s = String(raw ?? "").trim();
   if (!s) return null;
   const n = Number.parseInt(s, 10);
@@ -267,7 +302,7 @@ export function upsertLibraryPaper(input: {
     return { skipped: true, card: null, index: null, questionIds: [], reason: "memory/ 不存在" };
   }
   const qid = input.questionId === undefined ? resolveQuestionId() : input.questionId;
-  const file = join(libraryPapersDir(dir), libraryCardFilename(input.card.arxivId));
+  const file = join(libraryPapersDir(dir), paperFilename(input.card.arxivId));
   const prev = readLibraryCardFile(file);
   const questionIds = [...new Set([...(prev?.questionIds ?? []), ...(qid === null ? [] : [qid])])].sort(
     (a, b) => a - b,
@@ -295,10 +330,8 @@ export function listLibraryCards(memoryDir = resolveMemoryDir()): LibraryCard[] 
     .sort((a, b) => a.arxivId.localeCompare(b.arxivId));
 }
 
-const cell = (s: string) => s.replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
-
 /** 从 `library/papers/` 整份重建 `library/index.md`，按 arXiv 主学科分组。幂等。 */
-export function rebuildLibraryIndex(memoryDir = resolveMemoryDir()): WriteOutcome | null {
+function rebuildLibraryIndex(memoryDir = resolveMemoryDir()): WriteOutcome | null {
   if (!memoryEnabled(memoryDir)) return null;
   const cards = listLibraryCards(memoryDir);
   const groups = new Map<string, LibraryCard[]>();
@@ -325,7 +358,7 @@ export function rebuildLibraryIndex(memoryDir = resolveMemoryDir()): WriteOutcom
       "| --- | --- | --- | --- | --- |",
       ...(groups.get(key) ?? []).map(
         (c) =>
-          `| ${cell(c.arxivId)} | ${c.year || "?"} | ${cell(c.title)} | ${cell(c.oneline)} | ${
+          `| ${escapeCell(c.arxivId)} | ${c.year || "?"} | ${escapeCell(c.title)} | ${escapeCell(c.oneline)} | ${
             c.questionIds.length > 0 ? c.questionIds.map((n) => `q${n}`).join(" ") : "-"
           } |`,
       ),
@@ -336,40 +369,11 @@ export function rebuildLibraryIndex(memoryDir = resolveMemoryDir()): WriteOutcom
   return writeVerified(libraryIndexPath(memoryDir), lines.join("\n"));
 }
 
-/** 解析 library/index.md 的数据行 —— 供自测断言，不给模型。 */
-export function parseLibraryIndexRows(markdown: string): Array<{
-  arxivId: string;
-  year: string;
-  title: string;
-  oneline: string;
-  questions: string;
-}> {
-  const rows: Array<{ arxivId: string; year: string; title: string; oneline: string; questions: string }> = [];
-  for (const line of markdown.split("\n")) {
-    const t = line.trim();
-    if (!t.startsWith("|") || !t.endsWith("|")) continue;
-    const cells = t
-      .slice(1, -1)
-      .split(/(?<!\\)\|/)
-      .map((c) => c.trim().replace(/\\\|/g, "|"));
-    if (cells.length !== 5) continue;
-    if (cells[0] === "arXiv id" || /^-{2,}$/.test(cells[0] ?? "")) continue;
-    rows.push({
-      arxivId: cells[0] ?? "",
-      year: cells[1] ?? "",
-      title: cells[2] ?? "",
-      oneline: cells[3] ?? "",
-      questions: cells[4] ?? "",
-    });
-  }
-  return rows;
-}
-
 /* ------------------------------------------------------------------ */
 /* log.md：时序层（固定前缀，grep 可解析）                                 */
 /* ------------------------------------------------------------------ */
 
-export type LogAction = "run" | "note" | "library-sync";
+type LogAction = "run" | "note" | "library-sync";
 
 const LOG_HEADER = [
   "<!--",
@@ -391,7 +395,7 @@ const flat = (s: string, max = 300) => {
  * 追加一条日志。前缀固定为 `## [date] <action> | q<id> | <verdict>`，
  * 明细走其下的 `- ` 行 —— `grep "^## \[" memory/log.md | tail -20` 因此永远可用。
  */
-export function appendLog(input: {
+function appendLog(input: {
   action: LogAction;
   questionId?: number | null;
   verdict?: string;
@@ -407,7 +411,7 @@ export function appendLog(input: {
 }
 
 /** 读最近 n 条日志首行（master 开跑时的低成本定向）。 */
-export function tailLog(n = 20, memoryDir = resolveMemoryDir()): string[] {
+function tailLog(n = 20, memoryDir = resolveMemoryDir()): string[] {
   const file = logPath(memoryDir);
   if (!memoryEnabled(memoryDir) || !existsSync(file)) return [];
   return readFileSync(file, "utf8")
@@ -439,7 +443,7 @@ function noteBlock(note: string, source: string): string {
 }
 
 /** 追加一条题页记录。memory/ 不存在时静默 no-op。 */
-export function appendQuestionNote(input: {
+function appendQuestionNote(input: {
   questionId: number;
   note: string;
   /** 写入来源标记，便于日后分辨 agent 主动写与代码兜底写。 */
@@ -458,7 +462,7 @@ export function appendQuestionNote(input: {
 }
 
 /** 追加一条运营教训。memory/ 不存在时静默 no-op。 */
-export function appendLesson(input: {
+function appendLesson(input: {
   note: string;
   source?: string;
   memoryDir?: string;
@@ -479,7 +483,7 @@ function countBlocks(file: string): number {
 }
 
 /** 重建顶层 index.md（「有什么」）。与 log.md（「发生过什么」）职责严格分开。 */
-export function rebuildMemoryIndex(memoryDir = resolveMemoryDir()): WriteOutcome | null {
+function rebuildMemoryIndex(memoryDir = resolveMemoryDir()): WriteOutcome | null {
   if (!memoryEnabled(memoryDir)) return null;
   const cards = listLibraryCards(memoryDir);
   const subjects = new Set(cards.map((c) => c.primaryCategory || "(uncategorized)"));
@@ -537,7 +541,7 @@ export type MemorySearchResult = {
 };
 
 /** 拉丁词 + 连续 CJK 串；单字符拉丁 token 丢弃（噪声太大）。 */
-export function tokenize(query: string): string[] {
+function tokenize(query: string): string[] {
   const raw = query.toLowerCase().match(/[a-z0-9][a-z0-9+._-]*|[一-鿿]+/g) ?? [];
   return [...new Set(raw.filter((t) => (/^[a-z0-9]/.test(t) ? t.length >= 2 : true)))];
 }

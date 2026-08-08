@@ -4,7 +4,8 @@
  */
 import { defineTool } from "eve/tools";
 import { z } from "zod";
-import { listPapers, readIndex, resolveRunDir } from "../paperStore.ts";
+import { listPapers, readIndex } from "../paperStore.ts";
+import { resolveRunDir } from "../runContext.ts";
 
 export default defineTool({
   description:

@@ -41,19 +41,43 @@ export function readLock(): Lock | null {
   }
 }
 
-export function release(): void {
+/** 无条件删除。只给「陈旧锁清理」用——那时锁已经证明不属于任何活着的进程。 */
+function forceRelease(): void {
   rmSync(LOCK_FILE, { force: true });
+}
+
+/** 释放者自报家门：pid 必给；runId 在还没回填时给 null。 */
+export type LockOwner = { pid: number; runId: string | null };
+
+/**
+ * 释放锁——**只删自己的那把**。
+ *
+ * 释放路径不止一条：spawn 的超时、error、close 三个回调在一次失败的启动里可能
+ * 先后触发，web 路由的 catch 还会再补一次。原来的无条件 `rmSync` 意味着一个迟到的
+ * 释放能把**下一个 run** 刚拿到的锁删掉，单并发保证当场失效（而且不报错）。
+ * 归属比对把迟到的释放降级成 no-op：pid 不是自己的不删；锁上已回填了别的 runId
+ * （同一个 server 进程里换了新 run）也不删。
+ *
+ * @returns 是否真的删掉了锁。
+ */
+export function release(owner: LockOwner): boolean {
+  const lock = readLock();
+  if (!lock) return false;
+  if (lock.pid !== owner.pid) return false;
+  if (lock.runId !== null && lock.runId !== owner.runId) return false;
+  forceRelease();
+  return true;
 }
 
 /** 陈旧锁（写坏的 / pid 已死）自动清除。返回仍然有效的锁。 */
 function readFresh(): Lock | null {
   const lock = readLock();
   if (!lock) {
-    if (existsSync(LOCK_FILE)) release();
+    if (existsSync(LOCK_FILE)) forceRelease();
     return null;
   }
   if (!isAlive(lock.pid)) {
-    release();
+    forceRelease();
     return null;
   }
   return lock;

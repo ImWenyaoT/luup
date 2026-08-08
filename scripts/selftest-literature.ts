@@ -7,7 +7,9 @@
  *  1. arxiv_search 工具 → arXiv 真实返回，id 均匹配 contracts 的 arxivIdPattern
  *  2. arxiv_save 工具 → 只吃 id，元数据自取；落盘 memory/papers/<id>.md
  *  3. index.md 由代码强制同步（每篇一行：id | 年份 | 标题 | 一句话摘要）
- *  4. 文件名 "/" → "__" 映射与 scripts/verify-proposal.ts 的还原逻辑互逆（真取一篇旧式 id 验证）
+ *  4. 文件名 "/" → "__" 映射的**往返性质**：任取一个真实旧式 id，落盘后从磁盘文件名
+ *     还原回来必须逐字相等。断言的是性质，不是实现 —— 上一版在这里手抄了一遍
+ *     验收器的还原式，于是「两处一致」被证成了「抄写没抄错」。
  *  5. 防虚构：格式非法 id 不发请求；arXiv 查无此文的 id 不落盘
  *
  * 不写入仓库 runs/：默认落 os.tmpdir() 下的临时目录。
@@ -25,8 +27,8 @@ import {
   paperPath,
   parseIndexRows,
   readIndex,
-  RUN_DIR_ENV,
 } from "#lib/paperStore.ts";
+import { RUN_DIR_ENV } from "#lib/runContext.ts";
 import arxivSaveTool from "#tools/arxiv_save.ts";
 import arxivSearchTool from "#tools/arxiv_search.ts";
 import paperIndexReadTool from "#tools/paper_index_read.ts";
@@ -60,9 +62,6 @@ async function callTool<I, O>(tool: ToolLike<I, O>, input: I): Promise<O> {
   }
   return await (result as Promise<O> | O);
 }
-
-/** verify-proposal.ts 里 B1 用的还原式，逐字复制，用来证明互逆。 */
-const verifierReverseMap = (f: string) => f.replace(/\.md$/, "").replace(/__/g, "/");
 
 /* ---------------------------------------------------------------- */
 
@@ -165,21 +164,26 @@ check(
   paperFilename(legacyId) === "astro-ph__0601001.md" && existsSync(paperPath(runDir, legacyId)),
 );
 check(
-  "paperFilename ∘ arxivIdFromFilename 互逆",
+  "往返：arxivIdFromFilename ∘ paperFilename === id",
   arxivIdFromFilename(paperFilename(legacyId)) === legacyId,
 );
+// 磁盘侧的往返：验收器 B1 认的就是「readdir 的文件名 → id」这一步
 const onDisk = readdirSync(papersDir(runDir)).filter((f) => f.endsWith(".md"));
-const restoredByVerifier = new Set(onDisk.map(verifierReverseMap));
+const restored = new Set(onDisk.map(arxivIdFromFilename));
 const expectedIds = new Set([...targets, legacyId]);
 check(
-  "verify-proposal.ts 的还原式能从文件名还原出全部 id",
-  expectedIds.size === restoredByVerifier.size &&
-    [...expectedIds].every((id) => restoredByVerifier.has(id)),
-  [...restoredByVerifier].join(", "),
+  "从磁盘文件名能还原出全部已保存的 id（B1 的还原步）",
+  expectedIds.size === restored.size && [...expectedIds].every((id) => restored.has(id)),
+  [...restored].join(", "),
 );
 check(
   "还原出的 id 均匹配 arxivIdPattern",
-  [...restoredByVerifier].every((id) => arxivIdPattern.test(id)),
+  [...restored].every((id) => arxivIdPattern.test(id)),
+);
+check(
+  "每个磁盘文件名都是它自己 id 的像（双向闭合）",
+  onDisk.every((f) => paperFilename(arxivIdFromFilename(f)) === f),
+  onDisk.join(", "),
 );
 check("index.md 增至 4 行", parseIndexRows(readIndex(runDir)).length === 4);
 

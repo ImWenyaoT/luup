@@ -1,18 +1,21 @@
 /**
- * 引用真实性核验（criteria B1/B2/B3）—— 确定性，不调用任何 LLM。
+ * 引用真实性核验（criteria B1–B4）—— 确定性，不调用任何 LLM。
  *
- * 与 `scripts/verify-proposal.ts` 的判据**逐条对齐**（B1 ⊆ 本 run papers/、
- * B2 arXiv 反查标题重合度 ≥0.8、B3 ≥5 条），但实现走 lib 复用：
- *  - 本 run 已实检命中的 id ← `paperStore.listPapers()`
- *  - 反查 ← `arxiv.getArxiv()`（带礼貌节流/重试/id 规范化，且**一次批量请求**
- *    取回全部标题，而不是逐条 fetch）
+ * 本文件是**判据的单一事实源**：阈值、标题归一、词集合重合度、姓氏取法都定义在这里，
+ * 环内的 `verify_references` 工具与环外的 `scripts/verify-proposal.ts` 共用同一份。
  *
- * 说明：`scripts/verify-proposal.ts` 是独立的验收器（WP3 禁改），它保留了自己的
- * 一份 fetch/overlap 实现。本文件是给 master 在环内用的同判据实现，二者互为交叉验证。
+ * 需要保持独立的是**数据通路**，不是字符串判据：
+ *  - 环内：本 run 已实检命中的 id ← `paperStore.listPapers()`；反查 ← `arxiv.getArxiv()`
+ *    （带礼貌节流/重试/id 规范化，一次批量请求取回全部标题）。
+ *  - 环外：`scripts/verify-proposal.ts` 直接 readdir + 自己逐条 fetch arXiv。
+ * 两条通路各自独立地拿到事实，再用同一把尺子量 —— 尺子有两把才是问题：上一版两份
+ * 姓氏实现给同一个作者算出不同的姓（"Jason T. L. Wang" → "jason" vs "wang"），
+ * 交叉验证于是验的不是同一件事。
  */
 import { type Reference, ProposalSchema } from "#lib/contracts.ts";
 import { getArxiv } from "./arxiv.ts";
-import { listPapers, readCard, resolveRunDir } from "./paperStore.ts";
+import { listPapers, readCard } from "./paperStore.ts";
+import { resolveRunDir } from "./runContext.ts";
 import { readArtifact } from "./artifacts.ts";
 
 /** 标题反查的通过线（与 verify-proposal.ts 一致）。 */
@@ -37,16 +40,31 @@ export function titleOverlap(a: string, b: string): number {
 }
 
 /**
- * 取姓氏用于比对：arXiv 给全名（"Jason T. L. Wang"），模型常缩写成 "J. Wang"，
- * 所以只认最后一个词，去标点、小写。
+ * 折叠变音符号。arXiv 与模型给的作者名会在 "García" / "Garcia" 之间摇摆，
+ * 而一个重音符不该让一条真引用被判成虚构。
+ */
+const foldDiacritics = (s: string): string => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+/**
+ * 取姓氏用于比对。两种书写序都要认：
+ *  - `"Vaswani, A."`（姓, 名）—— 逗号前整段是姓；
+ *  - `"Jason T. L. Wang"` / `"J. Wang"`（名 姓）—— 末词元是姓。
+ *
+ * 上一版的两份实现都不对：一份无条件取末词元（"Vaswani, A." → "a"），另一份取
+ * 「最长词元」（"Jason T. L. Wang" → "jason"，把名当成了姓）。后者只因为比对两侧
+ * 用的是同一个错函数才一直没暴露 —— 一旦产物与 arXiv 的书写风格不同（缩写 vs 全名、
+ * 逗号序 vs 自然序），它就会把真作者判成虚构，或者放过一个假作者。
  */
 export function surnameOf(author: string): string {
-  const parts = String(author ?? "")
-    .replace(/[.,]/g, " ")
-    .trim()
+  const raw = String(author ?? "").trim();
+  if (!raw) return "";
+  const comma = raw.indexOf(",");
+  const head = comma > 0 ? raw.slice(0, comma) : raw;
+  const parts = foldDiacritics(head)
+    .replace(/[^a-z0-9一-鿿'\-]+/g, " ")
     .split(/\s+/)
-    .filter(Boolean);
-  return (parts[parts.length - 1] ?? "").toLowerCase();
+    .filter((t) => /[a-z0-9一-鿿]/.test(t));
+  return parts[parts.length - 1] ?? "";
 }
 
 export type RefCheck = { id: string; pass: boolean; detail: string };
@@ -121,6 +139,10 @@ export async function verifyReferences(
   // （实测：某次运行 5 条引用标题重合度全部 1.00，作者列表却整组是虚构的）。
   // 卡片里的作者是 arxiv_save 从 arXiv 取回的权威值，比对是纯本地、零网络开销的，
   // 没有理由不查。姓氏比对容忍 "Jason T. L. Wang" → "J. Wang" 这类缩写。
+  //
+  // 三项子判据与 scripts/verify-proposal.ts 逐条对齐：年份、姓氏子集、**第一作者**。
+  // 第一作者单列，是因为子集判据挡不住「作者顺序被打乱」——把二作提到一作，
+  // 每个姓氏都还在集合里，但引用指的已经不是同一篇文献的署名事实了。
   for (const r of refs) {
     const card = readCard(runDir, r.arxivId);
     if (!card) continue; // 已由 B1 判负，不重复报
@@ -140,12 +162,20 @@ export async function verifyReferences(
       );
     }
 
+    const firstTruth = surnameOf(card.authors[0] ?? "");
+    const firstClaimed = surnameOf(r.authors[0] ?? "");
+    if (firstTruth && firstClaimed !== firstTruth) {
+      problems.push(
+        `第一作者不符（产物「${r.authors[0] ?? ""}」，arXiv「${card.authors[0] ?? ""}」）`,
+      );
+    }
+
     checks.push({
       id: `B4.${r.arxivId}`,
       pass: problems.length === 0,
       detail:
         problems.length === 0
-          ? "作者与年份与本 run 落盘卡片一致"
+          ? "作者与年份与本 run 落盘卡片一致，第一作者一致"
           : `${problems.join("；")} —— 必须照抄 memory/papers/ 中的元数据，不得凭记忆填写`,
     });
   }

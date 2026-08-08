@@ -20,29 +20,22 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { archiveRunOutcome } from "#lib/campaignMemory.ts";
 import { ProposalSchema, type Proposal } from "#lib/contracts.ts";
+import { utcStamp } from "#lib/runContext.ts";
+import { REPO_ROOT, RUNS_DIR } from "../lib/paths.ts";
 import { rebuildRunsIndex } from "../lib/runsIndex.ts";
 
-const repoRoot = resolve(import.meta.dirname, "..");
-const DEFAULT_QUESTION_FILE = join(repoRoot, "fixtures", "default-question.md");
+const DEFAULT_QUESTION_FILE = join(REPO_ROOT, "fixtures", "default-question.md");
 
 /* ------------------------------------------------------------------ */
 /* 输入                                                                 */
 /* ------------------------------------------------------------------ */
 
-function utcStamp(d = new Date()): string {
-  const p = (n: number) => String(n).padStart(2, "0");
-  return (
-    `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}` +
-    `-${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}`
-  );
-}
-
 function readQuestion(arg: string | undefined): { question: string; source: string } {
   const raw = arg?.trim();
   if (raw) {
     // 看起来像路径且文件存在 → 读文件；否则当问题原文
-    if (!/\s/.test(raw) && existsSync(resolve(repoRoot, raw))) {
-      const file = resolve(repoRoot, raw);
+    if (!/\s/.test(raw) && existsSync(resolve(REPO_ROOT, raw))) {
+      const file = resolve(REPO_ROOT, raw);
       return { question: readFileSync(file, "utf8").trim(), source: file };
     }
     return { question: raw, source: "(argv)" };
@@ -218,7 +211,7 @@ function renderPausedReport(runDir: string): string {
 function invokeEve(prompt: string, runDir: string): Promise<{ code: number; stdout: string }> {
   return new Promise((res, rej) => {
     const child = spawn("npx", ["eve", "invoke", prompt], {
-      cwd: repoRoot,
+      cwd: REPO_ROOT,
       env: { ...process.env, LUUP_RUN_DIR: runDir },
       stdio: ["ignore", "pipe", "inherit"], // stderr 直通，进度可见
     });
@@ -238,7 +231,7 @@ function invokeEve(prompt: string, runDir: string): Promise<{ code: number; stdo
 /* ------------------------------------------------------------------ */
 
 const { question, source } = readQuestion(process.argv[2]);
-const runDir = join(repoRoot, "runs", utcStamp());
+const runDir = join(RUNS_DIR, utcStamp());
 mkdirSync(runDir, { recursive: true });
 // 关键顺序：先 export，再启动 eve（工具在 app runtime 读它定位 run 目录）
 process.env.LUUP_RUN_DIR = runDir;
@@ -285,16 +278,38 @@ if (code === EXIT_PAUSED) {
 
 /* 确定性渲染 proposal.md */
 const proposalPath = join(runDir, "proposal.json");
-let rendered = false;
-if (existsSync(proposalPath)) {
-  const parsed = ProposalSchema.safeParse(JSON.parse(readFileSync(proposalPath, "utf8")));
-  if (parsed.success) {
-    writeFileSync(join(runDir, "proposal.md"), renderProposalMarkdown(parsed.data, { runDir, question }), "utf8");
-    rendered = true;
-  } else {
-    console.error("[luup] proposal.json 不符合 10 字段契约，跳过 Markdown 渲染：");
-    for (const i of parsed.error.issues) console.error(`  - ${i.path.join(".") || "(root)"}: ${i.message}`);
+
+/**
+ * 读 proposal.json 并按契约校验。**缺失 / JSON 写坏 / 不合契约一律只降级，不抛。**
+ * 这里是收尾段的第一步：一个裸 JSON.parse 抛出去，后面的 meta.exitCode 回写、
+ * campaign memory 归档、runs 索引重建全部不会执行，而且进程会以未捕获异常的 1 退出 ——
+ * 一次「被预算闸门挂起」的 run（exit 3）会因为一份写坏的 proposal.json 退化成
+ * 一个说不清缘由的 1，外层再也分不出是暂停还是失败。
+ */
+function readProposal(): { data: Proposal | null; issues: string[] } {
+  if (!existsSync(proposalPath)) return { data: null, issues: [] };
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(proposalPath, "utf8"));
+  } catch (e) {
+    return { data: null, issues: [`proposal.json 不是合法 JSON：${String(e)}`] };
   }
+  const parsed = ProposalSchema.safeParse(raw);
+  return parsed.success
+    ? { data: parsed.data, issues: [] }
+    : {
+        data: null,
+        issues: parsed.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`),
+      };
+}
+
+const proposal = readProposal();
+const rendered = proposal.data !== null;
+if (proposal.data) {
+  writeFileSync(join(runDir, "proposal.md"), renderProposalMarkdown(proposal.data, { runDir, question }), "utf8");
+} else if (proposal.issues.length > 0) {
+  console.error("[luup] proposal.json 不可用，跳过 Markdown 渲染：");
+  for (const i of proposal.issues) console.error(`  - ${i}`);
 } else {
   console.error("[luup] 未产出 proposal.json（流水线未走到终点或已判 FAILED）。");
 }
@@ -355,14 +370,13 @@ function summarizeOutcome(): { verdict: string; summary: string } {
   })();
   const verdict = exitCode === 0 ? "SUCCESS" : exitCode === EXIT_PAUSED ? "PAUSED" : "FAILED";
   const parts: string[] = [];
-  if (existsSync(proposalPath)) {
-    const parsed = ProposalSchema.safeParse(JSON.parse(readFileSync(proposalPath, "utf8")));
-    if (parsed.success) {
-      parts.push(`胜出方案：${parsed.data.paperTitle}`);
-      parts.push(`引用 ${parsed.data.references.length} 篇：${parsed.data.references.map((r) => r.arxivId).join(", ")}`);
-    } else {
-      parts.push("proposal.json 存在但不符合 10 字段契约。");
-    }
+  if (proposal.data) {
+    parts.push(`胜出方案：${proposal.data.paperTitle}`);
+    parts.push(
+      `引用 ${proposal.data.references.length} 篇：${proposal.data.references.map((r) => r.arxivId).join(", ")}`,
+    );
+  } else if (proposal.issues.length > 0) {
+    parts.push(`proposal.json 存在但不可用：${proposal.issues[0]}`);
   }
   const failedPath = join(runDir, "FAILED.md");
   if (existsSync(failedPath)) {

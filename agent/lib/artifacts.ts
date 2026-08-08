@@ -22,7 +22,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { CritiqueSchema, ProposalSchema, VerdictSchema } from "#lib/contracts.ts";
-import { resolveRunDir } from "./paperStore.ts";
+import { resolveRunDir } from "./runContext.ts";
 
 export class ArtifactPathError extends Error {
   constructor(message: string) {
@@ -31,8 +31,8 @@ export class ArtifactPathError extends Error {
   }
 }
 
-/** 只有 paperStore 能写的区域（见文件头约束 2）。 */
-const PROTECTED = [`memory${sep}papers`, `memory${sep}index.md`];
+/** 只有 paperStore 能写的区域（见文件头约束 2）。比较用小写，见 resolveArtifactPath。 */
+const PROTECTED_KEYS = [`memory${sep}papers`, `memory${sep}index.md`].map((p) => p.toLowerCase());
 
 /** 写入即按契约校验的工件。 */
 const SCHEMA_GUARDS: Array<{
@@ -72,8 +72,11 @@ export function resolveArtifactPath(relPath: string, runDir = resolveRunDir()): 
   }
 
   const rel = segments.join(sep);
-  for (const p of PROTECTED) {
-    if (rel === p || rel.startsWith(p + sep)) {
+  // 大小写归一：macOS / Windows 的文件系统不区分大小写，`Memory/Papers/x.md` 会写到
+  // 同一个保护区里。前缀比较必须跟着文件系统走，否则保护区在这些平台上形同虚设。
+  const relKey = rel.toLowerCase();
+  for (const p of PROTECTED_KEYS) {
+    if (relKey === p || relKey.startsWith(p + sep)) {
       throw new ArtifactPathError(
         `${rel} 由文献工具（arxiv_save）独占写入，不可手写 —— 引用真实性依赖它。`,
       );

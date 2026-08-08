@@ -5,7 +5,7 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
 import { ArtifactPathError, writeArtifact } from "../lib/artifacts.ts";
-import { resolveRunDir } from "../lib/paperStore.ts";
+import { resolveRunDir } from "../lib/runContext.ts";
 
 export default defineTool({
   description:

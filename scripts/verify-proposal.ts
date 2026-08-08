@@ -5,15 +5,32 @@
  * 检查：
  *  A  proposal.json 通过 ProposalSchema（10 字段全量）
  *  B1 每条 reference 的 arxivId 存在于 runs/<ts>/memory/papers/（本次运行实检命中）
- *  B2 每条 arxivId 重新请求 arXiv API，标题归一化后须一致（token overlap ≥ 0.8）
+ *  B2 每条 arxivId 重新请求 arXiv API，标题归一化后须一致（token overlap ≥ 阈值）
  *  B3 references ≥ 5
  *  B4 作者核验：本地作者姓氏 ⊆ arXiv 真实作者姓氏，且第一作者姓氏一致
  * 结果写 runs/<ts>/verification-report.md，任一失败 exit 1。
+ *
+ * ## 它与环内 verify_references 的独立性在哪
+ *
+ * **在数据通路，不在字符串判据。** 本文件自己 readdir papers/、自己逐条 fetch arXiv，
+ * 不经过 paperStore、不经过 agent 的任何缓存 —— 这条通路必须独立，否则「独立验收」
+ * 名不副实。但归一化、重合度阈值、姓氏取法是**同一把尺子**，从 `#lib/verifyRefs.ts`
+ * import：两份手写实现只会让同一个作者被算出两个姓，交叉验证于是验的不是同一件事。
+ * 报告的结论行同理，取 lib/phase.ts 的写出端常量 —— 读它的人（web、run-batch 续跑
+ * 扫描、rebuild-memory 回填）用的是同一份正则。
  */
 import { readFileSync, readdirSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import { ProposalSchema, ReferenceSchema, type Reference } from "#lib/contracts.ts";
+import { arxivIdFromFilename } from "#lib/paperStore.ts";
+import {
+  TITLE_OVERLAP_THRESHOLD,
+  surnameOf,
+  titleOverlap,
+} from "#lib/verifyRefs.ts";
+import { escapeCell } from "../lib/mdTable.ts";
+import { resultLine } from "../lib/phase.ts";
 
 const runDir = process.argv[2];
 if (!runDir || !existsSync(runDir)) {
@@ -26,18 +43,6 @@ const checks: Check[] = [];
 const push = (id: string, pass: boolean, detail: string) => {
   checks.push({ id, pass, detail });
   console.log(`${pass ? "PASS" : "FAIL"} ${id}: ${detail}`);
-};
-
-const normalize = (s: string) =>
-  s.toLowerCase().replace(/[^a-z0-9一-鿿]+/g, " ").trim();
-
-const overlap = (a: string, b: string) => {
-  const ta = new Set(normalize(a).split(" "));
-  const tb = new Set(normalize(b).split(" "));
-  if (ta.size === 0 || tb.size === 0) return 0;
-  let hit = 0;
-  for (const t of ta) if (tb.has(t)) hit++;
-  return hit / Math.max(ta.size, tb.size);
 };
 
 // A: schema
@@ -59,13 +64,9 @@ try {
   push("A.schema", false, `无法读取/解析 ${proposalPath}: ${e}`);
 }
 
-// B1: 引用必须来自本次运行的 papers/
+// B1: 引用必须来自本次运行的 papers/（文件名 → id 的还原式与写出端同一份实现）
 const papersDir = join(runDir, "memory", "papers");
-const known = new Set(
-  existsSync(papersDir)
-    ? readdirSync(papersDir).map((f) => f.replace(/\.md$/, "").replace(/__/g, "/"))
-    : [],
-);
+const known = new Set(existsSync(papersDir) ? readdirSync(papersDir).map(arxivIdFromFilename) : []);
 for (const r of refs) {
   push(`B1.${r.arxivId}`, known.has(r.arxivId), known.has(r.arxivId) ? "在本次运行 memory/papers/ 中" : `未在本次运行实检命中（papers/ 共 ${known.size} 篇）`);
 }
@@ -73,7 +74,7 @@ for (const r of refs) {
 // B3
 push("B3.count", refs.length >= 5, `references = ${refs.length}（要求 ≥5）`);
 
-// B2+B4: 逐条反查 arXiv（标题 + 真实作者列表）
+// B2+B4: 逐条反查 arXiv（标题 + 真实作者列表）——独立于 agent/lib/arxiv.ts 的自有通路
 const fetchEntry = async (
   id: string,
 ): Promise<{ title: string; authors: string[] } | null> => {
@@ -98,27 +99,24 @@ const fetchEntry = async (
   return null;
 };
 
-/** "A. B. Vaswani" / "Vaswani, A." → "vaswani"（取最长词元当姓氏，容忍缩写与逗号序） */
-const surname = (name: string): string => {
-  const tokens = normalize(name).split(" ").filter((t) => t.length > 1);
-  if (tokens.length === 0) return normalize(name).trim();
-  return tokens.reduce((a, b) => (b.length >= a.length ? b : a));
-};
-
 for (const r of refs) {
   const remote = await fetchEntry(r.arxivId);
   if (remote === null) {
     push(`B2.${r.arxivId}`, false, "arXiv 反查无结果（id 不存在或网络失败）");
     continue;
   }
-  const score = overlap(r.title, remote.title);
-  push(`B2.${r.arxivId}`, score >= 0.8, `标题重合度 ${score.toFixed(2)}｜本地「${r.title}」｜arXiv「${remote.title}」`);
+  const score = titleOverlap(r.title, remote.title);
+  push(
+    `B2.${r.arxivId}`,
+    score >= TITLE_OVERLAP_THRESHOLD,
+    `标题重合度 ${score.toFixed(2)}｜本地「${r.title}」｜arXiv「${remote.title}」`,
+  );
 
-  const remoteSurnames = new Set(remote.authors.map(surname));
-  const localSurnames = r.authors.map(surname);
+  const remoteSurnames = new Set(remote.authors.map(surnameOf));
+  const localSurnames = r.authors.map(surnameOf);
   const missing = localSurnames.filter((s) => !remoteSurnames.has(s));
   const firstOk =
-    remote.authors.length > 0 && localSurnames[0] === surname(remote.authors[0]);
+    remote.authors.length > 0 && localSurnames[0] === surnameOf(remote.authors[0]);
   push(
     `B4.${r.arxivId}`,
     missing.length === 0 && firstOk,
@@ -135,11 +133,11 @@ const report = [
   ``,
   `run: ${runDir}`,
   `时间: ${new Date().toISOString()}`,
-  `结果: ${failed.length === 0 ? "ALL PASS" : `${failed.length}/${checks.length} FAILED`}`,
+  resultLine(failed.length, checks.length),
   ``,
   `| 检查项 | 结果 | 说明 |`,
   `|--------|------|------|`,
-  ...checks.map((c) => `| ${c.id} | ${c.pass ? "✅" : "❌"} | ${c.detail.replace(/\|/g, "\\|")} |`),
+  ...checks.map((c) => `| ${c.id} | ${c.pass ? "✅" : "❌"} | ${escapeCell(c.detail)} |`),
   ``,
 ].join("\n");
 writeFileSync(join(runDir, "verification-report.md"), report);

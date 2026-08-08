@@ -8,69 +8,24 @@
  * 关键不变式：**index.md 是 papers/ 的派生物**。每次 savePaper 都从磁盘重建整份
  * index，不做增量追加 —— 索引因此不可能与 papers/ 漂移，也不依赖模型自觉登记。
  *
- * 文件名映射：`"/" → "__"`，与 scripts/verify-proposal.ts 的还原逻辑
- * （`f.replace(/\.md$/,"").replace(/__/g,"/")`）严格互逆。arXiv id 字符集不含
- * 下划线，因此该映射是单射。
+ * 文件名映射（`"/" → "__"`）是本文件的**唯一实现**：campaign 层的全局卡、web 的
+ * 论文链接、离线验收器的 B1 还原，全部 import `paperFilename` / `arxivIdFromFilename`。
+ * arXiv id 字符集不含下划线，因此该映射是单射，两个函数严格互逆。
  *
  * 无 LLM、无 embedding、无 vector DB：一句话摘要是抽取式的（摘要首句），不是生成的。
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
+import { escapeCell, parseTableRows } from "../../lib/mdTable.ts";
 import type { ArxivPaper } from "./arxiv.ts";
 import { upsertLibraryPaper } from "./campaignMemory.ts";
 
-/* ------------------------------------------------------------------ */
-/* runDir 解析                                                          */
-/* ------------------------------------------------------------------ */
-
-/**
- * runDir 通过环境变量 `LUUP_RUN_DIR` 传递，**不作为工具入参**。
- *
- * 理由（依 eve tool 执行环境约定）：
- *  1. eve 的 tool 跑在 app runtime，`process.env` 全量可读（docs/tools/overview.mdx），
- *     而 sandbox 才是隔离的 —— 环境变量是这里最自然的进程级配置通道。
- *  2. 引用真实性防线要求「papers/ 只装本次运行实检命中的文献」。若 runDir 是入参，
- *     模型就能把 run 目录指向历史 run 或任意路径，B1 的「本次运行」语义当场失效。
- *     把它移出模型可控面，是 schema/机制层的约束，不是 prompt 层的约定。
- *  3. 外层驱动（eve invoke / 脚本）本来就要先建 runs/<ts>/ 再触发，顺手 export 即可。
- */
-export const RUN_DIR_ENV = "LUUP_RUN_DIR";
-
-let fallbackRunDir: string | null = null;
-
-function utcStamp(d = new Date()): string {
-  const p = (n: number) => String(n).padStart(2, "0");
-  return (
-    `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}` +
-    `-${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}`
-  );
-}
-
-/**
- * 取当前 run 目录。未设 `LUUP_RUN_DIR` 时退化为进程内一次性创建的
- * `runs/<utc-ts>/`（每个进程只创建一次并记忆），保证 `eve dev` 手工试跑也能用，
- * 且同一进程内多次调用始终落在同一个 run 里。
- */
-export function resolveRunDir(): string {
-  const fromEnv = process.env[RUN_DIR_ENV]?.trim();
-  if (fromEnv) return resolve(process.cwd(), fromEnv);
-  if (fallbackRunDir) return fallbackRunDir;
-  fallbackRunDir = resolve(process.cwd(), "runs", utcStamp());
-  console.warn(`[paperStore] ${RUN_DIR_ENV} 未设置，本进程回退到 ${fallbackRunDir}`);
-  return fallbackRunDir;
-}
-
-/** 仅供测试：清掉回退目录记忆。 */
-export function resetRunDirFallback(): void {
-  fallbackRunDir = null;
-}
-
-export const memoryDir = (runDir: string) => join(runDir, "memory");
+const memoryDir = (runDir: string) => join(runDir, "memory");
 export const papersDir = (runDir: string) => join(memoryDir(runDir), "papers");
-export const indexPath = (runDir: string) => join(memoryDir(runDir), "index.md");
+const indexPath = (runDir: string) => join(memoryDir(runDir), "index.md");
 
 /* ------------------------------------------------------------------ */
-/* 文件名映射（与 verify-proposal.ts 互逆）                                */
+/* 文件名映射（id ↔ 文件名的唯一实现）                                     */
 /* ------------------------------------------------------------------ */
 
 /** `astro-ph/0601001` → `astro-ph__0601001.md` */
@@ -78,7 +33,7 @@ export function paperFilename(arxivId: string): string {
   return `${arxivId.replace(/\//g, "__")}.md`;
 }
 
-/** `astro-ph__0601001.md` → `astro-ph/0601001`（verify-proposal.ts 用的同一还原式） */
+/** `astro-ph__0601001.md` → `astro-ph/0601001`（paperFilename 的逆） */
 export function arxivIdFromFilename(filename: string): string {
   return filename.replace(/\.md$/, "").replace(/__/g, "/");
 }
@@ -92,7 +47,7 @@ export function paperPath(runDir: string, arxivId: string): string {
 /* ------------------------------------------------------------------ */
 
 /** 取摘要的前若干句，凑够 minLen 字符即停，最长 maxLen。 */
-export function firstSentence(abstract: string, minLen = 60, maxLen = 240): string {
+function firstSentence(abstract: string, minLen = 60, maxLen = 240): string {
   const flat = abstract.replace(/\s+/g, " ").trim();
   if (!flat) return "";
   const parts = flat.split(/(?<=[.!?。！？])\s+/);
@@ -136,7 +91,7 @@ const CARD_KEYS = [
   "oneline",
 ] as const;
 
-export function toCard(paper: ArxivPaper): PaperCard {
+function toCard(paper: ArxivPaper): PaperCard {
   return {
     arxivId: paper.arxivId,
     year: paper.year,
@@ -175,7 +130,7 @@ function parseFrontmatter(content: string): Partial<PaperCard> | null {
   return out as Partial<PaperCard>;
 }
 
-export function renderPaperMarkdown(paper: ArxivPaper): string {
+function renderPaperMarkdown(paper: ArxivPaper): string {
   const card = toCard(paper);
   return [
     renderFrontmatter(card),
@@ -245,10 +200,6 @@ export function savePaper(runDir: string, paper: ArxivPaper): SaveResult {
   return { arxivId: paper.arxivId, path: file, created };
 }
 
-export function savePapers(runDir: string, papers: ArxivPaper[]): SaveResult[] {
-  return papers.map((p) => savePaper(runDir, p));
-}
-
 /** 本次 run 已实检命中的 arXiv id 列表（升序）。 */
 export function listPapers(runDir: string): string[] {
   const dir = papersDir(runDir);
@@ -279,16 +230,14 @@ export function readCard(runDir: string, arxivId: string): PaperCard | null {
   };
 }
 
-export function readCards(runDir: string): PaperCard[] {
+function readCards(runDir: string): PaperCard[] {
   return listPapers(runDir)
     .map((id) => readCard(runDir, id))
     .filter((c): c is PaperCard => c !== null);
 }
 
-const escapeCell = (s: string) => s.replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
-
 /** 从 papers/ 重建整份 index.md。幂等；savePaper 每次都调。 */
-export function rebuildIndex(runDir: string): string {
+function rebuildIndex(runDir: string): string {
   const cards = readCards(runDir);
   const lines = [
     "# 文献索引",
@@ -325,22 +274,12 @@ export function parseIndexRows(indexMarkdown: string): Array<{
   title: string;
   oneline: string;
 }> {
-  const rows: Array<{ arxivId: string; year: string; title: string; oneline: string }> = [];
-  for (const line of indexMarkdown.split("\n")) {
-    const t = line.trim();
-    if (!t.startsWith("|") || !t.endsWith("|")) continue;
-    const cells = t
-      .slice(1, -1)
-      .split(/(?<!\\)\|/)
-      .map((c) => c.trim().replace(/\\\|/g, "|"));
-    if (cells.length !== 4) continue;
-    if (cells[0] === "arXiv id" || /^-{2,}$/.test(cells[0] ?? "")) continue;
-    rows.push({
+  return parseTableRows(indexMarkdown, 4)
+    .filter((cells) => cells[0] !== "arXiv id")
+    .map((cells) => ({
       arxivId: cells[0] ?? "",
       year: cells[1] ?? "",
       title: cells[2] ?? "",
       oneline: cells[3] ?? "",
-    });
-  }
-  return rows;
+    }));
 }

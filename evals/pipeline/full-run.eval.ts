@@ -1,9 +1,10 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { defineEval } from "eve/evals";
 import { equals, satisfies } from "eve/evals/expect";
 import { ProposalSchema } from "#lib/contracts.ts";
+import { REPO_ROOT, RUNS_DIR } from "../../lib/paths.ts";
 
 /**
  * Goal-driven 全链路 eval（criteria 的机器化版本）：
@@ -16,22 +17,12 @@ import { ProposalSchema } from "#lib/contracts.ts";
  * 改动 prompts/循环控制后必须跑本 eval。
  */
 /**
- * eve 会把 eval 编译到 node_modules/.cache 里执行，import.meta.dirname 不指向
- * evals/ 源码，相对上跳会 ENOENT。取 repo 根用两级策略：cwd（eve eval 从仓库根
- * 启动）→ 从 import.meta.dirname 向上找到含 fixtures/ 的目录。
+ * 仓库根走 lib/paths.ts 的单点判定（本文件曾经手抄过一份「向上找 fixtures/」的
+ * 探测器）。eve 会把 eval 编译到 node_modules/.cache 里执行，那里的 import.meta
+ * 不指向源码 —— paths.ts 的第三级 fallback（cwd，eve eval 从仓库根启动）正是为
+ * 这种情形准备的。
  */
-function findRepoRoot(): string {
-  const marker = (d: string) => existsSync(join(d, "fixtures", "default-question.md"));
-  if (marker(process.cwd())) return process.cwd();
-  let d = import.meta.dirname;
-  while (d !== resolve(d, "..")) {
-    if (marker(d)) return d;
-    d = resolve(d, "..");
-  }
-  throw new Error("repo root not found (fixtures/default-question.md missing)");
-}
-const repoRoot = findRepoRoot();
-const runsRoot = join(repoRoot, "runs");
+const runsRoot = RUNS_DIR;
 
 /**
  * 首选取证路径：master 的收尾报告按 instructions 必须列出工件路径清单，首行是 run
@@ -66,7 +57,7 @@ export default defineEval({
   timeoutMs: 45 * 60_000,
   async test(t) {
     const t0 = Date.now();
-    const question = readFileSync(join(repoRoot, "fixtures", "default-question.md"), "utf8");
+    const question = readFileSync(join(REPO_ROOT, "fixtures", "default-question.md"), "utf8");
 
     await t.send(
       [
@@ -109,7 +100,7 @@ export default defineEval({
 
     // 离线验收器完整重放：A + B1 + B2 + B3 + B4（含 arXiv 网络反查），exit 0 为 gate
     const verify = spawnSync("node", ["scripts/verify-proposal.ts", runDir], {
-      cwd: repoRoot,
+      cwd: REPO_ROOT,
       encoding: "utf8",
       timeout: 5 * 60_000,
     });

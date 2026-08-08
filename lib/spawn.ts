@@ -4,6 +4,9 @@ import { basename, dirname, join, resolve } from "node:path";
 import { release, setRunId } from "./lock.ts";
 import { RUNS_DIR, REPO_ROOT, isRunId } from "./paths.ts";
 
+/** 提问模板的单一事实源在 lib/questionText.ts；这里只是交付面的转出口。 */
+export { freeformText, science125Text } from "./questionText.ts";
+
 /**
  * 路径在运行期从 REPO_ROOT 拼出来，不是字面量：打包器看到 spawn("node", ["scripts/run.ts"])
  * 会当成模块引用去解析并报 Module not found。process.execPath 顺带避开 PATH 差异。
@@ -15,28 +18,6 @@ const RUN_DIR_LINE = /\[luup\] run dir : (.+)/;
 const BUFFER_LIMIT = 64 * 1024;
 /** run.ts 建目录 + 打印是同步的，10s 还没打印说明起不来。 */
 const RUN_DIR_TIMEOUT_MS = 10_000;
-
-const TASK_LINE = "任务：围绕该问题识别当前研究的具体知识缺口，生成可验证的科学假设，并给出完整研究计划（10 标准字段）。";
-
-/** 与 run-batch.ts 的模板逐字一致，否则同一道题两个入口会产出不可比的 run。 */
-export function science125Text(q: { id: number; domain: string; question: string }): string {
-  return [
-    `来源：《Science》125 前沿科学问题（fixtures/science125.json）第 ${q.id} 题，${q.domain}。`,
-    "",
-    `问题：${q.question}`,
-    "",
-    TASK_LINE,
-  ].join("\n");
-}
-
-/**
- * 自由输入也必须走模板。这不是排版洁癖：run.ts 的 readQuestion 会把
- * 「不含空白且存在的字符串」当文件路径读，裸传 `package.json` 就是任意文件读取。
- * 模板保证至少含换行；路由层另外拒绝 /^\S+$/。
- */
-export function freeformText(question: string): string {
-  return ["来源：luup 交付面自由输入。", "", `问题：${question.trim()}`, "", TASK_LINE].join("\n");
-}
 
 export class SpawnFailure extends Error {}
 
@@ -72,11 +53,14 @@ export function startRun(text: string, questionId: number | null): Promise<Start
     let log: WriteStream | null = null;
     let settled = false;
 
+    /** 释放只针对本次启动持有的那把锁：三个回调可能先后触发，迟到的一次必须是 no-op。 */
+    const releaseMine = () => release({ pid: process.pid, runId });
+
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
       child.kill("SIGTERM");
-      release();
+      releaseMine();
       rejectStart(new SpawnFailure("10s 内未从 scripts/run.ts 拿到 run 目录"));
     }, RUN_DIR_TIMEOUT_MS);
 
@@ -116,7 +100,7 @@ export function startRun(text: string, questionId: number | null): Promise<Start
 
     child.on("error", (err) => {
       clearTimeout(timer);
-      release();
+      releaseMine();
       if (!settled) {
         settled = true;
         rejectStart(new SpawnFailure(`spawn 失败：${err.message}`));
@@ -137,7 +121,7 @@ export function startRun(text: string, questionId: number | null): Promise<Start
         }
       }
       log?.end();
-      release();
+      releaseMine();
       if (!settled) {
         settled = true;
         rejectStart(new SpawnFailure(`scripts/run.ts 未产出 run 目录即退出（exit ${code}）`));

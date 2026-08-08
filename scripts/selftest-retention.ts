@@ -16,10 +16,9 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { planPrune } from "./prune-eve-state.ts";
-
-const repoRoot = resolve(import.meta.dirname, "..");
+import { join } from "node:path";
+import { REPO_ROOT, RUNS_DIR, RUN_ID_RE } from "../lib/paths.ts";
+import { planPrune } from "../lib/retention.ts";
 
 /* ------------------------------------------------------------------ */
 /* 断言                                                                 */
@@ -191,8 +190,7 @@ rmSync(fx.root, { recursive: true, force: true });
 /* ------------------------------------------------------------------ */
 
 console.log("\n[4] rebuildRunsIndex —— 对真实 runs/");
-const RUN_ID_RE = /^\d{8}-\d{6}$/;
-const realRunDirs = readdirSync(join(repoRoot, "runs"), { withFileTypes: true })
+const realRunDirs = readdirSync(RUNS_DIR, { withFileTypes: true })
   .filter((e) => e.isDirectory() && RUN_ID_RE.test(e.name))
   .map((e) => e.name);
 
@@ -226,7 +224,7 @@ const child = spawnSync(
   [
     "-e",
     'const m = await import(process.argv[1]); const r = m.rebuildRunsIndex(); console.log("COUNT=" + r.count);',
-    join(repoRoot, "lib", "runsIndex.ts"),
+    join(REPO_ROOT, "lib", "runsIndex.ts"),
   ],
   { env: { ...process.env, LUUP_REPO_ROOT: tmpRoot }, encoding: "utf8" },
 );

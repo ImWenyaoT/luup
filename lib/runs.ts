@@ -1,12 +1,13 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { paperFilename } from "#lib/paperStore.ts";
 import { activeRunId } from "./lock.ts";
+import { parseTableRows } from "./mdTable.ts";
 import { RUNS_DIR, isRunId, runDir } from "./paths.ts";
 import {
   deriveNodes,
   deriveStatus,
   finishedAtMs,
-  parseQuestion,
   parseVerdicts,
   parseVerifyReport,
   readJson,
@@ -16,6 +17,7 @@ import {
   startedAtMs,
   tailLines,
 } from "./phase.ts";
+import { parseQuestion } from "./questionText.ts";
 import type { Paper, Proposal, RunDetail, RunStatusView, RunSummary } from "./types.ts";
 
 /** console.log 可能带环境噪声（pipeline 继承 QWEN_*），只以末 40 行形式经 status 返回。 */
@@ -101,17 +103,14 @@ export function readArtifact(id: string, name: string): string | null {
 /* memory/index.md → 论文索引                                           */
 /* ------------------------------------------------------------------ */
 
-/** paperStore 用 `__` 替掉旧式 id 里的斜杠：astro-ph/0402200 → astro-ph__0402200.md */
-export const paperFile = (arxivId: string) => `memory/papers/${arxivId.replace(/\//g, "__")}.md`;
+/** id↔文件名映射的唯一实现在 paperStore；这里只是拼上 run 内的相对目录。 */
+export const paperFile = (arxivId: string) => `memory/papers/${paperFilename(arxivId)}`;
 
 export function parsePapers(text: string | null): Paper[] {
   if (!text) return [];
   const out: Paper[] = [];
-  for (const line of text.split("\n")) {
-    if (!line.startsWith("|")) continue;
-    const cells = line.split("|").slice(1, -1).map((c) => c.trim());
-    if (cells.length < 4) continue;
-    if (cells[0] === "arXiv id" || /^-+$/.test(cells[0])) continue;
+  for (const cells of parseTableRows(text ?? "", 4)) {
+    if (cells[0] === "arXiv id") continue;
     out.push({ arxivId: cells[0], year: cells[1], title: cells[2], oneline: cells[3], file: paperFile(cells[0]) });
   }
   return out;

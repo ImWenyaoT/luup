@@ -11,7 +11,8 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
 import { getArxiv, normalizeArxivId } from "../arxiv.ts";
-import { listPapers, resolveRunDir, savePaper } from "../paperStore.ts";
+import { listPapers, savePaper } from "../paperStore.ts";
+import { resolveRunDir } from "../runContext.ts";
 
 export default defineTool({
   description:

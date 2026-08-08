@@ -6,17 +6,19 @@
  *   node scripts/rebuild-memory.ts
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { listPapers, readCard, paperPath } from "#lib/paperStore.ts";
 import {
+  archiveRunOutcome,
+  describeLayout,
   memoryEnabled,
   upsertLibraryPaper,
-  archiveRunOutcome,
-  questionPath,
 } from "#lib/campaignMemory.ts";
+import { RUNS_DIR } from "../lib/paths.ts";
+import { isAllPass } from "../lib/phase.ts";
 
-const repoRoot = resolve(import.meta.dirname, "..");
-const runsRoot = join(repoRoot, "runs");
+const runsRoot = RUNS_DIR;
+const layout = describeLayout();
 
 if (!memoryEnabled()) {
   console.error("memory/ 不存在——先建脚手架再回填。");
@@ -51,14 +53,14 @@ for (const ent of readdirSync(runsRoot, { withFileTypes: true }).sort((a, b) => 
 
   // 题页回填：verification-report 的头部结果行 + FAILED 与否；同一 run 已登记过则跳过
   if (questionId !== null) {
-    const qp = questionPath(questionId);
+    const qp = layout.questionPage(questionId);
     const already = existsSync(qp) && readFileSync(qp, "utf8").includes(runDir);
     if (!already) {
       const reportPath = join(runDir, "verification-report.md");
       const failed = existsSync(join(runDir, "FAILED.md"));
       const verdict = failed
         ? "FAILED"
-        : existsSync(reportPath) && /结果:\s*ALL PASS/.test(readFileSync(reportPath, "utf8"))
+        : existsSync(reportPath) && isAllPass(readFileSync(reportPath, "utf8"))
           ? "ALL PASS"
           : "UNVERIFIED";
       const r = archiveRunOutcome({

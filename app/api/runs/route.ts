@@ -106,7 +106,8 @@ export async function POST(request: NextRequest) {
       202,
     );
   } catch (e) {
-    release();
+    // 归属释放：startRun 内部可能已经放过一次，这里的补偿不能误删下一个 run 的锁
+    release({ pid: process.pid, runId: null });
     return fail(500, "spawn_failed", e instanceof Error ? e.message : String(e));
   }
 }

@@ -17,15 +17,12 @@
  */
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { formatBytes, pruneEveState, summarize } from "./prune-eve-state.ts";
-
-const repoRoot = resolve(import.meta.dirname, "..");
-
-type S125 = { questions: { id: number; domain: string; question: string }[] };
-const s125 = JSON.parse(
-  readFileSync(join(repoRoot, "fixtures", "science125.json"), "utf8"),
-) as S125;
+import { join } from "node:path";
+import { REPO_ROOT, RUNS_DIR } from "../lib/paths.ts";
+import { isAllPass } from "../lib/phase.ts";
+import { science125Text } from "../lib/questionText.ts";
+import { formatBytes, planPrune, summarize } from "../lib/retention.ts";
+import { findQuestion } from "../lib/science125.ts";
 
 /* ------------------------------------------------------------------ */
 /* argv                                                                */
@@ -66,7 +63,7 @@ const pruneGraceMin = (() => {
 function pruneNow(label: string): void {
   if (noPrune) return;
   try {
-    const r = pruneEveState({ apply: true, graceMs: pruneGraceMin * 60 * 1000 });
+    const r = planPrune({ apply: true, graceMs: pruneGraceMin * 60 * 1000 });
     console.log(`[batch] prune ${label}：${summarize(r)}（状态盘余量 ${formatBytes(r.totalBytes - r.freedBytes)}）`);
   } catch (e) {
     // 清理是运维加速，不是交付的一部分：失败只告警，绝不打断批跑
@@ -81,9 +78,9 @@ if (ids.length === 0 || ids.some((i) => !Number.isInteger(i) || i < 1 || i > 125
   process.exit(2);
 }
 
-/** 按 id 字段查，不按下标——下标对齐是 fixture 的偶然属性，不是契约（web/lib/science125.ts 同）。 */
+/** 题目查找与 web 入口同一份实现（lib/science125.ts）：按 id 字段查，不按下标。 */
 function question(id: number): { id: number; domain: string; question: string } {
-  const q = s125.questions.find((x) => x.id === id);
+  const q = findQuestion(id);
   if (!q) {
     console.error(`fixtures/science125.json 里没有第 ${id} 题`);
     process.exit(2);
@@ -97,21 +94,13 @@ function question(id: number): { id: number; domain: string; question: string } 
 
 type RunMeta = { questionId?: unknown; exitCode?: unknown };
 
-/**
- * 只认报告头部那一行 `结果: ALL PASS`，不做全文 includes——
- * 说明列里嵌的是 LLM 写的标题/作者原文，全文匹配会把失败报告读成通过。
- * 与 web/lib/phase.ts 的 ALL_PASS 保持同一判据。
- */
-const ALL_PASS = /结果:\s*ALL PASS/;
-
 /** 扫描 runs/*，返回「已交付」题号 → run 目录（同题多次成功取目录名最大的，即最新）。 */
 function scanCompleted(): Map<number, string> {
   const done = new Map<number, string>();
-  const runsDir = join(repoRoot, "runs");
-  if (!existsSync(runsDir)) return done;
-  for (const ent of readdirSync(runsDir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+  if (!existsSync(RUNS_DIR)) return done;
+  for (const ent of readdirSync(RUNS_DIR, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
     if (!ent.isDirectory()) continue; // batch-*.md 是文件
-    const dir = join(runsDir, ent.name);
+    const dir = join(RUNS_DIR, ent.name);
     let meta: RunMeta;
     try {
       meta = JSON.parse(readFileSync(join(dir, "meta.json"), "utf8")) as RunMeta;
@@ -121,7 +110,7 @@ function scanCompleted(): Map<number, string> {
     if (typeof meta.questionId !== "number" || meta.exitCode !== 0) continue;
     const report = join(dir, "verification-report.md");
     if (!existsSync(report)) continue;
-    if (!ALL_PASS.test(readFileSync(report, "utf8"))) continue;
+    if (!isAllPass(readFileSync(report, "utf8"))) continue;
     done.set(meta.questionId, dir);
   }
   return done;
@@ -131,19 +120,10 @@ function scanCompleted(): Map<number, string> {
 /* 执行                                                                 */
 /* ------------------------------------------------------------------ */
 
-const questionText = (q: { id: number; domain: string; question: string }) =>
-  [
-    `来源：《Science》125 前沿科学问题（fixtures/science125.json）第 ${q.id} 题，${q.domain}。`,
-    "",
-    `问题：${q.question}`,
-    "",
-    "任务：围绕该问题识别当前研究的具体知识缺口，生成可验证的科学假设，并给出完整研究计划（10 标准字段）。",
-  ].join("\n");
-
 function runNode(args: string[], extraEnv: Record<string, string> = {}): Promise<{ code: number; stdout: string }> {
   return new Promise((res, rej) => {
     const child = spawn("node", args, {
-      cwd: repoRoot,
+      cwd: REPO_ROOT,
       env: { ...process.env, ...extraEnv },
       stdio: ["ignore", "pipe", "inherit"],
     });
@@ -181,7 +161,7 @@ for (const id of ids) {
   }
 
   console.log(`\n[batch] ===== Q${id}（${q.domain}）: ${q.question} =====\n`);
-  const { code, stdout } = await runNode(["scripts/run.ts", questionText(q)], { LUUP_QUESTION_ID: String(id) });
+  const { code, stdout } = await runNode(["scripts/run.ts", science125Text(q)], { LUUP_QUESTION_ID: String(id) });
   const runDir = stdout.match(/\[luup\] run dir : (.+)/)?.[1]?.trim() ?? "";
   let verify: number | null = null;
   if (runDir && code === 0) {
@@ -231,7 +211,7 @@ if (dryRun) {
   console.log(`\n${report}`);
 } else {
   const stamp = new Date().toISOString().replace(/[:.]/g, "").slice(0, 15);
-  const reportPath = join(repoRoot, "runs", `batch-${stamp}.md`);
+  const reportPath = join(RUNS_DIR, `batch-${stamp}.md`);
   writeFileSync(reportPath, report);
   console.log(`\n[batch] ${tally}`);
   console.log(`[batch] 汇总 → ${reportPath}`);
