@@ -1,0 +1,174 @@
+@import "tailwindcss" source(none);
+
+@source "../app";
+@source "../components";
+
+/* ------------------------------------------------------------------ *
+ * 令牌：单信号色 teal，其余全中性灰阶。danger 只有三处允许出现：
+ * FAILED 徽章、reject verdict 左边框、验收 ❌ 行。没有彩虹状态色。
+ * ------------------------------------------------------------------ */
+:root {
+  --bg: #fbfbfa;
+  --panel: #ffffff;
+  --panel-2: #f4f4f2;
+  --fg: #18181b;
+  --muted: #71717a;
+  --faint: #a1a1aa;
+  --line: #e2e2df;
+  --line-strong: #c9c9c4;
+  --accent: #0f766e;
+  --accent-soft: #0f766e1a;
+  --danger: #b4453c;
+  --danger-soft: #b4453c14;
+  --grid: rgba(0, 0, 0, 0.035);
+  --log-bg: #17171a;
+  --log-fg: #d7d7d2;
+}
+
+/* 深浅自动，无切换器：没有 JS 状态就没有水合不一致。 */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0b0c0d;
+    --panel: #131416;
+    --panel-2: #1a1b1e;
+    --fg: #e4e4e7;
+    --muted: #8f8f98;
+    --faint: #6b6b73;
+    --line: #26272b;
+    --line-strong: #3a3b40;
+    --accent: #2dd4bf;
+    --accent-soft: #2dd4bf1f;
+    --danger: #e07a70;
+    --danger-soft: #e07a7017;
+    --grid: rgba(255, 255, 255, 0.045);
+    --log-bg: #08090a;
+    --log-fg: #c8c8c3;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-log-bg: var(--log-bg);
+  --color-log-fg: var(--log-fg);
+
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --font-sans: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB",
+    "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+
+  --radius-xs: 2px;
+  --radius-sm: 3px;
+  --radius-md: 4px;
+}
+
+@layer base {
+  html {
+    color-scheme: light dark;
+  }
+
+  body {
+    background-color: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 13px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* 微网格底纹：固定层，纯 CSS gradient，无图片资产。 */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background-image:
+      repeating-linear-gradient(to right, var(--grid) 0 1px, transparent 1px 24px),
+      repeating-linear-gradient(to bottom, var(--grid) 0 1px, transparent 1px 24px);
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  ::selection {
+    background: var(--accent-soft);
+  }
+
+  :focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* reasoning spine：方块不是圆点——仪表感来自直角。 */
+  .spine-rail {
+    width: 2px;
+    background: linear-gradient(to bottom, var(--accent), color-mix(in srgb, var(--accent) 8%, transparent));
+  }
+
+  .spine-dot {
+    width: 9px;
+    height: 9px;
+    flex: none;
+    background: transparent;
+    box-shadow: 0 0 0 3px var(--bg);
+  }
+  .spine-dot[data-state="done"] {
+    background: var(--accent);
+  }
+  .spine-dot[data-state="active"] {
+    border: 1.5px solid var(--accent);
+    animation: luup-breathe 1.6s ease-in-out infinite;
+  }
+  .spine-dot[data-state="pending"] {
+    border: 1.5px solid var(--line-strong);
+  }
+  .spine-dot[data-state="rejected"] {
+    border: 1.5px solid var(--danger);
+    /* 右上角缺口 */
+    clip-path: polygon(0 0, 62% 0, 100% 38%, 100% 100%, 0 100%);
+  }
+
+  @keyframes luup-breathe {
+    0%,
+    100% {
+      opacity: 0.3;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .spine-dot[data-state="active"] {
+      animation: none;
+      opacity: 1;
+    }
+  }
+
+  /* 工件正文：大量中文，mono 是仪表的身份不是中文正文的刑具。 */
+  .prose-body {
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.85;
+  }
+  .prose-body code,
+  .prose-body pre {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+  }
+}
