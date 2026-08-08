@@ -1,0 +1,203 @@
+/**
+ * Run 工件的读写与路径 jail（architecture.md「handoff 工件」/「memory 布局」）。
+ *
+ * 工件面（master 唯一的落盘通道）：
+ *   runs/<ts>/evidence.md        L 的事实卡片
+ *   runs/<ts>/hypotheses.md      H 的候选假设
+ *   runs/<ts>/critique.json      C 的批判（写入即校验 CritiqueSchema）
+ *   runs/<ts>/proposal.json      W 的 10 字段计划（写入即校验 ProposalSchema）
+ *   runs/<ts>/verdicts/*.json    master 每轮认证（写入即校验 VerdictSchema）
+ *   runs/<ts>/memory/rejected.md 负结果记忆
+ *   runs/<ts>/FAILED.md          预算耗尽时的失败报告
+ *
+ * 三条硬约束（机制层，不靠 prompt）：
+ *  1. **jail**：一切路径相对 LUUP_RUN_DIR 解析；绝对路径、`..`、NUL 一律拒绝，
+ *     解析后再确认仍在 run 目录内（防符号写法绕过）。
+ *  2. **保护区**：`memory/papers/**` 与 `memory/index.md` 只允许 arxiv_save 经由
+ *     paperStore 写入。若模型能自由写这两处，就能伪造「本次运行实检命中」的文献，
+ *     verify_references 的 B1 当场失效 —— 这是引用真实性防线的地基。
+ *  3. **fail-closed 结构化**：`critique.json`、`proposal.json` 与 `verdicts/*.json` 写入前
+ *     按契约校验，不合法拒写（草稿另存 `<name>.rejected.json` 保留失败证据链）。
+ */
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join, resolve, sep } from "node:path";
+import { CritiqueSchema, ProposalSchema, VerdictSchema } from "#lib/contracts.ts";
+import { resolveRunDir } from "./paperStore.ts";
+
+export class ArtifactPathError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ArtifactPathError";
+  }
+}
+
+/** 只有 paperStore 能写的区域（见文件头约束 2）。 */
+const PROTECTED = [`memory${sep}papers`, `memory${sep}index.md`];
+
+/** 写入即按契约校验的工件。 */
+const SCHEMA_GUARDS: Array<{
+  test: (rel: string) => boolean;
+  name: string;
+  schema: typeof ProposalSchema | typeof VerdictSchema | typeof CritiqueSchema;
+}> = [
+  { test: (rel) => rel === "proposal.json", name: "ProposalSchema", schema: ProposalSchema },
+  { test: (rel) => rel === "critique.json", name: "CritiqueSchema", schema: CritiqueSchema },
+  {
+    test: (rel) => rel.startsWith(`verdicts${sep}`) && rel.endsWith(".json"),
+    name: "VerdictSchema",
+    schema: VerdictSchema,
+  },
+];
+
+/**
+ * 把模型给的相对路径收敛成 run 目录内的绝对路径。
+ * @returns `{ abs, rel }`，`rel` 用平台分隔符，便于与保护区前缀比较。
+ */
+export function resolveArtifactPath(relPath: string, runDir = resolveRunDir()): { abs: string; rel: string } {
+  const raw = String(relPath ?? "").trim();
+  if (!raw) throw new ArtifactPathError("路径为空");
+  if (raw.includes("\0")) throw new ArtifactPathError("路径含非法字符");
+  if (raw.startsWith("~")) throw new ArtifactPathError(`拒绝 home 相对路径：${raw}`);
+  if (isAbsolute(raw) || /^[A-Za-z]:[\\/]/.test(raw)) {
+    throw new ArtifactPathError(`拒绝绝对路径：${raw}（工件路径必须相对本 run 目录）`);
+  }
+  const segments = raw.split(/[\\/]+/).filter((s) => s !== "" && s !== ".");
+  if (segments.length === 0) throw new ArtifactPathError("路径为空");
+  if (segments.includes("..")) throw new ArtifactPathError(`拒绝越级路径：${raw}`);
+
+  const base = resolve(runDir);
+  const abs = resolve(base, segments.join(sep));
+  if (abs !== base && !abs.startsWith(base + sep)) {
+    throw new ArtifactPathError(`路径逃逸 run 目录：${raw}`);
+  }
+
+  const rel = segments.join(sep);
+  for (const p of PROTECTED) {
+    if (rel === p || rel.startsWith(p + sep)) {
+      throw new ArtifactPathError(
+        `${rel} 由文献工具（arxiv_save）独占写入，不可手写 —— 引用真实性依赖它。`,
+      );
+    }
+  }
+  return { abs, rel };
+}
+
+export type ArtifactWriteResult = {
+  path: string;
+  bytes: number;
+  created: boolean;
+  /** 命中契约校验的工件名；无则 null */
+  validatedAs: string | null;
+  ok: boolean;
+  /** ok=false 时的校验错误（每条 `字段: 说明`） */
+  issues: string[];
+  /** ok=false 时草稿的留存路径 */
+  draftPath?: string;
+};
+
+/** 写一个工件。契约工件不合法时**拒写**，草稿另存 `.rejected.json`。 */
+export function writeArtifact(relPath: string, content: string, runDir = resolveRunDir()): ArtifactWriteResult {
+  const { abs, rel } = resolveArtifactPath(relPath, runDir);
+  const guard = SCHEMA_GUARDS.find((g) => g.test(rel));
+
+  if (guard) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(content);
+    } catch (e) {
+      const draft = `${abs}.rejected.json`;
+      mkdirSync(dirname(draft), { recursive: true });
+      writeFileSync(draft, content, "utf8");
+      return {
+        path: rel,
+        bytes: 0,
+        created: false,
+        validatedAs: guard.name,
+        ok: false,
+        issues: [`JSON 解析失败: ${String(e)}`],
+        draftPath: `${rel}.rejected.json`,
+      };
+    }
+    const result = guard.schema.safeParse(parsed);
+    if (!result.success) {
+      const draft = `${abs}.rejected.json`;
+      mkdirSync(dirname(draft), { recursive: true });
+      writeFileSync(draft, content, "utf8");
+      return {
+        path: rel,
+        bytes: 0,
+        created: false,
+        validatedAs: guard.name,
+        ok: false,
+        issues: result.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`),
+        draftPath: `${rel}.rejected.json`,
+      };
+    }
+  } else if (rel.endsWith(".json")) {
+    try {
+      JSON.parse(content);
+    } catch (e) {
+      return {
+        path: rel,
+        bytes: 0,
+        created: false,
+        validatedAs: "JSON",
+        ok: false,
+        issues: [`JSON 解析失败: ${String(e)}`],
+      };
+    }
+  }
+
+  const created = !existsSync(abs);
+  mkdirSync(dirname(abs), { recursive: true });
+  writeFileSync(abs, content, "utf8");
+  return {
+    path: rel,
+    bytes: Buffer.byteLength(content, "utf8"),
+    created,
+    validatedAs: guard?.name ?? null,
+    ok: true,
+    issues: [],
+  };
+}
+
+export type ArtifactReadResult =
+  | { path: string; kind: "file"; exists: true; content: string; bytes: number }
+  | { path: string; kind: "directory"; exists: true; entries: string[] }
+  | { path: string; kind: "missing"; exists: false; available: string[] };
+
+/** 读一个工件；路径是目录则列目录，缺失则回列 run 根目录已有条目。 */
+export function readArtifact(relPath: string, runDir = resolveRunDir()): ArtifactReadResult {
+  const { abs, rel } = resolveArtifactPath(relPath, runDir);
+  if (!existsSync(abs)) {
+    return { path: rel, kind: "missing", exists: false, available: listArtifacts(runDir) };
+  }
+  if (statSync(abs).isDirectory()) {
+    return {
+      path: rel,
+      kind: "directory",
+      exists: true,
+      entries: readdirSync(abs).sort((a, b) => a.localeCompare(b)),
+    };
+  }
+  const content = readFileSync(abs, "utf8");
+  return { path: rel, kind: "file", exists: true, content, bytes: Buffer.byteLength(content, "utf8") };
+}
+
+/** run 根目录下的工件清单（含 verdicts/ 内条目），供 master 定位与失败报告用。 */
+export function listArtifacts(runDir = resolveRunDir()): string[] {
+  const base = resolve(runDir);
+  if (!existsSync(base)) return [];
+  const out: string[] = [];
+  for (const name of readdirSync(base).sort((a, b) => a.localeCompare(b))) {
+    if (name === "memory") continue;
+    const p = join(base, name);
+    if (statSync(p).isDirectory()) {
+      for (const child of readdirSync(p).sort((a, b) => a.localeCompare(b))) out.push(`${name}/${child}`);
+    } else {
+      out.push(name);
+    }
+  }
+  if (existsSync(join(base, "memory", "rejected.md"))) out.push("memory/rejected.md");
+  return out;
+}

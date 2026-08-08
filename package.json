@@ -7,17 +7,38 @@
     "#evals/*": "./evals/*"
   },
   "scripts": {
-    "build": "eve build",
-    "dev": "eve dev",
-    "start": "eve start",
-    "typecheck": "tsgo"
+    "dev": "next dev",
+    "dev:eve": "eve dev",
+    "build": "eve build && next build",
+    "build:eve": "eve build",
+    "build:web": "next build",
+    "start": "next start",
+    "start:eve": "eve start --host 127.0.0.1 --port 4274",
+    "typecheck": "tsgo",
+    "validate": "pnpm typecheck && npx eve info",
+    "run:pipeline": "node scripts/run.ts",
+    "selftest:literature": "node scripts/selftest-literature.ts",
+    "selftest:memory": "node scripts/selftest-memory.ts",
+    "run:batch": "node scripts/run-batch.ts",
+    "verify": "node scripts/verify-proposal.ts"
   },
   "dependencies": {
+    "@ai-sdk/openai": "4.0.0-canary.73",
     "ai": "7.0.0-canary.171",
-    "eve": "latest",
+    "eve": "0.31.3",
+    "next": "16.3.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "@typescript/native-preview": "7.0.0-dev.20260523.1"
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/node": "^26.1.2",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@typescript/native-preview": "7.0.0-dev.20260523.1",
+    "microsandbox": "^0.6.8",
+    "tailwindcss": "4.3.3",
+    "typescript": "^6.0.3"
   }
 }
