@@ -1,8 +1,8 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { type WriteStream, createWriteStream, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import { release, setRunId } from "./lock";
-import { RUNS_DIR, REPO_ROOT, isRunId } from "./paths";
+import { release, setRunId } from "./lock.ts";
+import { RUNS_DIR, REPO_ROOT, isRunId } from "./paths.ts";
 
 /**
  * 路径在运行期从 REPO_ROOT 拼出来，不是字面量：打包器看到 spawn("node", ["scripts/run.ts"])

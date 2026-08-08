@@ -9,6 +9,8 @@ export const RUNS_DIR = join(REPO_ROOT, "runs");
 /** runs/ 之外唯一的读点，硬编码，不接受参数。 */
 export const SCIENCE125_FILE = join(REPO_ROOT, "fixtures", "science125.json");
 export const LOCK_FILE = join(RUNS_DIR, ".active.json");
+/** 派生缓存，不是真相：删掉它一切照常，只是 /api/runs 退回全量扫盘。 */
+export const RUNS_INDEX_FILE = join(RUNS_DIR, "index.json");
 
 export const RUN_ID_RE = /^\d{8}-\d{6}$/;
 

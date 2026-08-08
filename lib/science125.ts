@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
-import { SCIENCE125_FILE } from "./paths";
-import type { Science125 } from "./types";
+import { SCIENCE125_FILE } from "./paths.ts";
+import type { Science125 } from "./types.ts";
 
 type Raw = {
   source?: string;

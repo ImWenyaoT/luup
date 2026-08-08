@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { activeRunId } from "./lock";
-import { RUNS_DIR, isRunId, runDir } from "./paths";
+import { activeRunId } from "./lock.ts";
+import { RUNS_DIR, isRunId, runDir } from "./paths.ts";
 import {
   deriveNodes,
   deriveStatus,
@@ -15,8 +15,8 @@ import {
   scanRun,
   startedAtMs,
   tailLines,
-} from "./phase";
-import type { Paper, Proposal, RunDetail, RunStatusView, RunSummary } from "./types";
+} from "./phase.ts";
+import type { Paper, Proposal, RunDetail, RunStatusView, RunSummary } from "./types.ts";
 
 /** console.log 可能带环境噪声（pipeline 继承 QWEN_*），只以末 40 行形式经 status 返回。 */
 const ARTIFACT_DENY = new Set(["console.log"]);

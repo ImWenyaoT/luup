@@ -18,6 +18,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { formatBytes, pruneEveState, summarize } from "./prune-eve-state.ts";
 
 const repoRoot = resolve(import.meta.dirname, "..");
 
@@ -30,16 +31,48 @@ const s125 = JSON.parse(
 /* argv                                                                */
 /* ------------------------------------------------------------------ */
 
-const USAGE = "usage: node scripts/run-batch.ts <id 1-125> [<id> ...] [--force] [--dry-run]";
+const USAGE =
+  "usage: node scripts/run-batch.ts <id 1-125> [<id> ...] [--force] [--dry-run] [--no-prune] [--prune-grace-min=N]";
 const argv = process.argv.slice(2);
 const flags = argv.filter((a) => a.startsWith("--"));
-const unknown = flags.filter((f) => f !== "--force" && f !== "--dry-run");
+const KNOWN = new Set(["--force", "--dry-run", "--no-prune"]);
+const unknown = flags.filter((f) => !KNOWN.has(f) && !f.startsWith("--prune-grace-min="));
 if (unknown.length > 0) {
   console.error(`unknown flag: ${unknown.join(" ")}\n${USAGE}`);
   process.exit(2);
 }
 const force = flags.includes("--force");
 const dryRun = flags.includes("--dry-run");
+const noPrune = flags.includes("--no-prune");
+
+/**
+ * 每题验收完立刻清理 workflow 流数据。
+ *
+ * 不清理的话，.eve/.workflow-data/streams/chunks 每题涨 ~20MB（每个流 delta 一个 .bin，
+ * 且每个 .bin 嵌全文快照），125 全量跑 = 2G+ 纯重放工件。判据见 prune-eve-state.ts ——
+ * 在跑的 run 由「活跃窗口 + workflow 未终态 + run 无终态凭据」三条各自独立挡住。
+ */
+const pruneGraceMin = (() => {
+  const hit = flags.find((f) => f.startsWith("--prune-grace-min="));
+  if (!hit) return 60;
+  const n = Number.parseInt(hit.slice("--prune-grace-min=".length), 10);
+  if (!Number.isInteger(n) || n < 0) {
+    console.error(`--prune-grace-min 必须是非负整数\n${USAGE}`);
+    process.exit(2);
+  }
+  return n;
+})();
+
+function pruneNow(label: string): void {
+  if (noPrune) return;
+  try {
+    const r = pruneEveState({ apply: true, graceMs: pruneGraceMin * 60 * 1000 });
+    console.log(`[batch] prune ${label}：${summarize(r)}（状态盘余量 ${formatBytes(r.totalBytes - r.freedBytes)}）`);
+  } catch (e) {
+    // 清理是运维加速，不是交付的一部分：失败只告警，绝不打断批跑
+    console.error(`[batch] prune ${label} 失败（不影响批跑）：${String(e)}`);
+  }
+}
 
 // 去重：同一题号写两遍就是白烧两次 20 分钟的额度（completed 不在循环内刷新）
 const ids = [...new Set(argv.filter((a) => !a.startsWith("--")).map((a) => Number.parseInt(a, 10)))];
@@ -157,6 +190,9 @@ for (const id of ids) {
   }
   const status: Status = code === 0 && verify === 0 ? "done" : "failed";
   rows.push({ id, domain: q.domain, runDir, status, pipeline: code, verify });
+
+  // 验收已经结束 = 这一题的工件都落到了 runs/<ts>/，流数据自此无人消费
+  pruneNow(`Q${id}`);
 }
 
 /* ------------------------------------------------------------------ */

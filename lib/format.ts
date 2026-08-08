@@ -1,4 +1,4 @@
-import type { RunStatus } from "./types";
+import type { RunStatus } from "./types.ts";
 
 /**
  * 时间一律按 UTC 定死格式。用 toLocaleString 会让服务端与浏览器渲染出不同字符串，

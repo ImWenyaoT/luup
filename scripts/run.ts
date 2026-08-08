@@ -20,6 +20,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { archiveRunOutcome } from "#lib/campaignMemory.ts";
 import { ProposalSchema, type Proposal } from "#lib/contracts.ts";
+import { rebuildRunsIndex } from "../lib/runsIndex.ts";
 
 const repoRoot = resolve(import.meta.dirname, "..");
 const DEFAULT_QUESTION_FILE = join(repoRoot, "fixtures", "default-question.md");
@@ -384,6 +385,15 @@ try {
   }
 } catch (e) {
   console.error(`[luup] campaign memory 归档异常（不影响本次 run 结果）：${String(e)}`);
+}
+
+/* runs/index.json 派生缓存：meta.json 刚落盘，这里重建才能把本次 run 算进去。
+   与 memory 归档同理包在 try 里 —— 加速层不允许改变一次真实 run 的退出码。 */
+try {
+  const { path, count } = rebuildRunsIndex();
+  console.log(`[luup] runs 索引 ✔ ${path}（${count} 条）`);
+} catch (e) {
+  console.error(`[luup] runs 索引重建失败（不影响本次 run 结果）：${String(e)}`);
 }
 
 process.exit(exitCode);

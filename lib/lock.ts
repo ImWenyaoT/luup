@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { LOCK_FILE, RUNS_DIR } from "./paths";
+import { LOCK_FILE, RUNS_DIR } from "./paths.ts";
 
 /**
  * 单并发锁：runs/.active.json。

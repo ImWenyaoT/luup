@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { activeLock } from "./lock";
-import { runDir } from "./paths";
+import { activeLock } from "./lock.ts";
+import { runDir } from "./paths.ts";
 import type {
   NodeKey,
   NodeState,
@@ -11,7 +11,7 @@ import type {
   VerdictCheck,
   VerifyCheck,
   VerifyReport,
-} from "./types";
+} from "./types.ts";
 
 /**
  * 状态机的唯一输入是文件系统——没有数据库，也不该有。

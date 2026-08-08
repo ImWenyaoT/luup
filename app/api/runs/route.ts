@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { fail, json } from "@/lib/http";
 import { acquire, release } from "@/lib/lock";
 import { activeRun, listRuns } from "@/lib/runs";
+import { readRunsIndex } from "@/lib/runsIndex";
 import { findQuestion } from "@/lib/science125";
 import { freeformText, science125Text, startRun } from "@/lib/spawn";
 
@@ -15,7 +16,8 @@ export function GET(request: NextRequest) {
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > 500) {
     return fail(400, "bad_limit", "limit 必须是 1..500 的整数");
   }
-  return json({ active: activeRun(), runs: listRuns(parsed) });
+  // 派生缓存优先；缺失/损坏/过期时 readRunsIndex 返回 null，退回全量扫盘
+  return json({ active: activeRun(), runs: readRunsIndex(parsed) ?? listRuns(parsed) });
 }
 
 /**
