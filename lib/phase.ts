@@ -240,6 +240,7 @@ export function finishedAtMs(scan: Scan, status: RunStatus): number | null {
   return times.length ? Math.max(...times) : null;
 }
 
+
 /* ------------------------------------------------------------------ */
 /* 验收报告                                                             */
 /* ------------------------------------------------------------------ */

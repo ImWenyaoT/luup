@@ -2,16 +2,18 @@ import { headers } from "next/headers";
 import Link from "next/link";
 import { Curl } from "@/components/Curl";
 import { Picker } from "@/components/Picker";
-import { MiniSpine, SUMMARY_MARKS, Spine } from "@/components/Spine";
+import { MiniSpine, SUMMARY_MARKS } from "@/components/Spine";
 import { EmptyState, Meter, Panel, Pill } from "@/components/ui";
 import { STATUS_LABEL, STATUS_TONE, fmtDur, fmtTime } from "@/lib/format";
 import { activeRun, listRuns, readStatusView } from "@/lib/runs";
+import { readRunsIndex } from "@/lib/runsIndex";
 import { readScience125 } from "@/lib/science125";
 
 export const dynamic = "force-dynamic";
 
 export default async function Dashboard() {
-  const runs = listRuns(500);
+  // 与 GET /api/runs 同一条路径：派生缓存优先，缺失/损坏/过期时退回全量扫盘
+  const runs = readRunsIndex(500) ?? listRuns(500);
   const active = activeRun();
   const activeView = active ? readStatusView(active) : null;
   const s125 = readScience125();

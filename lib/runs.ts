@@ -1,10 +1,10 @@
-import { readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { readdirSync } from "node:fs";
 import { paperFilename } from "#lib/paperStore.ts";
 import { activeRunId } from "./lock.ts";
 import { parseTableRows } from "./mdTable.ts";
-import { RUNS_DIR, isRunId, runDir } from "./paths.ts";
+import { RUNS_DIR, isRunId } from "./paths.ts";
 import {
+  type Scan,
   deriveNodes,
   deriveStatus,
   finishedAtMs,
@@ -15,6 +15,7 @@ import {
   readText,
   scanRun,
   startedAtMs,
+
   tailLines,
 } from "./phase.ts";
 import { parseQuestion } from "./questionText.ts";
@@ -82,21 +83,18 @@ export function listRuns(limit = 50): RunSummary[] {
  * ?artifact= 的白名单不是正则放行，而是与 readdir 的真实结果做集合匹配。
  * 想不到的路径形态（编码、大小写、软链）都会因为不在集合里而落空。
  */
-export function artifactNames(id: string): string[] {
-  const scan = scanRun(id);
-  if (!scan) return [];
+export function artifactNamesFrom(scan: Scan): string[] {
   return [...scan.files.keys()].filter((f) => !ARTIFACT_DENY.has(f)).sort();
+}
+
+export function readArtifactFrom(scan: Scan, name: string): string | null {
+  if (ARTIFACT_DENY.has(name)) return null;
+  return readText(scan, name); // 命中集合才读盘，name 无从越界
 }
 
 export function readArtifact(id: string, name: string): string | null {
   const scan = scanRun(id);
-  if (!scan) return null;
-  if (ARTIFACT_DENY.has(name) || !scan.files.has(name)) return null;
-  try {
-    return readFileSync(join(runDir(id), name), "utf8");
-  } catch {
-    return null;
-  }
+  return scan ? readArtifactFrom(scan, name) : null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -120,15 +118,17 @@ export function parsePapers(text: string | null): Paper[] {
 /* 详情                                                                 */
 /* ------------------------------------------------------------------ */
 
-export function readStatusView(id: string): RunStatusView | null {
-  const scan = scanRun(id);
-  if (!scan) return null;
+/**
+ * 一次 scanRun 是一次递归 readdir + 每文件 statSync；一次请求扫一遍就够。
+ * 所以详情侧的读取全部以 Scan 为入参（*From 后缀），id 版只是「扫一次再转发」的薄壳。
+ */
+export function statusViewFrom(scan: Scan): RunStatusView {
   const status = deriveStatus(scan);
   const verdicts = parseVerdicts(scan);
   const nodes = deriveNodes(scan, status, verdicts);
   const names = [...scan.files.keys()];
   return {
-    id,
+    id: scan.id,
     status,
     updatedAt: new Date().toISOString(),
     nodes,
@@ -138,10 +138,13 @@ export function readStatusView(id: string): RunStatusView | null {
   };
 }
 
-export function readRun(id: string): RunDetail | null {
-  const base = readStatusView(id);
+export function readStatusView(id: string): RunStatusView | null {
   const scan = scanRun(id);
-  if (!base || !scan) return null;
+  return scan ? statusViewFrom(scan) : null;
+}
+
+export function readRunFrom(scan: Scan): RunDetail {
+  const base = statusViewFrom(scan);
   const q = parseQuestion(readText(scan, "question.md"));
   const meta = readMeta(scan);
   const started = startedAtMs(scan);
@@ -159,8 +162,13 @@ export function readRun(id: string): RunDetail | null {
     verify: parseVerifyReport(readText(scan, "verification-report.md")),
     papers: parsePapers(readText(scan, "memory/index.md")),
     failedText: readText(scan, "FAILED.md"),
-    artifactNames: artifactNames(id),
+    artifactNames: artifactNamesFrom(scan),
   };
+}
+
+export function readRun(id: string): RunDetail | null {
+  const scan = scanRun(id);
+  return scan ? readRunFrom(scan) : null;
 }
 
 export const activeRun = activeRunId;
