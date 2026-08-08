@@ -215,6 +215,31 @@ export function finishedAtMs(scan: Scan, status: RunStatus): number | null {
 }
 
 /* ------------------------------------------------------------------ */
+/* markdown 表格行                                                      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 写入侧统一把单元格内的 `|` 转义成 `\|`（agent/lib/paperStore.ts 的 escapeCell、
+ * scripts/verify-proposal.ts 的同款替换）。读侧若按裸 `|` 切分，一条含竖线的标题
+ * 会被切成多列、整行再因列数不符被丢掉 —— 文献索引和验收报告都会静默少行。
+ * 所以切分要跳过被转义的竖线，切完再反解。
+ *
+ * TODO(merge): agent 侧 paperStore.parseIndexRows 有同一份逻辑。共享工具落地后
+ * 这里改成 re-export，命名与写入侧的 escapeCell 对齐。
+ */
+export const unescapeCell = (cell: string): string => cell.trim().replace(/\\\|/g, "|");
+
+/** 表格行 → 单元格（已反解）；不是表格行返回 null。 */
+export function tableCells(line: string): string[] | null {
+  const t = line.trim();
+  if (!t.startsWith("|") || !t.endsWith("|")) return null;
+  return t
+    .slice(1, -1)
+    .split(/(?<!\\)\|/)
+    .map(unescapeCell);
+}
+
+/* ------------------------------------------------------------------ */
 /* 验收报告                                                             */
 /* ------------------------------------------------------------------ */
 
@@ -227,9 +252,8 @@ export function parseVerifyReport(text: string | null): VerifyReport | null {
   const result = /结果:\s*(.+)/.exec(text)?.[1]?.trim() ?? "UNKNOWN";
   const checks: VerifyCheck[] = [];
   for (const line of text.split("\n")) {
-    if (!line.startsWith("|")) continue;
-    const cells = line.split("|").slice(1, -1).map((c) => c.trim());
-    if (cells.length < 3) continue;
+    const cells = tableCells(line);
+    if (cells === null || cells.length < 3) continue;
     if (cells[0] === "检查项" || /^-+$/.test(cells[0])) continue;
     const pass = cells[1].includes("✅");
     if (!pass && !cells[1].includes("❌")) continue;

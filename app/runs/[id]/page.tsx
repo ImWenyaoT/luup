@@ -12,18 +12,21 @@ import { VerifyTable } from "@/components/VerifyTable";
 import { EmptyState, Kv, Pill } from "@/components/ui";
 import { STATUS_LABEL, STATUS_TONE, fmtDur, fmtTime } from "@/lib/format";
 import { isRunId } from "@/lib/paths";
-import { readArtifact, readRun } from "@/lib/runs";
+import { scanRun } from "@/lib/phase";
+import { readArtifactFrom, readRunFrom } from "@/lib/runs";
 
 export const dynamic = "force-dynamic";
 
 export default async function RunDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!isRunId(id)) notFound();
-  const run = readRun(id);
-  if (!run) notFound();
+  // 目录只扫这一次：详情与下面每个 tab 的工件原文都从同一个 Scan 里取
+  const scan = scanRun(id);
+  if (!scan) notFound();
+  const run = readRunFrom(scan);
 
   const has = (name: string) => run.artifacts[name] === true;
-  const md = (name: string) => readArtifact(id, name) ?? "";
+  const md = (name: string) => readArtifactFrom(scan, name) ?? "";
 
   const h = await headers();
   const base = `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host") ?? "localhost:3000"}`;

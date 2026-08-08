@@ -2,11 +2,13 @@ import Link from "next/link";
 import { RunsTable } from "@/components/RunsTable";
 import { EmptyState, Panel } from "@/components/ui";
 import { activeRun, listRuns } from "@/lib/runs";
+import { readRunsIndex } from "@/lib/runsIndex";
 
 export const dynamic = "force-dynamic";
 
 export default function RunsPage() {
-  const runs = listRuns(500);
+  // 与 GET /api/runs 同一条路径：派生缓存优先，缺失/损坏/过期时退回全量扫盘
+  const runs = readRunsIndex(500) ?? listRuns(500);
   const active = activeRun();
 
   return (
