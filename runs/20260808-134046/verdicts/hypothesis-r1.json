@@ -1,0 +1,11 @@
+{
+  "node": "hypothesis",
+  "round": 1,
+  "verdict": "pass",
+  "checks": [
+    {"criterion": "2_to_3_candidates", "pass": true, "reason": "H1, H2, H3 — three candidates"},
+    {"criterion": "explicit_derivation_chain", "pass": true, "reason": "Each hypothesis has numbered derivation steps citing specific fact cards with reasoning type (归纳/演绎)"},
+    {"criterion": "all_cited_facts_exist_in_evidence", "pass": true, "reason": "H1 cites F1,F3,F4,F8,F9; H2 cites F5,F6,F7; H3 cites F2,F3,F4,F6,F9 — all present in evidence.md"},
+    {"criterion": "no_external_common_sense_premises", "pass": true, "reason": "All key premises grounded in evidence cards; no unattributed external claims"}
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "node": "literature",
+  "round": 1,
+  "verdict": "pass",
+  "checks": [
+    {"check": "fact_cards_ge_8", "pass": true, "reason": "9 cards (F1-F9)"},
+    {"check": "each_card_has_arxiv_id_and_relevance", "pass": true, "reason": "All 9 cards have arXiv id + relevance + facet"},
+    {"check": "ids_in_paper_index", "pass": true, "reason": "All 9 IDs confirmed in paper index (11 total papers saved)"},
+    {"check": "covers_2_plus_facets", "pass": true, "reason": "现状方法(F1,F2,F3,F7,F8,F9), 已知局限(F5,F6), 相邻领域(F4)"}
+  ]
+}

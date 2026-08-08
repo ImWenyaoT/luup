@@ -1,0 +1,13 @@
+{
+  "node": "critique",
+  "round": 1,
+  "verdict": "pass",
+  "checks": [
+    {"criterion": "structured_JSON_with_required_fields", "pass": true, "reason": "assessments[], winner, requiredChanges[] all present; artifact_write validated as CritiqueSchema ok:true"},
+    {"criterion": "each_hypothesis_ge_3_critiques", "pass": true, "reason": "H1:4, H2:4, H3:4 substantive critiques"},
+    {"criterion": "each_hypothesis_ge_1_checkedWith", "pass": true, "reason": "H1: arXiv search pulsar birth rate; H2: arXiv search magnetar formation; H3: arXiv search magneto-rotational instability"},
+    {"criterion": "winner_points_to_real_hypothesis", "pass": true, "reason": "winner=H1, which exists in hypotheses.md"},
+    {"criterion": "requiredChanges_nonempty_and_specific", "pass": true, "reason": "6 specific changes covering quantitative falsifiability, derivation chain, channel distinction, literature citation, two-layer narrative, observational feasibility"},
+    {"criterion": "each_critique_is_substantive", "pass": true, "reason": "All critiques address concrete issues: novelty vs prior art (1406.6794, 2511.06554, 2606.11299), logical errors (category confusion in H2, modality swap in H3), missing quantitative thresholds, sample size limitations"}
+  ]
+}
