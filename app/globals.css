@@ -12,13 +12,18 @@
   --panel: #ffffff;
   --panel-2: #f4f4f2;
   --fg: #18181b;
-  --muted: #71717a;
-  --faint: #a1a1aa;
+  /* 三级灰阶全部按 WCAG AA 4.5:1 定，量的基准是 --panel-2（表头/摘要条那层浅底，
+     比白底更苛刻）。上一版的 #71717a / #a1a1aa 在它上面只有 4.35 / 2.4，
+     11px 的次要信息因此整片不可读——密排仪表不是把字调淡的许可证。 */
+  --muted: #55555e;
+  --faint: #6b6b75;
   --line: #e2e2df;
   --line-strong: #c9c9c4;
-  --accent: #0f766e;
+  /* 信号色要在**自己的 soft 底上**也过 4.5:1 —— accent 字压 accent-soft 底是这套
+     设计的常规构图（选中项、验收横幅、pill），按白底调出来的 #0f766e 在那上面只有 4.2。 */
+  --accent: #0d6a63;
   --accent-soft: #0f766e1a;
-  --danger: #b4453c;
+  --danger: #ab3f36;
   --danger-soft: #b4453c14;
   --grid: rgba(0, 0, 0, 0.035);
   --log-bg: #17171a;
@@ -32,8 +37,8 @@
     --panel: #131416;
     --panel-2: #1a1b1e;
     --fg: #e4e4e7;
-    --muted: #8f8f98;
-    --faint: #6b6b73;
+    --muted: #a8a8b2;
+    --faint: #8f8f99;
     --line: #26272b;
     --line-strong: #3a3b40;
     --accent: #2dd4bf;
@@ -110,6 +115,26 @@
   :focus-visible {
     outline: 1px solid var(--accent);
     outline-offset: 2px;
+  }
+
+  /* 折叠开关：默认 marker 在 display:flex 的 summary 上会消失，验收表那五组因此
+     完全看不出可以点开。统一自绘一个直角三角，flex/块级两种排布都在。 */
+  summary {
+    list-style: none;
+    cursor: pointer;
+  }
+  summary::-webkit-details-marker {
+    display: none;
+  }
+  summary::before {
+    content: "▸";
+    display: inline-block;
+    width: 1em;
+    flex: none;
+    color: var(--muted);
+  }
+  details[open] > summary::before {
+    transform: rotate(90deg);
   }
 }
 

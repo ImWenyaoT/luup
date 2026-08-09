@@ -2,10 +2,14 @@ import { fmtDur, fmtTime } from "@/lib/format";
 import { NODE_BY_KEY } from "@/lib/nodes";
 import type { NodeState, SpineNode } from "@/lib/types";
 
+/**
+ * rejected 说的是「这个工件最终没落盘」，被打回几次由旁边的返工计数讲——
+ * 上一版这里写「被打回」，紧跟着又是「×2 打回」，同一件事说了两遍还断在两个词上。
+ */
 const STATE_TEXT: Record<NodeState, string> = {
   done: "已产出",
   active: "进行中",
-  rejected: "被打回",
+  rejected: "未产出",
   pending: "待执行",
 };
 
@@ -15,7 +19,7 @@ const STATE_TEXT: Record<NodeState, string> = {
  */
 export function Spine({ nodes }: { nodes: SpineNode[] }) {
   return (
-    <ol className="relative">
+    <ol className="relative" aria-label="reasoning spine">
       <div className="spine-rail absolute top-1 bottom-1 left-1" aria-hidden />
       {nodes.map((n) => (
         <li key={n.key} className="relative pb-4 pl-6">
@@ -29,12 +33,16 @@ export function Spine({ nodes }: { nodes: SpineNode[] }) {
               <span className="text-accent">{n.mark}</span>
               <span className="text-[13px]">{n.label}</span>
               <span className="text-[11px] text-faint">{STATE_TEXT[n.state]}</span>
-              {n.rejects > 0 ? <span className="text-[11px] text-danger">×{n.rejects} 打回</span> : null}
+              {n.rejects > 0 ? (
+                <span className="text-[11px] whitespace-nowrap text-danger">打回 {n.rejects} 次</span>
+              ) : null}
             </div>
             <div className="text-[11px] text-faint">{n.artifact}</div>
             <div className="text-[11px] text-muted">
               {fmtTime(n.at)}
-              {n.elapsedSec !== null ? <span className="text-faint"> · +{fmtDur(n.elapsedSec)}</span> : null}
+              {n.elapsedSec !== null && n.elapsedSec > 0 ? (
+                <span className="text-faint"> · +{fmtDur(n.elapsedSec)}</span>
+              ) : null}
             </div>
           </a>
         </li>

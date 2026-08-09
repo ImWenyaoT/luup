@@ -21,7 +21,8 @@ export function Pill({
   return (
     <span
       title={title}
-      className={`inline-flex items-center gap-1 rounded-xs border px-1.5 py-px text-[11px] leading-5 ${TONE_CLASS[tone]}`}
+      // 徽章折行会把「通过验收」断成「通过验／收」——状态标签宁可撑宽一列也不许换行
+      className={`inline-flex items-center gap-1 rounded-xs border px-1.5 py-px text-[11px] leading-5 whitespace-nowrap ${TONE_CLASS[tone]}`}
     >
       {children}
     </span>

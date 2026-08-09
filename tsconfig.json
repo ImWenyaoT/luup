@@ -42,6 +42,8 @@
     "app/**/*.tsx",
     "components/**/*.ts",
     "components/**/*.tsx",
+    "e2e/**/*.ts",
+    "playwright.config.ts",
     "lib/**/*.ts",
     "agent/**/*.ts",
     "scripts/**/*.ts",
