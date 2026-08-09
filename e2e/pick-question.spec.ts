@@ -62,5 +62,6 @@ test.describe("首页选题", () => {
     await expect(page.getByRole("link", { name: new RegExp(RUNS.allPass) }).first()).toBeVisible();
     await expect(page.getByText("curl -s", { exact: false }).first()).toBeVisible();
     await expect(page.getByRole("button", { name: "复制" }).first()).toBeVisible();
+    await expect(page.getByText("工件读取为只读；触发运行会写入工件并产生真实 API 费用")).toBeVisible();
   });
 });

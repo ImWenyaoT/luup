@@ -99,15 +99,17 @@ runs/<ts>/memory/
 
 `terminal` 与 phase 正交，五个凭据任一即真：`FAILED.md` / 报告存在 / `proposal.md` / meta 落了 `finishedAt` 或 `exitCode` / exit.json 落了 `endedAt` 或 `exitCode`。`deliverable` 有且只有 `phase === "verified"`。
 
-**崩溃表**（`scripts/run.ts` 的落盘顺序：question.md → meta.json(startedAt) → eve invoke → invoke-result.json → proposal.md → meta 回写 finishedAt/exitCode → memory 归档 / 索引重建）：
+**崩溃表**（`scripts/run.ts` 的落盘顺序：question.md → meta.json(startedAt) → eve invoke → invoke-result.json → proposal.md → meta 预写 exitCode → 离线验收报告 → meta 回写 finishedAt/最终 exitCode → memory 归档 / 索引重建）：
 
 | 进程死在 | 盘上留下什么 | 终态判定 | 恢复动作 |
 |---|---|---|---|
 | meta.json 写之前 | 只有 `question.md`（或空目录） | unsettled，**非** terminal，续跑认领 null | 整题重跑；起始时间从 run id 解析 |
-| meta 写完、收尾回写之前 | meta 有 `startedAt`，`finishedAt`/`exitCode` 皆 null；工件停在死掉那一刻 | phase 看已落盘的工件（多为 unsettled；`FAILED.md` 或 `proposal.md` 已落则相应为 failed / rendered），terminal 只由工件凭据给出 | 整题重跑——续跑粒度是「题」不是「节点」（`run-batch` 的认领判据 `deliveredQuestionId`）；`memory/library` 的无锁 RMW 可能停在半路，由下次 `arxiv_save` 或 `scripts/rebuild-memory.ts` 自愈 |
-| 收尾回写之后 | meta 有 `finishedAt` + `exitCode` | terminal 必真；phase 由 `FAILED.md` / `proposal.md` / 报告决定 | 不重跑；`deliverable` 且 meta 有题号才算该题已交付 |
+| invoke 尚未结束 | meta 有 `startedAt`，`finishedAt`/`exitCode` 皆 null；工件停在死掉那一刻 | phase 看已落盘工件；没有 proposal 时通常 unsettled | 整题重跑——续跑粒度是「题」不是「节点」 |
+| provisional exitCode 已落、验收报告未落 | meta 有 `exitCode: 0`、`finishedAt: null`，proposal 已渲染 | rendered、terminal，`deliverable=false` | 整题重跑；不能拿 pipeline 成功冒充验收成功 |
+| ALL PASS 报告已落、最终 meta 尚未回写 | proposal + ALL PASS + provisional `exitCode: 0` | verified、terminal、`deliverable=true` | 不重跑；验收结果和退出凭据均已落盘，后续 memory/index 只是可重建派生面 |
+| 最终收尾之后 | meta 有 `finishedAt` + 最终 `exitCode` | terminal 必真；phase 由 `FAILED.md` / `proposal.md` / 报告决定 | 不重跑；`deliverable` 且 meta 有题号才算该题已交付 |
 
-不可消除的不确定区间：**meta 已落 startedAt、收尾尚未回写**。这段里 run 目录既可能是"正在跑"也可能是"已死"，两者从目录本身分不出来——「谁在跑」是进程外事实，由 `runs/.active.json` 单并发锁回答（`lib/lock.ts`），并作为显式入参进 `deriveStatus`。这是 harness 层的诚实非目标，不是待修的 bug。
+不可消除的不确定区间只在 **invoke 仍进行且 provisional exitCode 尚未落盘**。这段里 run 目录既可能是"正在跑"也可能是"已死"，两者从目录本身分不出来——「谁在跑」由 `runs/.active.json` 单并发锁回答，并作为显式入参进 `deriveStatus`。
 
 ## 模型接线（已依 eve 能力图谱定稿）
 

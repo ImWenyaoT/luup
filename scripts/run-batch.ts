@@ -8,7 +8,7 @@
  *
  * 串行原因：百炼端点并发过载阈值低（实测），且 eve invoke 同仓库并发未验证。
  * 每题 = 一次 scripts/run.ts 子进程（run 目录由 run.ts 自建，从 stdout 解析），
- * 跑完立刻用 scripts/verify-proposal.ts 独立验收，汇总写 runs/batch-<ts>.md。
+ * scripts/run.ts 自动完成独立验收；本脚本读取统一 run outcome 后汇总。
  *
  * 续跑判据 = run outcome 的 `deliverable`（proposal 正文已渲染 + 验收 ALL PASS +
  * 没有失败退出码）再加一个题号命中 —— 报告本身不带题号，所以还要 meta.questionId。
@@ -21,7 +21,7 @@ import { join } from "node:path";
 import { REPO_ROOT, RUNS_DIR } from "../lib/paths.ts";
 import { science125Text } from "../lib/questionText.ts";
 import { formatBytes, planPrune, summarize } from "../lib/retention.ts";
-import { deliveredQuestionId, readRunEvidence } from "../lib/runOutcome.ts";
+import { deliveredQuestionId, readRunEvidence, runOutcome } from "../lib/runOutcome.ts";
 import { findQuestion } from "../lib/science125.ts";
 
 /* ------------------------------------------------------------------ */
@@ -174,12 +174,10 @@ async function runQuestion(id: number, lane: Lane, extraEnv: Record<string, stri
     ...extraEnv,
   });
   const runDir = stdout.match(/\[luup\] run dir : (.+)/)?.[1]?.trim() ?? "";
-  let verify: number | null = null;
-  if (runDir && code === 0) {
-    console.log(`\n[batch] 独立验收 ${tag} → ${runDir}\n`);
-    verify = (await runNode(["scripts/verify-proposal.ts", runDir])).code;
-  }
-  const status: Status = code === 0 && verify === 0 ? "done" : "failed";
+  const outcome = runDir ? runOutcome(readRunEvidence(runDir)) : null;
+  const hasReport = Boolean(runDir && existsSync(join(runDir, "verification-report.md")));
+  const verify = hasReport ? (outcome?.deliverable ? 0 : 1) : null;
+  const status: Status = code === 0 && outcome?.deliverable === true ? "done" : "failed";
   // 验收已经结束 = 这一题的工件都落到了 runs/<ts>/，流数据自此无人消费
   pruneNow(tag);
   return { id, domain: q.domain, runDir, status, pipeline: code, verify, lane };

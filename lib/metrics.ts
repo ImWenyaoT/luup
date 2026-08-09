@@ -363,7 +363,14 @@ export type RunMetrics = {
 };
 
 /** score.json 里择优与报告用得上的部分。字段语义见 lib/scoring.ts 的 ScoreFile。 */
-export type RunScore = { weighted: number; max: number; percent: number; veto: boolean; rubricVersion: string };
+export type RunScore = {
+  weighted: number;
+  max: number;
+  percent: number;
+  veto: boolean;
+  rubricVersion: string;
+  judgeModel: string;
+};
 
 const readTextOrNull = (path: string): string | null => {
   try {
@@ -427,6 +434,7 @@ function readScore(runDir: string): RunScore | null {
     percent: typeof s.percent === "number" ? s.percent : 0,
     veto,
     rubricVersion: typeof s.rubricVersion === "string" ? s.rubricVersion : "(未标注)",
+    judgeModel: typeof s.judgeModel === "string" ? s.judgeModel : "(未标注)",
   };
 }
 

@@ -26,11 +26,11 @@ import { ProposalSchema, type Proposal } from "#lib/contracts.ts";
 import { resolveQuestionId } from "#lib/runContext.ts";
 import { type Held, acquire, parentHoldsLock } from "../lib/lock.ts";
 import { NODES } from "../lib/nodes.ts";
+import { finalizeRun, verifyOffline } from "../lib/postflight.ts";
 import { science125Text } from "../lib/questionText.ts";
 import { findQuestion } from "../lib/science125.ts";
 import { REPO_ROOT, RUNS_DIR } from "../lib/paths.ts";
 import { utcStamp } from "../lib/runId.ts";
-import { reachedProposal, readRunEvidence, runOutcome } from "../lib/runOutcome.ts";
 import { rebuildRunsIndex } from "../lib/runsIndex.ts";
 
 const DEFAULT_QUESTION_ID = 61; // 默认演示题：Science-125 #61（How are pulsars formed?）
@@ -381,19 +381,26 @@ if (existsSync(verdictsDir)) {
 const papersDir = join(runDir, "memory", "papers");
 if (existsSync(papersDir)) console.log(`  ✔ memory/papers/  (${readdirSync(papersDir).length} 篇)`);
 
-console.log(`\n[luup] 确定性验收：node scripts/verify-proposal.ts ${runDir}`);
+console.log(`\n[luup] 自动执行确定性验收：node scripts/verify-proposal.ts ${runDir}`);
+
+/*
+ * 先落一个 provisional exitCode，再进入可能持续较久的离线验收。这样即使进程在
+ * verification-report.md 写成 ALL PASS 后、最终 meta 回写前崩溃，盘上也已有明确的
+ * 成功收尾凭据；若验收中途崩溃则没有 ALL PASS，仍不可交付、batch 会重跑。
+ * finishedAt 只在 postflight 真正结束后填写，墙钟时间不提前冒充完成。
+ */
+meta.exitCode = code === 0 ? 0 : code === EXIT_PAUSED ? EXIT_PAUSED : 1;
+writeMeta();
 
 /**
  * 退出码透传：paused 原样带出 3（run-batch 会打印 exit 3），其余非成功一律 1。
  *
- * 「跑完了没有」不在这里手写：此刻 meta.exitCode 还没回写，run 目录就是最完整的证据，
- * 交给同一个 owner 判（lib/runOutcome.ts）。reachedProposal = proposal 正文已渲染
- * 且没有被 FAILED.md / 退出码否掉 —— master 写了 FAILED.md 却留着早轮 proposal 的
- * run 不再冒充成功（收编前 `rendered` 只看 proposal.json，会给出 exit 0）。
- * 验收过没过是另一件事（deliverable），由 scripts/verify-proposal.ts 单独判。
+ * 「跑完了没有」与「验收过没过」都交给 postflight：它先按 runOutcome 判断是否走到
+ * proposal，再自动运行独立验收。只有报告 ALL PASS 的 run 才退出 0；master 写了
+ * FAILED.md、离线验收失败或验收器自身异常都不会冒充成功。
  */
-const outcome = runOutcome(readRunEvidence(runDir));
-const exitCode = code === 0 && reachedProposal(outcome) ? 0 : code === EXIT_PAUSED ? EXIT_PAUSED : 1;
+const postflight = await finalizeRun({ runDir, pipelineExitCode: code, verify: verifyOffline });
+const exitCode = postflight.exitCode;
 meta.finishedAt = new Date().toISOString();
 meta.exitCode = exitCode;
 writeMeta();

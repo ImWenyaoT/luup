@@ -293,6 +293,41 @@ const CASES: Case[] = [
     // 现在两边都走 deliverable，一致判「没交付」。这正是这次收敛要消掉的分叉。
     legacy: "changed",
   },
+  {
+    id: "20200111-000000",
+    note: "provisional 收尾：exitCode 0 已落，离线验收尚未写报告",
+    files: {
+      "question.md": "Q\n",
+      "proposal.json": "{}\n",
+      "proposal.md": "# p\n",
+      "meta.json": meta({ questionId: 14, startedAt: iso(NOW - HOUR), finishedAt: null, exitCode: 0 }),
+    },
+    phase: "rendered",
+    terminal: true,
+    deliverable: false,
+    status: "completed",
+    delivered: null,
+    reached: true,
+    legacy: "same",
+  },
+  {
+    id: "20200112-000000",
+    note: "provisional 收尾：ALL PASS 已落，最终 finishedAt 尚未回写",
+    files: {
+      "question.md": "Q\n",
+      "proposal.json": "{}\n",
+      "proposal.md": "# p\n",
+      "verification-report.md": ALL_PASS_REPORT,
+      "meta.json": meta({ questionId: 15, startedAt: iso(NOW - HOUR), finishedAt: null, exitCode: 0 }),
+    },
+    phase: "verified",
+    terminal: true,
+    deliverable: true,
+    status: "passed",
+    delivered: 15,
+    reached: true,
+    legacy: "same",
+  },
 ];
 
 const root = mkdtempSync(join(tmpdir(), "luup-outcome-"));
@@ -503,21 +538,24 @@ for (const id of realIds) {
 }
 
 /* ------------------------------------------------------------------ */
-/* 7. 崩溃表三形态（docs/design/architecture.md「run 终态判定」）           */
+/* 7. 崩溃表五形态（docs/design/architecture.md「run 终态判定」）           */
 /* ------------------------------------------------------------------ */
 
 /**
- * 文档那张崩溃表的可执行版本。三个崩溃点取自 `scripts/run.ts` 的落盘顺序：
- * ① meta.json 写之前 ② meta 写完、收尾回写之前 ③ 收尾回写之后。
+ * 文档那张崩溃表的可执行版本。五个崩溃点取自 `scripts/run.ts` 的落盘顺序：
+ * ① meta.json 写之前 ② invoke 尚未结束 ③ provisional exitCode 已落、报告未落
+ * ④ ALL PASS 已落、finishedAt 未落 ⑤ 最终收尾之后。
  * 表里每一格（phase / terminal / 续跑认领）在这里各有一条断言 —— 文档改了这里会挂。
  */
-console.log("\n[11] 崩溃表 —— 进程死在三个点上各是什么终态判定");
+console.log("\n[11] 崩溃表 —— 进程死在五个点上各是什么终态判定");
 const caseById = (id: string) => CASES.find((c) => c.id === id)!;
 
 for (const [point, id, expect] of [
   ["① meta.json 写之前（只有 question.md）", "20200108-000000", "unsettled"],
-  ["② meta 写完、收尾回写之前（finishedAt/exitCode 皆 null）", "20200103-000000", "unsettled"],
-  ["③ 收尾回写之后（meta.exitCode 已落盘）", "20200101-000000", "verified"],
+  ["② invoke 尚未结束（finishedAt/exitCode 皆 null）", "20200103-000000", "unsettled"],
+  ["③ provisional exitCode 已落、报告未落", "20200111-000000", "rendered"],
+  ["④ ALL PASS 已落、finishedAt 未落", "20200112-000000", "verified"],
+  ["⑤ 最终收尾之后", "20200101-000000", "verified"],
 ] as const) {
   const c = caseById(id);
   const o = runOutcome(evidenceOf(c));
@@ -525,12 +563,12 @@ for (const [point, id, expect] of [
   eq(
     `崩溃点 ${point} → terminal`,
     o.terminal,
-    id === "20200101-000000",
+    id !== "20200108-000000" && id !== "20200103-000000",
   );
   eq(
     `崩溃点 ${point} → 续跑认领（null = 这题要重跑）`,
     deliveredQuestionId(evidenceOf(c)),
-    id === "20200101-000000" ? 7 : null,
+    id === "20200112-000000" ? 15 : id === "20200101-000000" ? 7 : null,
   );
 }
 // ②的补注：终结判定不等 run.ts 收尾——proposal 正文或验收报告先落盘就已经 terminal
