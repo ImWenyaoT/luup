@@ -18,10 +18,21 @@
  *     verify_references 的 B1 当场失效 —— 这是引用真实性防线的地基。
  *  3. **fail-closed 结构化**：`critique.json`、`proposal.json` 与 `verdicts/*.json` 写入前
  *     按契约校验，不合法拒写（草稿另存 `<name>.rejected.json` 保留失败证据链）。
+ *  4. **返工预算**：`verdicts/*.json` 过了契约校验还要过 `lib/rework.ts` 的准入 ——
+ *     第 4 轮直接拒写。轮数上限从此是代码的事，不是 master 在提示词里自己数的事
+ *     （eval#1 的事故正是它数错了）。
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { NODE_BY_KEY } from "../../lib/nodes.ts";
+import {
+  type NodeBudget,
+  type ReworkCap,
+  type ReworkNode,
+  admitVerdict,
+  readVerdictEvidence,
+  reworkBudget,
+} from "../../lib/rework.ts";
 import { CritiqueSchema, ProposalSchema, VerdictSchema } from "#lib/contracts.ts";
 import { resolveRunDir } from "./runContext.ts";
 
@@ -34,6 +45,11 @@ export class ArtifactPathError extends Error {
 
 /** 只有 paperStore 能写的区域（见文件头约束 2）。比较用小写，见 resolveArtifactPath。 */
 const PROTECTED_KEYS = [`memory${sep}papers`, `memory${sep}index.md`].map((p) => p.toLowerCase());
+
+const VERDICTS_DIR = "verdicts";
+
+/** run 目录里的 verdict 工件（`verdicts/<node>-r<round>.json`）——契约与返工预算都认它。 */
+const isVerdictArtifact = (rel: string): boolean => rel.startsWith(`${VERDICTS_DIR}${sep}`) && rel.endsWith(".json");
 
 /**
  * 写入即按契约校验的工件。工件名本身仍取自 `lib/nodes.ts` 的注册表（那是单一事实源，
@@ -48,11 +64,7 @@ const SCHEMA_GUARDS: Array<{
 }> = [
   { test: (rel) => rel === NODE_BY_KEY.proposal.artifact, name: "ProposalSchema", schema: ProposalSchema },
   { test: (rel) => rel === NODE_BY_KEY.critique.artifact, name: "CritiqueSchema", schema: CritiqueSchema },
-  {
-    test: (rel) => rel.startsWith(`verdicts${sep}`) && rel.endsWith(".json"),
-    name: "VerdictSchema",
-    schema: VerdictSchema,
-  },
+  { test: isVerdictArtifact, name: "VerdictSchema", schema: VerdictSchema },
 ];
 
 /**
@@ -102,12 +114,22 @@ export type ArtifactWriteResult = {
   issues: string[];
   /** ok=false 时草稿的留存路径 */
   draftPath?: string;
+  /** verdict 写入才有：该节点的返工余额（写入后的实况）。 */
+  budget?: NodeBudget;
+  /** 被返工预算拒写时，管事的那条上限。schema 校验失败不设它。 */
+  deniedBy?: ReworkCap;
 };
 
-/** 写一个工件。契约工件不合法时**拒写**，草稿另存 `.rejected.json`。 */
+/**
+ * 写一个工件。契约工件不合法时**拒写**，草稿另存 `.rejected.json`；
+ * verdict 还要再过一道返工预算（超轮次拒写，且**不留草稿** —— 草稿会被算成格式重试）。
+ */
 export function writeArtifact(relPath: string, content: string, runDir = resolveRunDir()): ArtifactWriteResult {
   const { abs, rel } = resolveArtifactPath(relPath, runDir);
   const guard = SCHEMA_GUARDS.find((g) => g.test(rel));
+  const verdictsDir = join(resolve(runDir), VERDICTS_DIR);
+  /** verdict 写入时由契约校验后的内容给出（`node` 是 schema 保过的枚举）。 */
+  let verdictNode: ReworkNode | null = null;
 
   if (guard) {
     let parsed: unknown;
@@ -142,6 +164,27 @@ export function writeArtifact(relPath: string, content: string, runDir = resolve
         draftPath: `${rel}.rejected.json`,
       };
     }
+    if (isVerdictArtifact(rel)) {
+      // 契约过了才轮到预算：格式重试留下的 `.rejected.json` 因此永远不占语义轮
+      verdictNode = (result.data as { node: ReworkNode }).node;
+      const admission = admitVerdict(readVerdictEvidence(verdictsDir), {
+        node: verdictNode,
+        file: rel.slice(`${VERDICTS_DIR}${sep}`.length),
+      });
+      if (!admission.ok) {
+        // 不留草稿：草稿会被算作格式重试，一次拒写不该顺手把另一本账也搅浑
+        return {
+          path: rel,
+          bytes: 0,
+          created: false,
+          validatedAs: guard.name,
+          ok: false,
+          issues: [admission.error],
+          budget: admission.budget,
+          deniedBy: admission.governingCap,
+        };
+      }
+    }
   } else if (rel.endsWith(".json")) {
     try {
       JSON.parse(content);
@@ -167,6 +210,8 @@ export function writeArtifact(relPath: string, content: string, runDir = resolve
     validatedAs: guard?.name ?? null,
     ok: true,
     issues: [],
+    // 落盘后重算一次：master 拿到的是「这一轮已经记上了」之后的余额
+    ...(verdictNode === null ? {} : { budget: reworkBudget(readVerdictEvidence(verdictsDir))[verdictNode] }),
   };
 }
 

@@ -1,13 +1,12 @@
 # 架构 backlog（2026-08-09 架构轮收官存档）
 
-架构轮已落地：候选 0（critique tab bug 热修）、B（工件注册表 lib/nodes.ts）、A（run outcome owner lib/runOutcome.ts + runId.ts）、D（单并发锁 seam 双 adapter）、compaction、simplify pass（四镜片 30 修）。以下为**有意不做**与**推迟**项，重提前先读存档理由。
+架构轮已落地：候选 0（critique tab bug 热修）、B（工件注册表 lib/nodes.ts）、A（run outcome owner lib/runOutcome.ts + runId.ts）、D（单并发锁 seam 双 adapter）、compaction、simplify pass（四镜片 30 修）。2026-08-09 采纳轮补上：返工预算 owner `lib/rework.ts`（openclaw child-admission 模式，执行点在 artifact_write）、F（questionId 收编进 runContext + model.ts 走 resolveRunDir）、工具 replay 声明、run 终态状态表/崩溃表落档。以下为**有意不做**与**推迟**项，重提前先读存档理由。
 
 ## 推迟（触发条件明确）
 
 | 项 | 内容 | 触发时机 |
 |---|------|---------|
 | E | 进程间契约成对化（runHandoff emit+parse）+ run.ts 收尾抽 finalizeRun + exit.json 并入 RunMeta | 下次改 run.ts 收尾编排或 stdout 协议时一并做 |
-| F | questionId 收编进 runContext（memory_note 不再收模型入参）+ model.ts 改走 resolveRunDir（usage.jsonl 在 eval 路径缺失的根因） | 提交期整理 D1 凭证面时 |
 | C 残余 | Scan 持内容惰性 memo（E2 的 reportOf 已消掉最大重复读，剩余收益小） | 列表页出现真实延迟时 |
 | G 残余 | B4 判据纯函数化 (claimed,truth)→RefCheck；Verdict 读写端命名分裂（VerdictView） | 下次改验收器时 |
 | F7 | proposal.md 字面量提为 nodes.ts 常量（5 处） | 下次要改这个文件名之前 |

@@ -22,6 +22,7 @@
  */
 import { createOpenAI } from "@ai-sdk/openai";
 import type { LanguageModel } from "ai";
+import { resolveRunDir } from "./runContext.ts";
 
 /**
  * Context window for the qwen3.x `-plus` / `-max` line. Bailian does not expose
@@ -98,12 +99,16 @@ function createCompatFetch(thinking: boolean): typeof globalThis.fetch {
 
 /**
  * criteria E3/D1：token 用量落盘凭证。从响应（SSE 或 JSON）里取最后一个 `"usage":{...}`
- * 对象，append 到 $LUUP_RUN_DIR/usage.jsonl。失败静默——用量记录绝不能影响主链路。
+ * 对象，append 到 run 目录的 `usage.jsonl`。失败静默——用量记录绝不能影响主链路。
+ *
+ * run 目录走 `runContext.resolveRunDir()`，**不自己读 `process.env.LUUP_RUN_DIR`**：
+ * 上一版是全仓唯一一个绕过 runContext 的读者，于是没设该环境变量的路径（eval 直调）
+ * 一行用量都不落 —— D1 凭证面缺失的根因。resolveRunDir 的回退目录是进程内一次性的，
+ * 同一进程的所有调用因此仍然汇到同一份 usage.jsonl。
  */
 async function teeUsage(clone: Response, thinking: boolean): Promise<void> {
   try {
-    const runDir = process.env.LUUP_RUN_DIR;
-    if (!runDir) return;
+    const runDir = resolveRunDir();
     const text = await clone.text();
     const key = '"usage":';
     const at = text.lastIndexOf(key);

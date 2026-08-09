@@ -1,5 +1,7 @@
 /**
  * 读本次 run 的 handoff 工件。与 artifact_write 共用同一套路径 jail。
+ *
+ * replay: "safe" —— 只读，且路径 jail 之外什么都碰不到。
  */
 import { defineTool } from "eve/tools";
 import { z } from "zod";
