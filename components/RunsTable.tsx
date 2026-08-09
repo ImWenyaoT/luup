@@ -19,12 +19,13 @@ const COLS: { key: Key | null; label: string; className?: string }[] = [
   { key: "durationSec", label: "耗时" },
 ];
 
-const FILTERS: { id: string; label: string; match: (s: RunStatus) => boolean }[] = [
-  { id: "all", label: "全部", match: () => true },
-  { id: "passed", label: "通过", match: (s) => s === "passed" },
-  { id: "failed", label: "失败", match: (s) => s === "failed" },
-  { id: "stale", label: "中断", match: (s) => s === "stale" },
-];
+/**
+ * 筛选项从 STATUS_LABEL 派生，不再手抄一份短标签：上一版的 chip 写「通过」而同一行的
+ * 徽章写「通过验收」，两个词指同一件事；而且四个 chip 里没有「已完成」，
+ * 计数加起来对不上总数——看着就像少了两个 run。
+ * 只画有 run 的档，于是「各档之和 = 全部」这件事一眼可验。
+ */
+const STATUSES: RunStatus[] = ["running", "passed", "completed", "failed", "stale"];
 
 const cmp = (a: unknown, b: unknown) => {
   if (a === b) return 0;
@@ -36,12 +37,20 @@ const cmp = (a: unknown, b: unknown) => {
 /** 排序与筛选都在前端：数据量是"仓库里跑过多少 run"，翻不了天。 */
 export function RunsTable({ runs }: { runs: RunSummary[] }) {
   const [sort, setSort] = useState<{ key: Key; desc: boolean }>({ key: "id", desc: true });
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState<RunStatus | "all">("all");
+
+  const chips = useMemo((): { id: RunStatus | "all"; label: string; count: number }[] => {
+    const byStatus = STATUSES.map((s) => ({
+      id: s,
+      label: STATUS_LABEL[s],
+      count: runs.filter((r) => r.status === s).length,
+    })).filter((c) => c.count > 0);
+    return [{ id: "all", label: "全部", count: runs.length }, ...byStatus];
+  }, [runs]);
 
   const rows = useMemo(() => {
-    const f = FILTERS.find((x) => x.id === filter) ?? FILTERS[0];
     return runs
-      .filter((r) => f.match(r.status))
+      .filter((r) => filter === "all" || r.status === filter)
       .slice()
       .sort((a, b) => (sort.desc ? -1 : 1) * cmp(a[sort.key], b[sort.key]));
   }, [runs, sort, filter]);
@@ -49,18 +58,18 @@ export function RunsTable({ runs }: { runs: RunSummary[] }) {
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-1">
-        {FILTERS.map((f) => (
+        {chips.map((c) => (
           <button
-            key={f.id}
+            key={c.id}
             type="button"
-            onClick={() => setFilter(f.id)}
-            aria-pressed={filter === f.id}
-            className={`rounded-xs border px-2 py-px text-[11px] ${
-              filter === f.id ? "border-accent/60 bg-accent-soft text-accent" : "border-line text-muted hover:text-fg"
+            onClick={() => setFilter(c.id)}
+            aria-pressed={filter === c.id}
+            className={`rounded-xs border px-2 py-px text-[11px] whitespace-nowrap ${
+              filter === c.id ? "border-accent/60 bg-accent-soft text-accent" : "border-line text-muted hover:text-fg"
             }`}
           >
-            {f.label}
-            <span className="ml-1 text-faint">{runs.filter((r) => f.match(r.status)).length}</span>
+            {c.label}
+            <span className="ml-1 text-faint">{c.count}</span>
           </button>
         ))}
         <span className="ml-auto text-[11px] text-faint">{rows.length} 行</span>
@@ -75,7 +84,10 @@ export function RunsTable({ runs }: { runs: RunSummary[] }) {
               <tr className="bg-panel-2 text-muted">
                 <th className="border-b border-line px-2 py-1 text-left font-normal">状态</th>
                 {COLS.map((c) => (
-                  <th key={c.label} className="border-b border-line px-2 py-1 text-left font-normal">
+                  <th
+                    key={c.label}
+                    className="border-b border-line px-2 py-1 text-left font-normal whitespace-nowrap"
+                  >
                     {c.key ? (
                       <button
                         type="button"
@@ -120,7 +132,7 @@ export function RunsTable({ runs }: { runs: RunSummary[] }) {
                     />
                   </td>
                   <td className="border-b border-line px-2 py-1">{r.refs ?? "—"}</td>
-                  <td className="border-b border-line px-2 py-1">
+                  <td className="border-b border-line px-2 py-1 whitespace-nowrap">
                     {r.verify === null ? (
                       <span className="text-faint">—</span>
                     ) : (

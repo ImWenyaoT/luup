@@ -56,6 +56,7 @@ export function Picker({ data, activeRunId }: { data: Science125 | null; activeR
                 key={d.domain}
                 type="button"
                 onClick={() => setDomain(d.domain)}
+                aria-pressed={d.domain === domain}
                 className={`flex w-full items-center justify-between gap-2 px-2 py-1 text-left text-[12px] ${
                   d.domain === domain ? "bg-accent-soft text-accent" : "text-muted hover:text-fg"
                 }`}
@@ -65,7 +66,7 @@ export function Picker({ data, activeRunId }: { data: Science125 | null; activeR
               </button>
             ))}
           </nav>
-          <ul className="max-h-72 overflow-y-auto bg-panel">
+          <ul className="max-h-72 overflow-y-auto bg-panel" aria-label="题目">
             {group?.questions.map((q) => (
               <li key={q.id}>
                 <button
@@ -87,7 +88,7 @@ export function Picker({ data, activeRunId }: { data: Science125 | null; activeR
           </ul>
         </div>
       ) : (
-        <EmptyState title="题库不可读" hint="fixtures/science125.json 解析失败 · 自由输入仍可用" />
+        <EmptyState title="题库不可读" hint="lib/science125.json 解析失败 · 自由输入仍可用" />
       )}
 
       <Field label="自由输入（与选题互斥 · ≤2000 字）">

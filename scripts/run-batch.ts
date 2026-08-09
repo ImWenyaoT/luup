@@ -81,7 +81,7 @@ if (ids.length === 0 || ids.some((i) => !Number.isInteger(i) || i < 1 || i > 125
 function question(id: number): { id: number; domain: string; question: string } {
   const q = findQuestion(id);
   if (!q) {
-    console.error(`fixtures/science125.json 里没有第 ${id} 题`);
+    console.error(`lib/science125.json 里没有第 ${id} 题`);
     process.exit(2);
   }
   return q;

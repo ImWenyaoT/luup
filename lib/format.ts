@@ -13,8 +13,15 @@ export function fmtTime(iso: string | null): string {
   return `${p2(d.getUTCMonth() + 1)}-${p2(d.getUTCDate())} ${p2(d.getUTCHours())}:${p2(d.getUTCMinutes())}:${p2(d.getUTCSeconds())}Z`;
 }
 
+/**
+ * 0 秒当「不知道」，不当 0。
+ *
+ * 一次 run 跑十几到二十分钟，一个节点也不可能零耗时——`0` 只出现在起止时间被压成
+ * 同一刻的地方（backfill 出来的 meta.json、checkout 之后统一的 mtime）。把它渲染成
+ * 「0s」就是拿一个没测到的量冒充一个测到的量，而这台仪表的全部说服力就在于不这么干。
+ */
 export function fmtDur(sec: number | null): string {
-  if (sec === null || sec < 0) return "—";
+  if (sec === null || sec <= 0) return "—";
   if (sec < 60) return `${sec}s`;
   const m = Math.floor(sec / 60);
   if (m < 60) return `${m}m ${p2(sec % 60)}s`;

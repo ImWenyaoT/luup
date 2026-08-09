@@ -148,7 +148,8 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
           <Link href="/runs" className="text-[12px] text-muted hover:text-accent">
             ← 历史
           </Link>
-          <span className="text-[15px]">{id}</span>
+          {/* 这一页讲的是这一次 run，标题就该是它的 id——论文标题是产物，降一级 */}
+          <h1 className="text-[15px]">{id}</h1>
           <Pill tone={STATUS_TONE[run.status]}>{STATUS_LABEL[run.status]}</Pill>
           {run.domain ? <Pill>{run.domain}</Pill> : null}
           {run.science125Id ? <Pill title="Science-125 题号">#{run.science125Id}</Pill> : null}
@@ -165,7 +166,7 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
         </div>
 
         {run.proposal ? (
-          <h1 className="prose-body max-w-4xl text-[15px] leading-snug">{run.proposal.paperTitle}</h1>
+          <h2 className="prose-body max-w-4xl text-[15px] leading-snug">{run.proposal.paperTitle}</h2>
         ) : null}
 
         <details className="border border-line bg-panel">

@@ -16,6 +16,8 @@
     "start:eve": "eve start --host 127.0.0.1 --port 4274",
     "typecheck": "tsgo",
     "validate": "pnpm typecheck && npx eve info",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
     "run:pipeline": "node scripts/run.ts",
     "selftest:literature": "node scripts/selftest-literature.ts",
     "selftest:lock": "node scripts/selftest-lock.ts",
@@ -36,6 +38,8 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "4.3.3",
     "@types/node": "^26.1.2",
     "@types/react": "^19.2.18",

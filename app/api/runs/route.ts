@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
       return fail(400, "bad_science125_id", "science125Id 必须是 1..125 的整数");
     }
     const q = findQuestion(id);
-    if (!q) return fail(404, "question_not_found", `fixtures/science125.json 里没有第 ${id} 题`);
+    if (!q) return fail(404, "question_not_found", `lib/science125.json 里没有第 ${id} 题`);
     text = science125Text(q);
     questionId = id;
   } else {
