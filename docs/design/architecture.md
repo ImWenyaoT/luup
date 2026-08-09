@@ -88,7 +88,7 @@ runs/<ts>/memory/
 
 ## 问题源（官网维度 A）
 
-输入题库 = 《Science》125 前沿科学问题（fixtures/science125.json，权威来源抓取）。E2E 默认用例从中选天文类一题；批量 runner 支持按题号列表串行出多份结果（提交期跑全量 125）。
+输入题库 = 《Science》125 前沿科学问题（lib/science125.json，权威来源抓取）。E2E 默认用例从中选天文类一题；批量 runner 支持按题号列表串行出多份结果（提交期跑全量 125）。
 
 ## 存储裁决（2026-08-08，依 loopx/hermes/steve 三方取证）
 

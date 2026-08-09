@@ -42,7 +42,7 @@
 
 ## E. 可复现性（对应评分：应用潜力 30 之代码可复现 10）
 
-- E0 问题源 = 官网维度 A 指定的《Science》125 前沿科学问题：fixtures/science125.json（权威来源抓取，恰 125 条）；pipeline 按题号取题，也接受自由问题输入。
+- E0 问题源 = 官网维度 A 指定的《Science》125 前沿科学问题：lib/science125.json（权威来源抓取，恰 125 条）；pipeline 按题号取题，也接受自由问题输入。
 - E1 单命令跑通 E2E：输入一个科学问题（默认取自 Science-125）→ 落盘完整《科学假设与研究计划》(JSON + Markdown) 于 runs/<ts>/。
 - E1b 批量能力：批量 runner 可按题号列表串行跑多题（MVP 验证 ≥2 题抽样；全量 125 题为提交期动作，非 MVP 门槛，预算由用户拍板）。
 - E2 `pnpm typecheck` 通过。

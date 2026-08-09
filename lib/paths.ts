@@ -13,13 +13,13 @@ import { isRunId } from "./runId.ts";
  *     启动都指向同一个仓库根。
  *  3. `process.cwd()`。打包器（next build / eve build）会把本文件重写进
  *     `.next/` 或 `.eve/`，届时 ② 指向产物目录而不是仓库；用「上一级有没有
- *     fixtures/science125.json」来判别这件事，而不是猜运行环境。
+ *     agent/instructions.md」来判别这件事，而不是猜运行环境。
  *     next dev/build/start 与 eve 的 cwd 都是仓库根，退到 ③ 是对的。
  */
 function detectRepoRoot(): string {
   try {
     const fromModule = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-    if (existsSync(join(fromModule, "fixtures", "science125.json"))) return fromModule;
+    if (existsSync(join(fromModule, "agent", "instructions.md"))) return fromModule;
   } catch {
     /* import.meta.url 不可用的打包形态：退到 cwd */
   }
@@ -32,7 +32,6 @@ function detectRepoRoot(): string {
 export const REPO_ROOT = process.env.LUUP_REPO_ROOT ?? detectRepoRoot();
 export const RUNS_DIR = join(REPO_ROOT, "runs");
 /** runs/ 之外唯一的读点，硬编码，不接受参数。 */
-export const SCIENCE125_FILE = join(REPO_ROOT, "fixtures", "science125.json");
 export const LOCK_FILE = join(RUNS_DIR, ".active.json");
 /** 派生缓存，不是真相：删掉它一切照常，只是 /api/runs 退回全量扫盘。 */
 export const RUNS_INDEX_FILE = join(RUNS_DIR, "index.json");

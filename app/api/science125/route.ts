@@ -5,6 +5,6 @@ export const dynamic = "force-dynamic";
 
 export function GET() {
   const data = readScience125();
-  if (!data) return fail(500, "fixture_unreadable", "fixtures/science125.json 读取或解析失败");
+  if (!data) return fail(500, "fixture_unreadable", "science125 题库解析失败");
   return json(data);
 }

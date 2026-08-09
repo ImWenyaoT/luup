@@ -59,7 +59,7 @@ pnpm start         # next start，把 /eve/v1/* 代理到 4274
 | `/`、`/runs`、`/runs/<id>` | 仪表台 / 历史 / 单 run（SSR 读 `runs/`） |
 | `GET /api/runs`、`POST /api/runs` | 列表；触发 pipeline（同源 + `application/json` 双重 CSRF 门） |
 | `GET /api/runs/<id>[?view=status\|artifact=<f>]` | run 详情 / 状态视图 / 工件正文（`text/plain`，越界即 400） |
-| `GET /api/science125` | `fixtures/science125.json`（125 题） |
+| `GET /api/science125` | `lib/science125.json`（125 题） |
 | `/eve/v1/*` | eve channel，由 `withEve()` 挂载 |
 
 ## 运行产物（runs/<ts>/）

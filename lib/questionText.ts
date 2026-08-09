@@ -14,7 +14,7 @@ const TASK_LINE =
 /** Science-125 选题：来源行带题号与学科，SOURCE_LINE 从这一行反解。 */
 export function science125Text(q: { id: number; domain: string; question: string }): string {
   return [
-    `来源：《Science》125 前沿科学问题（fixtures/science125.json）第 ${q.id} 题，${q.domain}。`,
+    `来源：《Science》125 前沿科学问题（Science-125 题库）第 ${q.id} 题，${q.domain}。`,
     "",
     `问题：${q.question}`,
     "",

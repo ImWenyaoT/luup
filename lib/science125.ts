@@ -1,5 +1,4 @@
-import { readFileSync } from "node:fs";
-import { SCIENCE125_FILE } from "./paths.ts";
+import bank from "./science125.json" with { type: "json" };
 import type { Science125 } from "./types.ts";
 
 type Raw = {
@@ -9,16 +8,11 @@ type Raw = {
 };
 
 /**
- * fixtures/science125.json 是 runs/ 之外唯一的读点，路径硬编码、不接受参数。
+ * 题库数据（lib/science125.json）住在本模块旁边，构建期静态打包，无运行时 fs 读。
  * 按 domain 分组保持文件里的首次出现顺序（题号本身就是按学科聚簇的）。
  */
 export function readScience125(): Science125 | null {
-  let raw: Raw;
-  try {
-    raw = JSON.parse(readFileSync(SCIENCE125_FILE, "utf8")) as Raw;
-  } catch {
-    return null;
-  }
+  const raw = bank as Raw;
   const questions = raw.questions;
   if (!Array.isArray(questions) || questions.length === 0) return null;
 
@@ -47,7 +41,7 @@ export function readScience125(): Science125 | null {
 
 export function findQuestion(id: number): { id: number; domain: string; question: string } | null {
   try {
-    const raw = JSON.parse(readFileSync(SCIENCE125_FILE, "utf8")) as Raw;
+    const raw = bank as Raw;
     return raw.questions?.find((q) => q.id === id) ?? null;
   } catch {
     return null;
