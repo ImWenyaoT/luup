@@ -171,21 +171,31 @@ function holdLock(): Held | null {
 /* 触发 eve                                                             */
 /* ------------------------------------------------------------------ */
 
+/**
+ * master 的开场 message。**顺序是判据，不是排版**：稳定段在前、每 run 变的段在后。
+ *
+ * 前缀缓存按 token 前缀命中，第一个不同的 token 之后全部作废（docs/design/architecture.md
+ * 「KV cache 经营」）。题目、题号、run 目录三样每 run 都变；执行规格三行 125 次 run 一字不改。
+ * 把变的放在不变的前面，等于把那三行永远排除在可复用前缀之外——**改动顺序不改动语义，
+ * 但反过来写就白扔一段稳定前缀**。往这里加内容时照此归位：常量进上半段，每 run 变的进下半段。
+ */
 function buildPrompt(question: string, runDir: string, questionId: number | null): string {
   return [
+    /* ---- 稳定段：125 次 run 逐字相同，与 instructions 一起构成可复用前缀 ---- */
     "运行一次完整的科研假设流水线。",
-    "",
-    "科学问题：",
-    question,
-    "",
-    // 题号只是知会：memory_note 的定位键取自 LUUP_QUESTION_ID（agent/lib/runContext.ts），不经模型。
-    ...(questionId === null
-      ? ["本次运行没有 Science-125 题号（直接手跑）：memory_note 只能用 target=\"lessons\"。", ""]
-      : [`Science-125 题号：Q${questionId}（memory_note 写题页时由运行环境自动定位，你不必也不能传题号）。`, ""]),
-    `本次 run 目录：${runDir}（已建好；artifact_write / artifact_read 的路径一律相对它）。`,
     "按 instructions 里的 DAG 与循环控制硬规格执行：literature → hypothesis → critique → proposal，",
     "逐节点认证并落盘 verdicts/，最后必须跑 verify_references 并拿到 ok:true 才算成功；",
     "否则写 FAILED.md 如实报失败。",
+    "",
+    /* ---- 易变段：每 run 都不同，一律后置 ---- */
+    // 题号只是知会：memory_note 的定位键取自 LUUP_QUESTION_ID（agent/lib/runContext.ts），不经模型。
+    questionId === null
+      ? "本次运行没有 Science-125 题号（直接手跑）：memory_note 只能用 target=\"lessons\"。"
+      : `Science-125 题号：Q${questionId}（memory_note 写题页时由运行环境自动定位，你不必也不能传题号）。`,
+    `本次 run 目录：${runDir}（已建好；artifact_write / artifact_read 的路径一律相对它）。`,
+    "",
+    "科学问题：",
+    question,
   ].join("\n");
 }
 

@@ -119,6 +119,48 @@ runs/<ts>/memory/
   - eve 架构映射：root agent = master（认证循环 instructions + 确定性核验工具）；L/H/C/W = declared subagents（各自独立 instructions/tools，天然不共享父对话历史，`outputSchema` 出结构化 JSON）。外层 `eve invoke` 单次触发，budget 用 maxTurns/token 配额兜底。
   - subagent 从 root 继承 nothing；handoff 内容必须显式打进 message/工件文件——正好符合本设计的显式 handoff 原则。
 
+### KV cache 经营（2026-08-09，判据来自 ai-agent-book ch2，端点事实为一手实测）
+
+**判据**（`book-en/chapter2.md`「KV Cache-Friendly Context Design」）：
+
+> "The prerequisite is that the context token prefix you want to reuse remains unchanged: if the token sequence first differs at some position, the KV states for that token and everything after it must be recomputed."
+>
+> "Always append dynamic information to the end—changing content like timestamps and user status should be appended as new messages at the end of the conversation, not by modifying the existing system prompt."
+
+落到本仓三条：① instructions 一经定稿不动（连空格都算改）；② 工具定义顺序固定，不按用途重排；③ 每 run 变的东西（题号、run 目录、题目）一律排在不变的后面。
+
+**端点事实**（百炼 `/compatible-mode/v1/responses`，qwen3.7-plus，逐条有请求凭证）：
+
+| 事实 | 证据 |
+|---|---|
+| 隐式前缀缓存默认开，无需任何参数 | 同前缀连发：1st `in=2297 cached=0` → 2nd/3rd `cached=2048`，延迟 1801→1239→897ms |
+| **最小可缓存前缀 ≈ 2048 token，且按整块计** | 连发同前缀：`in=2106` → `cached=0`；`in=2168` → `cached=2048`。真实 run 里 cached 值全为 128 的整数倍，块间距 2048/2176 |
+| **TTL 在 3~5 分钟之间** | 预热后停 180s 再发 → `cached=2048`；停 300s → `cached=0`；停 420s → `cached=0` |
+| `prompt_cache_key` / `prompt_cache_retention` **是死参数** | 传了不报错，但换 key 仍命中同一前缀、不传 key 也命中；响应两字段恒为 `null`。**显式 key 无收益，不接线** |
+| thinking 两档各走各的缓存 | 同一前缀 `enable_thinking:false` 预热后，`true` 首发 `cached=0`（且 input 差 2 token → chat template 本身不同） |
+| `status:"incomplete"`（撞 `max_output_tokens`）的响应不带 `usage` | 这类调用在 `usage.jsonl` 里没有记录，用量统计天然偏低 |
+
+**基线**（`runs/20260808-134046`，124 次调用；这是目前唯一带 `usage.jsonl` 的 run）：
+
+| 分组 | n | input | cached | 命中率 | 逐调用 p25/p50/p90 | cached=0 |
+|---|---|---|---|---|---|---|
+| 全部 | 124 | 2,253,346 | 1,995,648 | **88.6%** | 78.6% / 89.7% / 97.4% | 7 |
+| thinking=true | 76 | 1,738,505 | 1,552,000 | 89.3% | 79.7% / 90.2% / 97.5% | 5 |
+| thinking=false | 48 | 514,841 | 443,648 | 86.2% | 78.5% / 89.2% / 95.1% | 2 |
+
+未命中的 11.4% 拆开看：**块尾余量 7.5%**（每次调用最后不足一块的部分，结构性不可消除）、**冷启动 2.6%**（7 次会话首发）、**真正的新增内容 1.4%**。
+
+**结论：这一面已经接近天花板，不值得再优化。** 即便每次冷启动都能命中跨 run 的热前缀，命中率上限也只有 91.2%。而那 2.6% 里大部分还够不着——「subagent instructions 跨 125 run 稳定，是 125× 杠杆」这个直觉，实测不成立：
+
+- master：instructions 单量 ~2943 token，过了 2048 底线。实测换一条完全不同的用户消息重发，仍 `cached=2048` → **跨 run 复用真实存在**，且相邻 run 只要在 TTL 内就自动吃到，无需接线。
+- 四个 subagent：instructions 只有 503~868 token。以 literature（最大的一个：instructions + 4 个真实工具 schema）实测，**整条请求含用户消息才 1897 token**，连发三次 `cached` 恒为 0 —— 稳定前缀落在一个缓存块之内，**跨 run 复用结构性为 0**。hypothesis / critique / proposal 的 instructions 更短、工具更少，同理。
+
+唯一的解法是把 subagent instructions 撑到 2048 token 以上——为缓存去灌 prompt，本末倒置，不做。记为已知边界：**在这个端点上，短 prompt 的 agent 拿不到任何前缀缓存**。
+
+TTL 只有 3~5 分钟，还有一条操作性后果：`run:batch` 跑 125 题必须**连着跑**，中途停几分钟再续，master 的跨 run 前缀就凉了（重新冷启动，每次约一块）。这不值得为它加机制，但排期时知道就行。
+
+**已做**：`scripts/run.ts` 的 `buildPrompt` 把三行执行规格从易变段之后移到之前（易变段 = 题号/run 目录/题目）。当前规模下无可测收益（重排前后同为 `in=3110 cached=2048`，~90 token 的差被整块粒度吞掉），价值在于把顺序钉成判据、防止后续往稳定段前面塞易变内容。派工 message 天生易变且天生后置，符合判据，不动。
+
 ## 问题源（官网维度 A）
 
 输入题库 = 《Science》125 前沿科学问题（lib/science125.json，权威来源抓取）。E2E 默认用例从中选天文类一题；批量 runner 支持按题号列表串行出多份结果（提交期跑全量 125）。
