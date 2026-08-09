@@ -1,0 +1,147 @@
+{
+  "dimensions": {
+    "falsifiability": {
+      "level": 4,
+      "claims": [
+        {
+          "quote": "脉冲星诞生率基准采用VFK估计值~1/30 yr⁻¹，判定阈值为因子2——若预测核心坍缩率低于独立估计值的1/2或高于2倍则拒绝H1主导假设",
+          "attribution": "supported",
+          "note": "明确给出观测量（核心坍缩率与VFK诞生率比值）、阈值（因子2）与否证条件（超出0.5-2.0范围则拒绝H1）"
+        },
+        {
+          "quote": "要求比值在0.5-2.0范围内",
+          "attribution": "supported",
+          "note": "在experiments.design中再次明确量化阈值"
+        },
+        {
+          "quote": "预期结果表明核心坍缩通道可解释~80%观测脉冲星群体，剩余~20%需次级通道补充",
+          "attribution": "speculative",
+          "note": "标注为'预期结果'，属于待验证估计，不算veto"
+        }
+      ]
+    },
+    "coherence": {
+      "level": 3,
+      "claims": [
+        {
+          "quote": "采用Kroupa初始质量函数与恒星演化模型预测核心坍缩诞生率，并与VFK脉冲星诞生率估计进行因子2内的自洽性检验",
+          "attribution": "supported",
+          "note": "推导链清晰：IMF+演化模型→核心坍缩率→与观测诞生率比较"
+        },
+        {
+          "quote": "通过P-Pdot图的图论群体分析（基于2207.06311方法）从统计层面论证主通道主导地位",
+          "attribution": "supported",
+          "note": "引用F6的图论方法作为统计论证工具，逻辑衔接"
+        },
+        {
+          "quote": "严格区分'形成通道'（核心坍缩、AIC、白矮星合并）与'演化通道'（双星吸积再循环产生毫秒脉冲星）",
+          "attribution": "supported",
+          "note": "概念区分明确，F7归入次级演化通道而非原始形成机制"
+        },
+        {
+          "quote": "基于2207.06311的图论方法，构建脉冲星周期-周期导数空间的邻接图，识别演化轨迹聚类，区分核心坍缩起源群体与吸积再循环群体",
+          "attribution": "supported",
+          "note": "方法描述具体，但'如何从聚类结果推断形成通道'的中间步骤未完全展开"
+        }
+      ]
+    },
+    "actionability": {
+      "level": 4,
+      "claims": [
+        {
+          "quote": "技术栈包括：恒星种群合成代码（如StarTrack或BPASS）...费米LAT伽马射线数据处理管道（ScienceTools v11r5p3）；射电脉冲搜索软件PRESTO...中微子事件重建框架（如GENIE+GEANT4）",
+          "attribution": "supported",
+          "note": "具体软件名称与版本号齐全"
+        },
+        {
+          "quote": "datasets.source: ATNF脉冲星目录、费米LAT第四代源表、银河系超新星遗迹编目、Kroupa初始质量函数参数化模型",
+          "attribution": "supported",
+          "note": "数据集来源明确"
+        },
+        {
+          "quote": "baselines: Standard core-collapse supernova rate model with Salpeter IMF, VFK pulsar birth rate estimate (1/30 per year), KR pulsar birth rate estimate, Binary population synthesis model (StarTrack default parameters)",
+          "attribution": "supported",
+          "note": "基线模型实名可查"
+        },
+        {
+          "quote": "metrics: Core-collapse rate to pulsar birth rate ratio (target: within factor of 2), P-Pdot diagram clustering coefficient from graph theory analysis, Fraction of Fermi gamma-ray sources with confirmed pulsar counterparts",
+          "attribution": "supported",
+          "note": "指标可量化计算"
+        }
+      ]
+    },
+    "evidence": {
+      "level": 3,
+      "claims": [
+        {
+          "quote": "脉冲星诞生率基准采用VFK估计值~1/30 yr⁻¹",
+          "attribution": "supported",
+          "note": "对应F1（astro-ph/9911519），但具体数值未在fact card中给出"
+        },
+        {
+          "quote": "通过P-Pdot图的图论群体分析（基于2207.06311方法）",
+          "attribution": "supported",
+          "note": "对应F6（2207.06311），fact card确认该方法用于群体分析"
+        },
+        {
+          "quote": "费米LAT对脉冲星风星云的高能伽马射线探测（1003.3833, 1011.2076, 1701.09098）",
+          "attribution": "supported",
+          "note": "对应F3/F4/F9，fact card确认这些论文涉及费米LAT探测"
+        },
+        {
+          "quote": "射电巡天发现的毫秒脉冲星对应体（1101.1742, 1712.05225）",
+          "attribution": "supported",
+          "note": "对应F7（1101.1742），fact card确认该巡天发现毫秒脉冲星"
+        },
+        {
+          "quote": "空间密度比较（2506.11676）揭示致密天体形成通道的多样性",
+          "attribution": "supported",
+          "note": "对应F5，fact card确认该论文比较空间密度"
+        }
+      ]
+    }
+  },
+  "veto": {
+    "triggered": true,
+    "claims": [
+      {
+        "quote": "费米LAT已确认超过200颗伽马射线脉冲星（1003.3833, 1011.2076）",
+        "attribution": "unsourced",
+        "note": "具体数值'超过200颗'在fact card F3/F9中均未出现，F3仅提及单颗脉冲星PSR B1509-58"
+      },
+      {
+        "quote": "其中年轻脉冲星与超新星遗迹的空间重合率>80%（1701.09098）",
+        "attribution": "unsourced",
+        "note": "具体百分比'>80%'在fact card F4中未出现"
+      },
+      {
+        "quote": "2506.11676表明毫秒自旋磁星与FXTs的空间密度比约为1:10",
+        "attribution": "unsourced",
+        "note": "具体比值'1:10'在fact card F5中未出现"
+      },
+      {
+        "quote": "当前距离估计不确定性~30%",
+        "attribution": "unsourced",
+        "note": "具体百分比'~30%'在任何fact card中均未出现"
+      },
+      {
+        "quote": "SKA早期科学阶段（2512.16152）预计将发现当前样本量3-5倍的脉冲星",
+        "attribution": "unsourced",
+        "note": "具体倍数'3-5倍'在任何fact card中均未出现"
+      },
+      {
+        "quote": "银河系恒星形成率~2 M☉/yr，M≳8M☉恒星占比约0.3%",
+        "attribution": "unsourced",
+        "note": "具体数值'~2 M☉/yr'和'约0.3%'在任何fact card中均未出现"
+      }
+    ]
+  },
+  "runId": "20260808-134046",
+  "rubricVersion": "1.0.0",
+  "judgeModel": "qwen3.7-plus",
+  "thinking": true,
+  "scoredAt": "2026-08-09T09:52:08.237Z",
+  "weighted": 21,
+  "max": 24,
+  "percent": 87.5
+}

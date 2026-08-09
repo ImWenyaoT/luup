@@ -35,6 +35,15 @@ export const RUNS_DIR = join(REPO_ROOT, "runs");
 export const LOCK_FILE = join(RUNS_DIR, ".active.json");
 /** 派生缓存，不是真相：删掉它一切照常，只是 /api/runs 退回全量扫盘。 */
 export const RUNS_INDEX_FILE = join(RUNS_DIR, "index.json");
+/** Tier1 指标报告（scripts/stats.ts 写）。同样是派生物，删了重跑即可。 */
+export const RUNS_STATS_FILE = join(RUNS_DIR, "stats.md");
+/**
+ * 评估层自己的 run 目录。**点开头 → 过不了 `isRunId`**，因此不会被 listRunIds /
+ * readAllRunMetrics 当成一次真实 run —— 这正是它叫 `.eval` 的原因：
+ * judge 调用的 token 用量（`agent/lib/model.ts` 的 teeUsage 按 `LUUP_RUN_DIR` 落盘）
+ * 必须与被评估 run 的成本账分开，否则 M6 会把评估开销算进流水线开销。
+ */
+export const EVAL_DIR = join(RUNS_DIR, ".eval");
 
 /** 越界访问是编程/攻击错误，不是数据错误——单独一类，路由层映射成 400。 */
 export class BoundaryError extends Error {

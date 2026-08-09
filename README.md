@@ -34,6 +34,25 @@ pnpm run:batch 54 125              # 按 Science-125 题号批量
 pnpm verify runs/<ts>              # 独立验收（schema + 引用逐条反查 arXiv，零 LLM）
 ```
 
+## 评估体系（criteria H）
+
+四条纪律：**gate 全确定性，judge 只产诊断分**；**rubric 永不进 agent prompt**（防 Goodhart，由
+`pnpm selftest:metrics` 逐字扫 `agent/` 全树把关）；指标只从已有工件派生（零新增采集）；
+每个指标必须能翻盘一个真实决定。
+
+```sh
+pnpm stats                    # Tier1：M4 交付率 / M5 Pass^2 / M6 成本 / M7 返工 / M8 文献健康
+                              #   零 LLM、零网络 → runs/stats.md
+pnpm score runs/<ts>          # M9 四维四级 rubric 打分（1 次 judge 调用）→ runs/<ts>/score.json
+                              #   题页 memory 只回传事实（胜出假设、关键断言），不回传分数
+pnpm calibrate runs/<ts>      # M10 变异体检出率（1 + 5 次 judge 调用）→ runs/<ts>/calibration.md
+pnpm selftest:metrics         # 上述全部的零 API 自测（含对现有 runs/ 的可复算断言）
+```
+
+judge 与被测 agent 同族（criteria D1 锁死百炼 Qwen），同族自评偏置无法用换族 judge 消解 ——
+处置是**结构性降权**：M9 只进版本择优（`lib/versionSelect.ts` 的字典序纯函数）与诊断，
+永不进 gate、永不进技术报告的「成绩」栏。judge 有没有在判事，看 M10 的检出率。
+
 ## 交付面（Next.js + eve 单项目）
 
 `next.config.ts` 用 `withEve()` 包裹，agent 与 web 是**同一个项目**：仓库根既是 eve app root（`agent/`），
@@ -72,6 +91,12 @@ pnpm start         # next start，把 /eve/v1/* 代理到 4274
 | memory/papers/、memory/index.md | 本次运行实检的 arXiv 文献卡与索引 |
 | verification-report.md | 确定性验收报告（A/B1–B4 逐项） |
 | FAILED.md | 预算耗尽时的如实失败报告（成功则无） |
+| usage.jsonl | 每次模型调用的 token 用量（D1 凭证 + M6 成本会计的数据源） |
+| score.json | M9 诊断分（跑过 `pnpm score` 才有；不进 gate） |
+| calibration.md | M10 变异体检出率（跑过 `pnpm calibrate` 才有） |
+
+评估层自己的 judge 调用落在 `runs/.eval/usage.jsonl` —— 点开头，不被当成一次 run，
+评估开销与被评估开销不混账。
 
 ## 引用防虚构（四道防线）
 

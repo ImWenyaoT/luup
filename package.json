@@ -22,11 +22,15 @@
     "selftest:literature": "node scripts/selftest-literature.ts",
     "selftest:lock": "node scripts/selftest-lock.ts",
     "selftest:memory": "node scripts/selftest-memory.ts",
+    "selftest:metrics": "node scripts/selftest-metrics.ts",
     "selftest:outcome": "node scripts/selftest-outcome.ts",
     "selftest:retention": "node scripts/selftest-retention.ts",
     "run:batch": "node scripts/run-batch.ts",
     "prune:eve": "node scripts/prune-eve-state.ts",
-    "verify": "node scripts/verify-proposal.ts"
+    "verify": "node scripts/verify-proposal.ts",
+    "stats": "node scripts/stats.ts",
+    "score": "node scripts/score-run.ts",
+    "calibrate": "node scripts/calibrate-judge.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "4.0.0-canary.73",
