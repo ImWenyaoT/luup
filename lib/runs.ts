@@ -2,7 +2,8 @@ import { readdirSync } from "node:fs";
 import { paperFilename } from "#lib/paperStore.ts";
 import { activeRunId } from "./lock.ts";
 import { parseTableRows } from "./mdTable.ts";
-import { RUNS_DIR, isRunId } from "./paths.ts";
+import { RUNS_DIR } from "./paths.ts";
+import { isRunId } from "./runId.ts";
 import {
   type Scan,
   deriveNodes,
@@ -10,8 +11,8 @@ import {
   finishedAtMs,
   parseVerdicts,
   parseVerifyReport,
+  questionIdOf,
   readJson,
-  readMeta,
   readText,
   scanRun,
   startedAtMs,
@@ -43,7 +44,6 @@ export function readSummary(id: string): RunSummary | null {
   const verdicts = parseVerdicts(scan);
   const nodes = deriveNodes(scan, status, verdicts);
   const q = parseQuestion(readText(scan, "question.md"));
-  const meta = readMeta(scan);
   const proposal = readJson<Proposal>(scan, "proposal.json");
   const verify = parseVerifyReport(readText(scan, "verification-report.md"));
   const started = startedAtMs(scan);
@@ -56,7 +56,7 @@ export function readSummary(id: string): RunSummary | null {
     status,
     question: q.short,
     domain: q.domain,
-    science125Id: typeof meta?.questionId === "number" ? meta.questionId : q.science125Id,
+    science125Id: questionIdOf(scan) ?? q.science125Id,
     refs: Array.isArray(proposal?.references) ? proposal.references.length : null,
     verify: verify ? (verify.pass ? "pass" : "fail") : null,
     durationSec: started !== null && finished !== null ? Math.round((finished - started) / 1000) : null,
@@ -146,14 +146,13 @@ export function readStatusView(id: string): RunStatusView | null {
 export function readRunFrom(scan: Scan): RunDetail {
   const base = statusViewFrom(scan);
   const q = parseQuestion(readText(scan, "question.md"));
-  const meta = readMeta(scan);
   const started = startedAtMs(scan);
   const finished = finishedAtMs(scan, base.status);
   return {
     ...base,
     questionText: q.full,
     domain: q.domain,
-    science125Id: typeof meta?.questionId === "number" ? meta.questionId : q.science125Id,
+    science125Id: questionIdOf(scan) ?? q.science125Id,
     startedAt: new Date(started ?? 0).toISOString(),
     finishedAt: finished !== null ? new Date(finished).toISOString() : null,
     durationSec: started !== null && finished !== null ? Math.round((finished - started) / 1000) : null,

@@ -12,7 +12,7 @@ import { VerifyTable } from "@/components/VerifyTable";
 import { EmptyState, Kv, Pill } from "@/components/ui";
 import { STATUS_LABEL, STATUS_TONE, fmtDur, fmtTime } from "@/lib/format";
 import { NODE_BY_KEY, resolveArtifact } from "@/lib/nodes";
-import { isRunId } from "@/lib/paths";
+import { isRunId } from "@/lib/runId";
 import { scanRun } from "@/lib/phase";
 import { readArtifactFrom, readRunFrom } from "@/lib/runs";
 import type { NodeKey } from "@/lib/types";

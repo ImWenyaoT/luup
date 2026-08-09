@@ -16,8 +16,8 @@
  * 不经过 paperStore、不经过 agent 的任何缓存 —— 这条通路必须独立，否则「独立验收」
  * 名不副实。但归一化、重合度阈值、姓氏取法是**同一把尺子**，从 `#lib/verifyRefs.ts`
  * import：两份手写实现只会让同一个作者被算出两个姓，交叉验证于是验的不是同一件事。
- * 报告的结论行同理，取 lib/phase.ts 的写出端常量 —— 读它的人（web、run-batch 续跑
- * 扫描、rebuild-memory 回填）用的是同一份正则。
+ * 报告的结论行同理，取 lib/runOutcome.ts 的写出端常量 —— 读它的人（web、run-batch
+ * 续跑扫描、rebuild-memory 回填）用的是同一份正则。
  */
 import { readFileSync, readdirSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
@@ -30,7 +30,7 @@ import {
   titleOverlap,
 } from "#lib/verifyRefs.ts";
 import { escapeCell } from "../lib/mdTable.ts";
-import { resultLine } from "../lib/phase.ts";
+import { resultLine } from "../lib/runOutcome.ts";
 
 const runDir = process.argv[2];
 if (!runDir || !existsSync(runDir)) {

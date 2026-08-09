@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isRunId } from "./runId.ts";
 
 /**
  * 仓库根的**唯一**定义点（web、scripts/**、agent/ 全都从这里取，不再各自
@@ -35,12 +36,6 @@ export const SCIENCE125_FILE = join(REPO_ROOT, "fixtures", "science125.json");
 export const LOCK_FILE = join(RUNS_DIR, ".active.json");
 /** 派生缓存，不是真相：删掉它一切照常，只是 /api/runs 退回全量扫盘。 */
 export const RUNS_INDEX_FILE = join(RUNS_DIR, "index.json");
-
-export const RUN_ID_RE = /^\d{8}-\d{6}$/;
-
-export function isRunId(value: unknown): value is string {
-  return typeof value === "string" && RUN_ID_RE.test(value);
-}
 
 /** 越界访问是编程/攻击错误，不是数据错误——单独一类，路由层映射成 400。 */
 export class BoundaryError extends Error {

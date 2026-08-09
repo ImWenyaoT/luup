@@ -9,19 +9,18 @@
  * 每题 = 一次 scripts/run.ts 子进程（run 目录由 run.ts 自建，从 stdout 解析），
  * 跑完立刻用 scripts/verify-proposal.ts 独立验收，汇总写 runs/batch-<ts>.md。
  *
- * 续跑判据（两个条件都要满足，缺一不认）：
- *   1. runs/<ts>/meta.json 的 questionId 命中且 exitCode === 0（流水线自己跑完了）
- *   2. 同目录 verification-report.md 含 "ALL PASS"（独立验收也过了）
- * 只看 meta 不够——流水线退 0 但引用被验收打回的情况真实存在；只看报告也不够——
- * 报告不带题号。两者合起来才等价于「这题已经交付」。
+ * 续跑判据 = run outcome 的 `deliverable`（proposal 正文已渲染 + 验收 ALL PASS +
+ * 没有失败退出码）再加一个题号命中 —— 报告本身不带题号，所以还要 meta.questionId。
+ * 判定本身一个字都不在这里：唯一 owner 是 lib/runOutcome.ts，web 的 passed 与这条
+ * 续跑判据因此永远同判（scripts/selftest-outcome.ts 逐目录断言这件事）。
  */
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { REPO_ROOT, RUNS_DIR } from "../lib/paths.ts";
-import { isAllPass } from "../lib/phase.ts";
 import { science125Text } from "../lib/questionText.ts";
 import { formatBytes, planPrune, summarize } from "../lib/retention.ts";
+import { deliveredQuestionId, readRunEvidence } from "../lib/runOutcome.ts";
 import { findQuestion } from "../lib/science125.ts";
 
 /* ------------------------------------------------------------------ */
@@ -92,8 +91,6 @@ function question(id: number): { id: number; domain: string; question: string } 
 /* 已完成扫描                                                           */
 /* ------------------------------------------------------------------ */
 
-type RunMeta = { questionId?: unknown; exitCode?: unknown };
-
 /** 扫描 runs/*，返回「已交付」题号 → run 目录（同题多次成功取目录名最大的，即最新）。 */
 function scanCompleted(): Map<number, string> {
   const done = new Map<number, string>();
@@ -101,17 +98,8 @@ function scanCompleted(): Map<number, string> {
   for (const ent of readdirSync(RUNS_DIR, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
     if (!ent.isDirectory()) continue; // batch-*.md 是文件
     const dir = join(RUNS_DIR, ent.name);
-    let meta: RunMeta;
-    try {
-      meta = JSON.parse(readFileSync(join(dir, "meta.json"), "utf8")) as RunMeta;
-    } catch {
-      continue; // 没有 meta.json（老 run）或写坏了 → 当没跑过
-    }
-    if (typeof meta.questionId !== "number" || meta.exitCode !== 0) continue;
-    const report = join(dir, "verification-report.md");
-    if (!existsSync(report)) continue;
-    if (!isAllPass(readFileSync(report, "utf8"))) continue;
-    done.set(meta.questionId, dir);
+    const qid = deliveredQuestionId(readRunEvidence(dir, ent.name));
+    if (qid !== null) done.set(qid, dir);
   }
   return done;
 }
@@ -150,7 +138,7 @@ for (const id of ids) {
   const q = question(id);
   const prior = completed.get(id);
   if (prior) {
-    console.log(`[batch] skip Q${id} → ${prior}（meta.exitCode=0 且 verification-report.md ALL PASS）`);
+    console.log(`[batch] skip Q${id} → ${prior}（run outcome: deliverable）`);
     rows.push({ id, domain: q.domain, runDir: prior, status: "skipped", pipeline: null, verify: null });
     continue;
   }

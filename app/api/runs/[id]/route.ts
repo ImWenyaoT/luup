@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { fail, json, text } from "@/lib/http";
-import { BoundaryError, isRunId } from "@/lib/paths";
+import { BoundaryError } from "@/lib/paths";
+import { isRunId } from "@/lib/runId";
 import { readArtifact, readRun, readStatusView } from "@/lib/runs";
 
 export const dynamic = "force-dynamic";

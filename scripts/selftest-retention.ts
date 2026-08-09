@@ -17,7 +17,8 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync }
 import { readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { REPO_ROOT, RUNS_DIR, RUN_ID_RE } from "../lib/paths.ts";
+import { REPO_ROOT, RUNS_DIR } from "../lib/paths.ts";
+import { RUN_ID_RE } from "../lib/runId.ts";
 import { planPrune } from "../lib/retention.ts";
 
 /* ------------------------------------------------------------------ */

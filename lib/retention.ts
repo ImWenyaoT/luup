@@ -20,8 +20,8 @@
  *
  * ## 安全判据（三条全满足才删，任一不满足就留）
  *
- * ① **终态 run**：该流所属的 workflow 能映射到 runs/<ts>/，且该目录已有终态凭据
- *    （verification-report.md 或 FAILED.md）。
+ * ① **终态 run**：该流所属的 workflow 能映射到 runs/<ts>/，且该目录已终结
+ *    （`runOutcome().terminal` —— 终态凭据的定义在 lib/runOutcome.ts，不在这里手写）。
  * ② **写入早于 run 结束**：流目录最新 mtime 早于该 run 的 finishedAt（+SLACK）。
  * ③ **不在活跃窗口**：流目录最新 mtime 早于 now - graceMin（默认 60 分钟），
  *    且所属 workflow 的 status 已是终态（completed/cancelled/failed）。
@@ -36,9 +36,11 @@
  * 它的 workflow 还是 running、它的 run 目录还没有终态凭据、它的 chunks 还在被写。
  * 任何一条失效，另外两条仍然成立。
  */
-import { existsSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { basename, join, resolve, sep } from "node:path";
-import { REPO_ROOT, RUNS_DIR, RUN_ID_RE } from "./paths.ts";
+import { REPO_ROOT, RUNS_DIR } from "./paths.ts";
+import { RUN_ID_RE } from "./runId.ts";
+import { readRunEvidence, runOutcome } from "./runOutcome.ts";
 
 /* ------------------------------------------------------------------ */
 /* 常量                                                                 */
@@ -46,9 +48,6 @@ import { REPO_ROOT, RUNS_DIR, RUN_ID_RE } from "./paths.ts";
 
 /** eve workflow-core 实测出现过的 status 全集：completed / cancelled / failed / running。 */
 const TERMINAL_WORKFLOW_STATUS = new Set(["completed", "cancelled", "canceled", "failed", "aborted"]);
-
-/** run 目录里任一存在即视为终态（跑完并出了结论，或如实报了失败）。 */
-const TERMINAL_RUN_MARKERS = ["verification-report.md", "FAILED.md"];
 
 /** 判据②的容差：meta.finishedAt 由 run.ts 在 eve 退出后写，晚于最后一次 chunk 落盘。 */
 const FINISH_SLACK_MS = 5 * 60 * 1000;
@@ -204,40 +203,22 @@ type RunInfo = {
   sessionId: string | null;
 };
 
-/** run id 本身就是 UTC 时间戳 20260808-062829 —— meta.json 缺失时的退路。 */
-function stampToMs(id: string): number | null {
-  const m = /^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})$/.exec(id);
-  return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : null;
-}
-
 function parseMs(v: unknown): number | null {
   if (typeof v !== "string") return null;
   const t = Date.parse(v);
   return Number.isNaN(t) ? null : t;
 }
 
-function newestFileMs(dir: string): number | null {
-  let newest: number | null = null;
-  for (const name of listFileNames(dir)) {
-    try {
-      const t = statSync(join(dir, name)).mtimeMs;
-      if (newest === null || t > newest) newest = t;
-    } catch {
-      /* ignore */
-    }
-  }
-  return newest;
-}
-
+/**
+ * 终态与起止时间全部来自 run outcome —— 保留策略只是它的读者。
+ * 这里自己判断的只有一件 retention 独有的事：workflow 直连用的 sessionId。
+ */
 function indexRuns(runsDir: string): RunInfo[] {
   const out: RunInfo[] = [];
   for (const id of listDirNames(runsDir)) {
     if (!RUN_ID_RE.test(id)) continue;
     const dir = join(runsDir, id);
-    const terminal = TERMINAL_RUN_MARKERS.some((m) => existsSync(join(dir, m)));
-    const meta = readJsonFile<{ startedAt?: unknown; finishedAt?: unknown }>(join(dir, "meta.json"));
-    const startedMs = parseMs(meta?.startedAt) ?? stampToMs(id);
-    const finishedMs = parseMs(meta?.finishedAt) ?? (terminal ? newestFileMs(dir) : null);
+    const outcome = runOutcome(readRunEvidence(dir, id));
 
     // invoke-result.json 常被 eve 的 stdout 噪声污染 → readJsonFile 返回 null，退到时间窗映射
     const invoke = readJsonFile<{ resume?: { session?: { sessionId?: unknown } } }>(
@@ -248,9 +229,9 @@ function indexRuns(runsDir: string): RunInfo[] {
     out.push({
       id,
       dir,
-      terminal,
-      startedMs,
-      finishedMs,
+      terminal: outcome.terminal,
+      startedMs: outcome.startedMs,
+      finishedMs: outcome.finishedMs,
       sessionId: typeof sid === "string" ? sid : null,
     });
   }

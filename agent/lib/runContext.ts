@@ -9,22 +9,14 @@
  *     把它移出模型可控面，是 schema/机制层的约束，不是 prompt 层的约定。
  *  3. 外层驱动（eve invoke / 脚本）本来就要先建 runs/<ts>/ 再触发，顺手 export 即可。
  *
- * 时间戳同址：run 目录名就是 `utcStamp()`，`scripts/run.ts` 建目录、paperStore 造
- * 回退目录用的必须是同一份实现，否则两处会生成对不上的 run id。
+ * 时间戳不在这里造：run id 的生成/校验/解析同址在 `lib/runId.ts`，`scripts/run.ts`
+ * 建目录、这里造回退目录用的必须是同一份实现，否则两处会生成对不上的 run id。
  */
 import { join, resolve } from "node:path";
 import { REPO_ROOT } from "../../lib/paths.ts";
+import { utcStamp } from "../../lib/runId.ts";
 
 export const RUN_DIR_ENV = "LUUP_RUN_DIR";
-
-/** run id 的格式：UTC `YYYYMMDD-HHMMSS`（lib/paths.ts 的 RUN_ID_RE 认这个）。 */
-export function utcStamp(d = new Date()): string {
-  const p = (n: number) => String(n).padStart(2, "0");
-  return (
-    `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}` +
-    `-${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}`
-  );
-}
 
 let fallbackRunDir: string | null = null;
 

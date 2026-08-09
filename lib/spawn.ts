@@ -2,7 +2,8 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { type WriteStream, createWriteStream, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { release, setRunId } from "./lock.ts";
-import { RUNS_DIR, REPO_ROOT, isRunId } from "./paths.ts";
+import { RUNS_DIR, REPO_ROOT } from "./paths.ts";
+import { isRunId } from "./runId.ts";
 
 /** 提问模板的单一事实源在 lib/questionText.ts；这里只是交付面的转出口。 */
 export { freeformText, science125Text } from "./questionText.ts";

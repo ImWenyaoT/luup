@@ -20,9 +20,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { archiveRunOutcome } from "#lib/campaignMemory.ts";
 import { ProposalSchema, type Proposal } from "#lib/contracts.ts";
-import { utcStamp } from "#lib/runContext.ts";
 import { NODES } from "../lib/nodes.ts";
 import { REPO_ROOT, RUNS_DIR } from "../lib/paths.ts";
+import { utcStamp } from "../lib/runId.ts";
+import { reachedProposal, readRunEvidence, runOutcome } from "../lib/runOutcome.ts";
 import { rebuildRunsIndex } from "../lib/runsIndex.ts";
 
 const DEFAULT_QUESTION_FILE = join(REPO_ROOT, "fixtures", "default-question.md");
@@ -305,7 +306,6 @@ function readProposal(): { data: Proposal | null; issues: string[] } {
 }
 
 const proposal = readProposal();
-const rendered = proposal.data !== null;
 if (proposal.data) {
   writeFileSync(join(runDir, "proposal.md"), renderProposalMarkdown(proposal.data, { runDir, question }), "utf8");
 } else if (proposal.issues.length > 0) {
@@ -344,8 +344,17 @@ if (existsSync(papersDir)) {
 
 console.log(`\n[luup] 确定性验收：node scripts/verify-proposal.ts ${runDir}`);
 
-// 退出码透传：paused 原样带出 3（run-batch 会打印 exit 3），其余非成功一律 1
-const exitCode = code === 0 && rendered ? 0 : code === EXIT_PAUSED ? EXIT_PAUSED : 1;
+/**
+ * 退出码透传：paused 原样带出 3（run-batch 会打印 exit 3），其余非成功一律 1。
+ *
+ * 「跑完了没有」不在这里手写：此刻 meta.exitCode 还没回写，run 目录就是最完整的证据，
+ * 交给同一个 owner 判（lib/runOutcome.ts）。reachedProposal = proposal 正文已渲染
+ * 且没有被 FAILED.md / 退出码否掉 —— master 写了 FAILED.md 却留着早轮 proposal 的
+ * run 不再冒充成功（收编前 `rendered` 只看 proposal.json，会给出 exit 0）。
+ * 验收过没过是另一件事（deliverable），由 scripts/verify-proposal.ts 单独判。
+ */
+const outcome = runOutcome(readRunEvidence(runDir));
+const exitCode = code === 0 && reachedProposal(outcome) ? 0 : code === EXIT_PAUSED ? EXIT_PAUSED : 1;
 meta.finishedAt = new Date().toISOString();
 meta.exitCode = exitCode;
 writeMeta();

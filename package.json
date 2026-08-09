@@ -19,6 +19,7 @@
     "run:pipeline": "node scripts/run.ts",
     "selftest:literature": "node scripts/selftest-literature.ts",
     "selftest:memory": "node scripts/selftest-memory.ts",
+    "selftest:outcome": "node scripts/selftest-outcome.ts",
     "selftest:retention": "node scripts/selftest-retention.ts",
     "run:batch": "node scripts/run-batch.ts",
     "prune:eve": "node scripts/prune-eve-state.ts",

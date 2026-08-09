@@ -1,13 +1,27 @@
 /**
  * 状态机的唯一输入是文件系统——没有数据库，也不该有。
  * 每个节点绑一个产出工件（绑定关系在 ./nodes.ts），工件存在即节点完成，mtime 差即耗时。
+ *
+ * **终态判定不在这里**：phase / terminal / deliverable / 起止时间的唯一 owner 是
+ * `./runOutcome.ts`。本文件只负责两件本地的事：把 Scan 转成证据，以及把 phase 映射成
+ * web 的五态 RunStatus（外加一个只有锁能给出的 running）。
  */
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { activeLock } from "./lock.ts";
 import { parseTableRows } from "./mdTable.ts";
 import { NODES, resolveArtifact } from "./nodes.ts";
 import { runDir } from "./paths.ts";
+import {
+  RESULT_PREFIX,
+  type RunEvidence,
+  type RunOutcome,
+  type RunPhase,
+  exitEvidence,
+  isAllPass,
+  metaEvidence,
+  runOutcome,
+} from "./runOutcome.ts";
 import type {
   NodeState,
   RunStatus,
@@ -23,8 +37,13 @@ export type Scan = { id: string; dir: string; files: Map<string, number> };
 
 const NESTED = new Set(["verdicts", "memory", "memory/papers"]);
 
+/** 沙箱内的入口：id 先过 runDir() 的越界判定。 */
 export function scanRun(id: string): Scan | null {
-  const dir = runDir(id);
+  return scanDir(runDir(id), id);
+}
+
+/** 任意目录版（selftest 拿临时 run 目录做断言时用；web 一律走 scanRun）。 */
+export function scanDir(dir: string, id = basename(dir)): Scan | null {
   try {
     if (!statSync(dir).isDirectory()) return null;
   } catch {
@@ -117,47 +136,67 @@ export function parseVerdicts(scan: Scan): Verdict[] {
 }
 
 /* ------------------------------------------------------------------ */
-/* 状态                                                                 */
+/* 终态：判定在 lib/runOutcome.ts，这里只做 web 的表示层                    */
 /* ------------------------------------------------------------------ */
 
-/* ------------------------------------------------------------------ */
-/* 「通过」的判据：写出端与读入端同一份                                    */
-/* ------------------------------------------------------------------ */
+/** 一次 Scan 是一次请求内的不变快照，证据也就不变——同一请求里会被问好几遍。 */
+const EVIDENCE = new WeakMap<Scan, RunEvidence>();
 
 /**
- * verification-report.md 头部的结论行前缀。写出端（scripts/verify-proposal.ts）
- * 与所有读入端（web、run-batch 的续跑扫描、rebuild-memory 的回填）都从这里取。
+ * Scan → 证据。web 侧已经把目录扫过一遍了，不必再 readdir 一次。
+ *
+ * 与脚本侧的 `readRunEvidence(dir)` 必须给出同一份证据（selftest-outcome 逐目录断言）：
+ * 时间兜底同样只看**顶层**文件 —— verdicts/ 与 memory/ 是节点中途的产物。
  */
-export const RESULT_PREFIX = "结果: ";
-const ALL_PASS_TEXT = "ALL PASS";
+export function evidenceFromScan(scan: Scan): RunEvidence {
+  const cached = EVIDENCE.get(scan);
+  if (cached) return cached;
+  let newestMs: number | null = null;
+  for (const [rel, t] of scan.files) {
+    if (rel.includes("/")) continue;
+    if (newestMs === null || t > newestMs) newestMs = t;
+  }
+  const e: RunEvidence = {
+    id: scan.id,
+    failedMarker: scan.files.has("FAILED.md"),
+    proposal: scan.files.has("proposal.md"),
+    report: readText(scan, "verification-report.md"),
+    meta: scan.files.has("meta.json") ? metaEvidence(readJson<unknown>(scan, "meta.json")) : null,
+    exit: scan.files.has("exit.json") ? exitEvidence(readJson<unknown>(scan, "exit.json")) : null,
+    questionMs: scan.files.get("question.md") ?? null,
+    newestMs,
+  };
+  EVIDENCE.set(scan, e);
+  return e;
+}
+
+export const outcomeOf = (scan: Scan): RunOutcome => runOutcome(evidenceFromScan(scan));
+
+/** 表示层：五态里的四态由 phase 决定，running 只能由锁决定（见 deriveStatus）。 */
+const STATUS_BY_PHASE: Record<RunPhase, Exclude<RunStatus, "running">> = {
+  failed: "failed",
+  verified: "passed",
+  rendered: "completed",
+  unsettled: "stale",
+};
 
 /**
- * 只认头部那一行 `结果: ALL PASS`，不做全文 includes——说明列里嵌的是 LLM 写的
- * 标题/作者原文，全文匹配会把一份失败报告读成通过。
+ * 「已定型」的状态集合 —— runs/index.json 缓存只对它们有意义（目录不会再变）。
+ * 从 phase 表派生而不是手写：unsettled 之外的 phase 都蕴含 terminal，
+ * 所以它们映射到的状态就是定型态；stale 永远现算。
  */
-const ALL_PASS = new RegExp(`${RESULT_PREFIX.trimEnd()}\\s*${ALL_PASS_TEXT}`);
+export const SETTLED_STATUSES: ReadonlySet<RunStatus> = new Set(
+  (Object.keys(STATUS_BY_PHASE) as RunPhase[]).filter((p) => p !== "unsettled").map((p) => STATUS_BY_PHASE[p]),
+);
 
-/** 写出端：failed=0 才是 ALL PASS。 */
-export function resultLine(failedCount: number, totalCount: number): string {
-  return `${RESULT_PREFIX}${failedCount === 0 ? ALL_PASS_TEXT : `${failedCount}/${totalCount} FAILED`}`;
-}
-
-/** 读入端：一份报告原文是否判通过。报告缺失一律不算通过。 */
-export function isAllPass(report: string | null | undefined): boolean {
-  return typeof report === "string" && ALL_PASS.test(report);
-}
-
+/**
+ * 锁的判定留在 runOutcome 之外：「谁在跑」是进程外事实，不在 run 目录里，
+ * 把它读进纯函数就等于给终态判定塞了一个看不见的入参。
+ */
 export function deriveStatus(scan: Scan): RunStatus {
   const lock = activeLock();
   if (lock?.runId === scan.id) return "running";
-  if (scan.files.has("FAILED.md")) return "failed";
-  const report = readText(scan, "verification-report.md");
-  if (scan.files.has("proposal.md")) return isAllPass(report) ? "passed" : "completed";
-  const exit = readJson<{ exitCode?: unknown }>(scan, "exit.json");
-  if (typeof exit?.exitCode === "number" && exit.exitCode !== 0) return "failed";
-  const meta = readJson<{ exitCode?: unknown }>(scan, "meta.json");
-  if (typeof meta?.exitCode === "number" && meta.exitCode !== 0) return "failed";
-  return "stale";
+  return STATUS_BY_PHASE[outcomeOf(scan).phase];
 }
 
 export function deriveNodes(scan: Scan, status: RunStatus, verdicts: Verdict[]): SpineNode[] {
@@ -202,38 +241,14 @@ export function deriveNodes(scan: Scan, status: RunStatus, verdicts: Verdict[]):
 /* 时间                                                                 */
 /* ------------------------------------------------------------------ */
 
-type Meta = { questionId?: unknown; startedAt?: unknown; finishedAt?: unknown; exitCode?: unknown };
+/** meta.json 只有一个读点：证据。题号是它唯一被表示层直接用到的字段。 */
+export const questionIdOf = (scan: Scan): number | null => evidenceFromScan(scan).meta?.questionId ?? null;
 
-export function readMeta(scan: Scan): Meta | null {
-  return readJson<Meta>(scan, "meta.json");
-}
+export const startedAtMs = (scan: Scan): number | null => outcomeOf(scan).startedMs;
 
-export function startedAtMs(scan: Scan): number | null {
-  const meta = readMeta(scan);
-  if (typeof meta?.startedAt === "string") {
-    const t = Date.parse(meta.startedAt);
-    if (!Number.isNaN(t)) return t;
-  }
-  // 退路：run id 本身就是 UTC 时间戳 20260808-062829
-  const m = /^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})$/.exec(scan.id);
-  if (m) return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
-  return scan.files.get("question.md") ?? null;
-}
-
+/** 在跑的 run 不显示结束时间——这是表示层的选择，与「有没有结束时间」是两件事。 */
 export function finishedAtMs(scan: Scan, status: RunStatus): number | null {
-  if (status === "running") return null;
-  const meta = readMeta(scan);
-  if (typeof meta?.finishedAt === "string") {
-    const t = Date.parse(meta.finishedAt);
-    if (!Number.isNaN(t)) return t;
-  }
-  const exit = readJson<{ endedAt?: unknown }>(scan, "exit.json");
-  if (typeof exit?.endedAt === "string") {
-    const t = Date.parse(exit.endedAt);
-    if (!Number.isNaN(t)) return t;
-  }
-  const times = [...scan.files.values()];
-  return times.length ? Math.max(...times) : null;
+  return status === "running" ? null : outcomeOf(scan).finishedMs;
 }
 
 

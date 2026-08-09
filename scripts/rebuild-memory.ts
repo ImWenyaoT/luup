@@ -15,7 +15,7 @@ import {
   upsertLibraryPaper,
 } from "#lib/campaignMemory.ts";
 import { RUNS_DIR } from "../lib/paths.ts";
-import { isAllPass } from "../lib/phase.ts";
+import { readRunEvidence, runOutcome } from "../lib/runOutcome.ts";
 
 const runsRoot = RUNS_DIR;
 const layout = describeLayout();
@@ -35,13 +35,10 @@ for (const ent of readdirSync(runsRoot, { withFileTypes: true }).sort((a, b) => 
   if (!ent.isDirectory()) continue;
   const runDir = join(runsRoot, ent.name);
 
-  let questionId: number | null = null;
-  try {
-    const meta = JSON.parse(readFileSync(join(runDir, "meta.json"), "utf8")) as { questionId?: unknown };
-    if (typeof meta.questionId === "number") questionId = meta.questionId;
-  } catch {
-    /* 老 run 或 eval run 无 meta —— 文献仍值得进 library，questionId 记 null */
-  }
+  // 老 run 或 eval run 无 meta —— 文献仍值得进 library，questionId 记 null
+  const evidence = readRunEvidence(runDir, ent.name);
+  const outcome = runOutcome(evidence);
+  const questionId = evidence.meta?.questionId ?? null;
 
   for (const id of listPapers(runDir)) {
     const card = readCard(runDir, id);
@@ -51,18 +48,12 @@ for (const ent of readdirSync(runsRoot, { withFileTypes: true }).sort((a, b) => 
     if (!("skipped" in r && r.skipped)) papers++;
   }
 
-  // 题页回填：verification-report 的头部结果行 + FAILED 与否；同一 run 已登记过则跳过
+  // 题页回填：三个字符串是这里的表示层，判定来自 run outcome；同一 run 已登记过则跳过
   if (questionId !== null) {
     const qp = layout.questionPage(questionId);
     const already = existsSync(qp) && readFileSync(qp, "utf8").includes(runDir);
     if (!already) {
-      const reportPath = join(runDir, "verification-report.md");
-      const failed = existsSync(join(runDir, "FAILED.md"));
-      const verdict = failed
-        ? "FAILED"
-        : existsSync(reportPath) && isAllPass(readFileSync(reportPath, "utf8"))
-          ? "ALL PASS"
-          : "UNVERIFIED";
+      const verdict = outcome.phase === "failed" ? "FAILED" : outcome.deliverable ? "ALL PASS" : "UNVERIFIED";
       const r = archiveRunOutcome({
         questionId,
         verdict,

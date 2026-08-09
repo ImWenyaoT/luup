@@ -17,14 +17,18 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { activeRunId } from "./lock.ts";
 import { RUNS_INDEX_FILE } from "./paths.ts";
+import { SETTLED_STATUSES } from "./phase.ts";
 import { listRunIds, readSummary } from "./runs.ts";
 import type { RunSummary } from "./types.ts";
 
 /**
  * 形状或字段语义变了就 +1：老 index.json 会因版本不符被当作损坏，自动退回扫盘。
  * v2：deriveNodes 开始认历史工件名（老 run 的 critique.md），已定型条目的 nodes 会变。
+ * v3：终态判定收敛到 lib/runOutcome.ts。status 对现存 run 全部不变，但结束时间的兜底
+ *     从「目录内所有文件的最新 mtime」收窄为「顶层文件」，缺 meta.finishedAt 的老 run
+ *     的 finishedAt / durationSec 会变。
  */
-export const RUNS_INDEX_VERSION = 2;
+export const RUNS_INDEX_VERSION = 3;
 
 export type RunsIndex = {
   version: number;
@@ -85,9 +89,10 @@ function parseIndex(raw: string): RunsIndex | null {
  * （run-batch.ts 不持 runs/.active.json 锁，锁只有 web API 走）里**在跑的 run** 的样子：
  * deriveStatus 看不到锁，就只能判 stale。把这类条目现算，缓存就不会在批跑途中骗人；
  * 代价是每次多扫几个目录，而未定型的 run 通常只有 0~1 个。
+ *
+ * 「定型」的判据不在这里手写：`SETTLED_STATUSES` 由 run outcome 的 phase 表派生
+ * （lib/phase.ts），终态判定改了这里自动跟上。
  */
-const SETTLED = new Set<RunSummary["status"]>(["passed", "failed", "completed"]);
-
 export function readRunsIndex(limit = 50): RunSummary[] | null {
   let index: RunsIndex | null;
   try {
@@ -106,6 +111,6 @@ export function readRunsIndex(limit = 50): RunSummary[] | null {
   const active = activeRunId();
   const runs = index.runs
     .slice(0, limit)
-    .map((r) => (r.id === active || !SETTLED.has(r.status) ? readSummary(r.id) ?? r : r));
+    .map((r) => (r.id === active || !SETTLED_STATUSES.has(r.status) ? readSummary(r.id) ?? r : r));
   return runs;
 }
