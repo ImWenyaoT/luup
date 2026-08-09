@@ -3,11 +3,12 @@
  *
  *   node scripts/selftest-memory.ts
  *
- * 覆盖 docs/design/memory.md 的四条验收线：
+ * 覆盖 docs/design/memory.md 的五条验收线：
  *  1. savePaper 落 run 卡后**由代码**同步全局卡，`library/index.md` 整份重建、按学科分组、带反向索引
  *  2. `memory_note` 写后读回，返回 `{written[], failed[]}`；缺 questionId 时进 failed 而不是静默成功
  *  3. `searchMemory` 在 library / questions / lessons 三处都能命中，返回 L0 行 + 路径（无 embedding）
- *  4. **删掉 memory/ 后全部函数静默 no-op**：不抛、不重建目录，run 收尾照跑（可删除性红线）
+ *  4. **compaction**：log 超行数→滚分片、题页超字数→降层归档；条目逐字保留、run 指针完好、幂等
+ *  5. **删掉 memory/ 后全部函数静默 no-op**：不抛、不重建目录，run 收尾照跑（可删除性红线）
  *
  * 全程在 os.tmpdir() 下操作，靠 LUUP_RUN_DIR / LUUP_MEMORY_DIR 改指向，
  * 仓库里的 runs/ 与 memory/ 一个字节都不会被改到；退出前恢复现场。
@@ -17,8 +18,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ArxivPaper } from "#lib/arxiv.ts";
 import {
+  COMPACTION_DEFAULTS,
   MEMORY_DIR_ENV,
   archiveRunOutcome,
+  compactLog,
+  compactQuestionPage,
   describeLayout,
   listLibraryCards,
   memoryEnabled,
@@ -243,14 +247,137 @@ check("归档无 failed", arch.failed.length === 0, JSON.stringify(arch.failed))
 check("q61.md 含 verdict 与 run 指针", readFileSync(layout.questionPage(61), "utf8").includes("verdict: FAILED") && readFileSync(layout.questionPage(61), "utf8").includes(runDir));
 
 /* ================================================================ */
-/* 7. 可删除性红线：删掉 memory/ 后一切照常                            */
+/* 7. compaction：log 分片 + 题页归档（memory.md「compaction」节）      */
 /* ================================================================ */
-console.log("\n[7] 删除 memory/ → 全部函数静默 no-op（memory.md 验收标准④）");
+const countHeads = (file: string) =>
+  existsSync(file) ? readFileSync(file, "utf8").split("\n").filter((l) => l.startsWith("## [")).length : 0;
+const lineCount = (file: string) => readFileSync(file, "utf8").split("\n").length;
+const byteSize = (file: string) => Buffer.byteLength(readFileSync(file, "utf8"), "utf8");
+
+console.log("\n[7a] log.md 超行数 → 滚 log.<YYYY-MM>.md（只分片，永不压缩）");
+const logEntriesBefore = countHeads(layout.log);
+const PROBES = 200; // 每条 note 写 1 条日志（约 3 行）⇒ 稳过 500 行阈值
+for (let i = 0; i < PROBES; i++) {
+  writeNote({ target: "lessons", note: `分片探针 #${i}：常规运营记录，用来把 log 顶过行数阈值。`, memoryDir: memoryDir });
+}
+const shard = layout.logShard(new Date().toISOString().slice(0, 7));
+const logMain = readFileSync(layout.log, "utf8");
+// 注意上界而不是「刚滚完的长度」：滚完之后还会继续追加，主 log 又会长起来 ——
+// 恒成立的不变式是「任何一次追加之后都不超过阈值」。
+check("log.md 行数始终守住阈值上界", lineCount(layout.log) <= COMPACTION_DEFAULTS.logMaxLines, `${lineCount(layout.log)} 行`);
+check("分片文件 log.<YYYY-MM>.md 已生成", existsSync(shard), shard);
+check("分片带「勿手改」表头", readFileSync(shard, "utf8").includes("时序日志分片"));
+check(
+  "条目一条不少（主 log + 分片 = 全部）",
+  countHeads(layout.log) + countHeads(shard) === logEntriesBefore + PROBES,
+  `${countHeads(layout.log)} + ${countHeads(shard)} vs ${logEntriesBefore + PROBES}`,
+);
+check("最老的探针条目在分片里", readFileSync(shard, "utf8").includes("分片探针 #0"));
+check("最新条目仍留在主 log（tail 可用）", logMain.includes(`分片探针 #${PROBES - 1}`));
+check(
+  "**逐字保留**：早先那条 run|q54|SUCCESS 连明细行一起搬进分片",
+  readFileSync(shard, "utf8").includes(`\n- ${runDir} refs=7`) &&
+    /## \[\d{4}-\d{2}-\d{2}\] run \| q54 \| SUCCESS/.test(readFileSync(shard, "utf8")),
+);
+check("主 log 仍带 append-only 表头（前言未被搬走）", logMain.startsWith("<!--") && logMain.includes("请勿手改"));
+check("memory/index.md 如实报出分片条目数", readFileSync(layout.index, "utf8").includes("分片"), "");
+
+// 阈值可配 + 「留最近段」：强制再滚一次，主 log 必须落进 keep 预算并明确变短
+const logBytesBefore = byteSize(layout.log);
+const forcedLog = compactLog({ memoryDir, thresholds: { logMaxLines: 1 } });
+check("阈值可覆盖（logMaxLines override 触发强制滚动）", forcedLog.compacted && forcedLog.moved > 0, `moved=${forcedLog.moved}`);
+check("主 log 落进「最近段」预算", lineCount(layout.log) <= COMPACTION_DEFAULTS.logKeepLines + 10, `${lineCount(layout.log)} 行`);
+check("主文件明确变短", byteSize(layout.log) < logBytesBefore, `${logBytesBefore} → ${byteSize(layout.log)}`);
+check(
+  "强制滚动后条目仍一条不少",
+  countHeads(layout.log) + countHeads(shard) === logEntriesBefore + PROBES,
+  `${countHeads(layout.log)} + ${countHeads(shard)}`,
+);
+check("强制滚动后最新条目仍在主 log", readFileSync(layout.log, "utf8").includes(`分片探针 #${PROBES - 1}`));
+
+const logMainNow = readFileSync(layout.log, "utf8");
+const logAgain = compactLog({ memoryDir });
+check("再次 compactLog 幂等（不到阈值就不动）", !logAgain.compacted && logAgain.moved === 0, logAgain.reason ?? "");
+check("幂等调用未改动主 log", readFileSync(layout.log, "utf8") === logMainNow);
+
+console.log("\n[7b] 题页超字数 → 旧条目降层进 q<id>.archive.md（整条搬移，不删除）");
+const bigNote = (tag: string) =>
+  `${tag}\n\n${Array.from({ length: 120 }, (_, i) => `- 尝试 ${i}：被拒假设与理由留档，正文是不可压缩字段。`).join("\n")}`;
+const q54EntriesBefore = countHeads(layout.questionPage(54));
+for (const tag of ["BIG-A", "BIG-B", "BIG-C"]) {
+  writeNote({ target: "question", questionId: 54, note: bigNote(tag), memoryDir });
+}
+const archive54 = layout.questionArchive(54);
+const q54Main = readFileSync(layout.questionPage(54), "utf8");
+const q54Arch = readFileSync(archive54, "utf8");
+check("q54.archive.md 已生成", existsSync(archive54), archive54);
+check(
+  "主页面只留最近 N 条，其余降层",
+  countHeads(layout.questionPage(54)) === COMPACTION_DEFAULTS.questionKeepEntries,
+  `主 ${countHeads(layout.questionPage(54))} 条 / 归档 ${countHeads(archive54)} 条`,
+);
+check(
+  "条目一条不少（主页 + 归档 = 全部）",
+  countHeads(layout.questionPage(54)) + countHeads(archive54) === q54EntriesBefore + 3,
+  `${countHeads(layout.questionPage(54))} + ${countHeads(archive54)} vs ${q54EntriesBefore + 3}`,
+);
+check("刚写完的那条仍在主页面（调用方拿到的 outcome 不指向空文件）", q54Main.includes("BIG-C"));
+check("主页面保留 `# q54` 表头", q54Main.startsWith("# q54"));
+check(
+  "主页面有且只有一行「更早记录见 archive」指针",
+  q54Main.split("\n").filter((l) => l.startsWith("> 更早记录见 ")).length === 1,
+  q54Main.split("\n").find((l) => l.startsWith("> 更早记录见 ")) ?? "(无)",
+);
+check("**不可压缩字段**：run 目录指针原样躺在归档里", q54Arch.includes(`- run: ${runDir}`), runDir);
+check("**不可压缩字段**：被拒假设原始陈述逐字保留", q54Arch.includes("GOES X 射线单通道") && q54Arch.includes("数据分辨率不足"));
+check("归档里的旧条目首行未被改写", q54Arch.includes("磁图序列的时序注意力"));
+check("归档带「降层不删除」说明表头", q54Arch.startsWith("# q54 · 归档"));
+check(
+  "归档内容仍可被 memory_search 搜到（降层不等于丢知识）",
+  searchMemory({ query: "GOES 单通道", memoryDir }).hits.some((h) => h.path === "memory/questions/q54.archive.md"),
+  searchMemory({ query: "GOES 单通道", memoryDir }).hits.map((h) => h.path).join(", "),
+);
+check("memory/index.md 如实报出归档条目数", readFileSync(layout.index, "utf8").includes("q54.archive.md"));
+
+// 阈值可配：换一组更狠的阈值直接调，主文件必须**明确变短**
+const mainBytesBefore = byteSize(layout.questionPage(54));
+const archBytesBefore = byteSize(archive54);
+const tight = { questionMaxBytes: 1, questionKeepEntries: 1 };
+const forced = compactQuestionPage({ questionId: 54, memoryDir, thresholds: tight });
+check("阈值可覆盖（导出常量 + 逐字段 override）", forced.compacted && forced.moved === 2, `moved=${forced.moved}`);
+check("主文件明确变短", byteSize(layout.questionPage(54)) < mainBytesBefore, `${mainBytesBefore} → ${byteSize(layout.questionPage(54))}`);
+check("归档只增不减", byteSize(archive54) > archBytesBefore && readFileSync(archive54, "utf8").startsWith(q54Arch));
+check(
+  "总条目数仍守恒",
+  countHeads(layout.questionPage(54)) + countHeads(archive54) === q54EntriesBefore + 3,
+  `${countHeads(layout.questionPage(54))} + ${countHeads(archive54)}`,
+);
+const mainAfterForce = readFileSync(layout.questionPage(54), "utf8");
+const archAfterForce = readFileSync(archive54, "utf8");
+const forcedAgain = compactQuestionPage({ questionId: 54, memoryDir, thresholds: tight });
+check("再次 compactQuestionPage 幂等（条目数不足以归档）", !forcedAgain.compacted && forcedAgain.moved === 0, forcedAgain.reason ?? "");
+check("幂等调用未改动主页面与归档", readFileSync(layout.questionPage(54), "utf8") === mainAfterForce && readFileSync(archive54, "utf8") === archAfterForce);
+check("指针仍只有一行（重复归档不叠加）", mainAfterForce.split("\n").filter((l) => l.startsWith("> 更早记录见 ")).length === 1);
+check("没到阈值的题页不动（q61 无归档文件）", !existsSync(layout.questionArchive(61)));
+
+/* ================================================================ */
+/* 8. 可删除性红线：删掉 memory/ 后一切照常                            */
+/* ================================================================ */
+console.log("\n[8] 删除 memory/ → 全部函数静默 no-op（memory.md 验收标准④）");
 rmSync(memoryDir, { recursive: true, force: true });
 check("memory/ 确已删除", !existsSync(memoryDir) && !memoryEnabled(memoryDir));
 
 let threw: string | null = null;
-let noop = { upsert: false, log: false, note: false, search: false, archive: false, tool: false, toolSearch: false };
+let noop = {
+  upsert: false,
+  log: false,
+  note: false,
+  search: false,
+  archive: false,
+  tool: false,
+  toolSearch: false,
+  compact: false,
+};
 try {
   const before = listPapers(runDir).length;
   savePaper(runDir, fakePaper({ arxivId: "2402.22222", title: "Post-deletion paper" }));
@@ -275,6 +402,17 @@ try {
 
   const ts = await callTool(memorySearchTool, { query: "magnetogram flare", limit: 20 });
   noop.toolSearch = ts.enabled === false && ts.hits.length === 0 && ts.hint.includes("不是错误");
+
+  // compaction 同样受可删除性红线约束：没有 memory/ 就没有分片、没有归档、没有目录
+  const cl = compactLog();
+  const cq = compactQuestionPage({ questionId: 54 });
+  noop.compact =
+    cl.skipped &&
+    !cl.compacted &&
+    cq.skipped &&
+    !cq.compacted &&
+    !existsSync(layout.questionArchive(54)) &&
+    !existsSync(layout.logShard(new Date().toISOString().slice(0, 7)));
 } catch (e) {
   threw = String(e);
 }
@@ -287,6 +425,7 @@ check("searchMemory 返回 enabled:false + 空 hits", noop.search);
 check("archiveRunOutcome 静默 skipped（run.ts 收尾不炸）", noop.archive);
 check("memory_note 工具返回 skipped、written/failed 皆空", noop.tool);
 check("memory_search 工具返回 enabled:false 且 hint 说明不是错误", noop.toolSearch);
+check("compactLog / compactQuestionPage 静默 skipped 且不建任何文件", noop.compact);
 check("**未偷偷重建 memory/**（删掉就是删掉）", !existsSync(memoryDir));
 
 // run.ts 收尾那段的等价调用：整段包 try 后仍能算出退出码
