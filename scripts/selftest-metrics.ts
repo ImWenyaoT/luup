@@ -13,6 +13,7 @@
  *
  * 断言口径与其余五个 selftest 同一份（scripts/selftestHarness.ts）。
  */
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -442,6 +443,34 @@ const bland = MUTATIONS.find((x) => x.id === "bland-relevance")!.apply(base);
 check("引用 relevance 置空话", bland.references.every((r) => r.relevance === bland.references[0].relevance));
 check("空话 relevance 与原文不同", bland.references[0].relevance !== base.references[0].relevance);
 
+console.log("\n[M9] score-run 只接受确定性可交付 run");
+
+const scoreTmp = mkdtempSync(join(tmpdir(), "luup-score-run-"));
+try {
+  const scoreRunDir = join(scoreTmp, "20260101-000001");
+  mkdirSync(scoreRunDir, { recursive: true });
+  writeFileSync(join(scoreRunDir, "proposal.json"), `${JSON.stringify(base)}\n`);
+  writeFileSync(join(scoreRunDir, "proposal.md"), "# 尚未通过独立验收\n");
+  writeFileSync(
+    join(scoreRunDir, "meta.json"),
+    `${JSON.stringify({ questionId: 61, startedAt: "2026-01-01T00:00:01.000Z", finishedAt: "2026-01-01T00:00:02.000Z", exitCode: 0 })}\n`,
+  );
+  const childEnv = { ...process.env };
+  delete childEnv.QWEN_API_KEY;
+  delete childEnv.QWEN_BASE_URL;
+  const scoredBeforeGate = spawnSync("node", ["scripts/score-run.ts", scoreRunDir], {
+    cwd: REPO_ROOT,
+    encoding: "utf8",
+    env: childEnv,
+  });
+  eq("未通过 ALL PASS 的 run 被 score-run 拒绝", scoredBeforeGate.status, 2);
+  check("拒绝原因指向确定性交付 gate", scoredBeforeGate.stderr.includes("不可交付"), scoredBeforeGate.stderr);
+  check("拒绝发生在 judge 调用前", !scoredBeforeGate.stderr.includes("缺 QWEN_API_KEY"), scoredBeforeGate.stderr);
+  check("拒绝后不落 score.json", !readdirSync(scoreRunDir).includes("score.json"));
+} finally {
+  rmSync(scoreTmp, { recursive: true, force: true });
+}
+
 // 检出率表：lower 看是否低于 baseline，veto 看是否触发
 const table = detectionTable(
   { weighted: 20, veto: false },
@@ -494,9 +523,16 @@ const cand = (
   deliverable: o.deliverable ?? true,
   veto: o.veto ?? false,
   score: o.score ?? null,
+  rubricVersion: "1.0.0",
+  judgeModel: "qwen",
   refs: o.refs ?? null,
   tokens: o.tokens ?? null,
 });
+
+const trustedCalibration = [
+  "rubric v1.0.0｜judge qwen（thinking=true）",
+  "**检出 3 / 4 = 75.0%**｜逆序 0｜判不了 0（共 4 个变异体）",
+].join("\n");
 
 eq("空候选无胜者", selectVersion([]).winner, null);
 eq("空候选的理由说清是空", selectVersion([]).reason, "没有候选版本");
@@ -516,7 +552,10 @@ eq("veto 记成 advisory", vetoed2.advisories[0].runId, "a");
 eq("advisory 文案单点", vetoed2.advisories[0].note, VETO_ADVISORY);
 check("advisory 不含「出局」「gate」字样", !/出局|gate/.test(vetoed2.advisories[0].note));
 
-const bothVetoed = selectVersion([cand("a", { veto: true, score: 10 }), cand("b", { veto: true, score: 20 })]);
+const bothVetoed = selectVersion(
+  [cand("a", { veto: true, score: 10 }), cand("b", { veto: true, score: 20 })],
+  { calibrationReports: [trustedCalibration] },
+);
 eq("两版都 veto 仍要选出胜者（不再退化成「无胜者」）", bothVetoed.winner!.runId, "b");
 eq("两条 advisory 都记下来", bothVetoed.advisories.length, 2);
 eq("胜者本身带 veto 也照样是胜者", bothVetoed.winner!.veto, true);
@@ -531,20 +570,36 @@ eq("出局的都是不可交付，与 veto 无关", allOut.eliminated.length, 2)
 eq("出局者不进 advisories", allOut.advisories.length, 0);
 
 const byScore = selectVersion([cand("a", { score: 12, refs: 99, tokens: 1 }), cand("b", { score: 18, refs: 5, tokens: 9 })]);
-eq("第 2 级：M9 总分高者胜（哪怕 refs 少、token 贵）", byScore.winner!.runId, "b");
-eq("第 2 级理由", byScore.reason, "M9 总分更高");
+eq("校准策略缺省不信任 M9：refs 更多者胜", byScore.winner!.runId, "a");
+eq("未达校准阈值时理由不提 M9", byScore.reason, "M9 未达校准阈值，refs 更多");
+
+const calibratedByScore = selectVersion(
+  [cand("a", { score: 12, refs: 99, tokens: 1 }), cand("b", { score: 18, refs: 5, tokens: 9 })],
+  { calibrationReports: [trustedCalibration] },
+);
+eq("明确通过校准策略后 M9 才参与排序", calibratedByScore.winner!.runId, "b");
+eq("通过校准策略后的理由", calibratedByScore.reason, "M9 总分更高");
 
 const scoredBeatsUnscored = selectVersion([cand("a", { score: null, refs: 99 }), cand("b", { score: 1 })]);
-eq("未评分版不得压过已评分版", scoredBeatsUnscored.winner!.runId, "b");
+eq("校准不合格时已评分版没有特权", scoredBeatsUnscored.winner!.runId, "a");
 
-const byRefs = selectVersion([cand("a", { score: 10, refs: 6, tokens: 1 }), cand("b", { score: 10, refs: 9, tokens: 9 })]);
+const byRefs = selectVersion(
+  [cand("a", { score: 10, refs: 6, tokens: 1 }), cand("b", { score: 10, refs: 9, tokens: 9 })],
+  { calibrationReports: [trustedCalibration] },
+);
 eq("第 3 级：分数平手比 refs", byRefs.winner!.runId, "b");
 eq("第 3 级理由", byRefs.reason, "M9 总分持平，refs 更多");
 
-const byTokens = selectVersion([cand("a", { score: 10, refs: 7, tokens: 900 }), cand("b", { score: 10, refs: 7, tokens: 100 })]);
+const byTokens = selectVersion(
+  [cand("a", { score: 10, refs: 7, tokens: 900 }), cand("b", { score: 10, refs: 7, tokens: 100 })],
+  { calibrationReports: [trustedCalibration] },
+);
 eq("第 4 级：refs 也平手比 token（升序）", byTokens.winner!.runId, "b");
 eq("第 4 级理由", byTokens.reason, "M9 总分与 refs 持平，token 成本更低");
-const unknownTokens = selectVersion([cand("a", { score: 10, refs: 7, tokens: null }), cand("b", { score: 10, refs: 7, tokens: 100 })]);
+const unknownTokens = selectVersion(
+  [cand("a", { score: 10, refs: 7, tokens: null }), cand("b", { score: 10, refs: 7, tokens: 100 })],
+  { calibrationReports: [trustedCalibration] },
+);
 eq("token 未知者不得靠「没数据」取胜", unknownTokens.winner!.runId, "b");
 
 const tie = selectVersion([cand("z", { score: 10, refs: 7, tokens: 100 }), cand("a", { score: 10, refs: 7, tokens: 100 })]);
@@ -563,21 +618,33 @@ const realCands = q61.map((r) => ({
   deliverable: r.deliverable,
   veto: r.score?.veto ?? false,
   score: r.score?.weighted ?? null,
+  rubricVersion: r.score?.rubricVersion ?? null,
+  judgeModel: r.score?.judgeModel ?? null,
   refs: r.literature.refs,
   tokens: r.usageMissing ? null : r.usage.all.total,
 }));
 eq("q61 两版都跑过 M9", realCands.filter((c) => c.score !== null).length, 2);
 eq("q61 两版都报了 veto", realCands.filter((c) => c.veto).length, 2);
-const realChoice = selectVersion(realCands);
-eq("q61 胜者 = 134046（M9 21 > 19）", realChoice.winner!.runId, "20260808-134046");
-eq("q61 择优理由落在 M9 总分层", realChoice.reason, "M9 总分更高");
+const actualCalibrations = q61
+  .map((r) => {
+    try {
+      return readFileSync(join(RUNS_DIR, r.id, "calibration.md"), "utf8");
+    } catch {
+      return null;
+    }
+  })
+  .filter((x): x is string => x !== null);
+check("q61 有真实 calibration.md 证据", actualCalibrations.length > 0);
+const realChoice = selectVersion(realCands, { calibrationReports: actualCalibrations });
+eq("q61 的真实校准未授权 M9，胜者落到 token 层", realChoice.winner!.runId, "20260808-134046");
+eq("q61 择优理由披露 M9 未达阈值", realChoice.reason, "M9 未达校准阈值，refs 持平，token 成本更低");
 check("胜者自己带着 veto 标志，但那只是诊断", realChoice.winner!.veto);
 eq("两版的 veto 都进 advisories", realChoice.advisories.length, 2);
 eq("没有任何版本因 veto 出局", realChoice.eliminated.length, 0);
 
 // 只看 Tier1（不接 M9）时胜者相同，但分出胜负的层次不同 —— 两条路都要留住
 const tier1Only = selectVersion(realCands.map((c) => ({ ...c, score: null, veto: false })));
-eq("只看 Tier1 时 q61 落到 token 层", tier1Only.reason, "M9 总分与 refs 持平，token 成本更低");
+eq("只看 Tier1 时 q61 落到 token 层", tier1Only.reason, "M9 未达校准阈值，refs 持平，token 成本更低");
 eq("只看 Tier1 时胜者仍是 134046", tier1Only.winner!.runId, "20260808-134046");
 
 check("RUNS_DIR 指向本仓库 runs/", RUNS_DIR.endsWith("/runs"));

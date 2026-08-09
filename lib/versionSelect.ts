@@ -10,9 +10,10 @@
  *
  *   1. **gate —— 只有确定性判据**：`runOutcome().deliverable === false` 的版本直接出局。
  *      判定权在 `lib/runOutcome.ts` 与 `scripts/verify-proposal.ts`（A/B1–B4），不在模型。
- *   2. **M9 总分**降序（tie-break，不是 gate）。未评分（null）排在所有已评分之后：
- *      「没测过」不是「测过且很好」。
- *   3. **refs 数**降序。同分时证据面更宽的那版更值得交。
+ *   2. **M9 总分**只有在同 rubric、同 judge 模型的 M10 报告满足「可判样本 ≥4、检出率 ≥75%、
+ *      逆序 0」时才降序参与；否则整级跳过，直接回退 refs。该授权由
+ *      `m9RankingEligible()` 从 calibration.md 原文复算，不接受调用方布尔声明。
+ *   3. **refs 数**降序。M9 未获授权时这是 gate 后第一排序项。
  *   4. **token 成本**升序。前三级全平时选更便宜的那版（125 题战役里这是真金白银）。
  *      成本未知（null）排在最后 —— 同样不许靠「没数据」取胜。
  *   5. run id 升序。全同则取最早的一版，只为**确定性**：择优不能依赖输入顺序。
@@ -51,6 +52,10 @@ export type VersionCandidate = {
   veto: boolean;
   /** M9 加权总分（诊断分，tie-break 用）；未评分为 null。 */
   score: number | null;
+  /** score.json 所用 rubric；缺失时不能证明与校准报告同口径。 */
+  rubricVersion?: string | null;
+  /** score.json 所用 judge；必须与校准报告一致。 */
+  judgeModel?: string | null;
   /** proposal 的引用条数；未知为 null。 */
   refs: number | null;
   /** 本次 run 的 total token（M6）；未知为 null。 */
@@ -58,6 +63,8 @@ export type VersionCandidate = {
 };
 
 export type VersionChoice = {
+  /** 本次候选组是否通过 M10 校准、允许 M9 参与排序。 */
+  m9Eligible: boolean;
   winner: VersionCandidate | null;
   /** 通过 gate 的候选，按字典序排好；出局者不在其中。 */
   ranked: VersionCandidate[];
@@ -71,6 +78,41 @@ export type VersionChoice = {
    */
   advisories: Array<{ runId: string; note: string }>;
 };
+
+export type VersionSelectionEvidence = {
+  /** `scripts/calibrate-judge.ts` 产出的 calibration.md 原文；缺省 fail-closed。 */
+  calibrationReports?: string[];
+};
+
+const MIN_CALIBRATION_JUDGEABLE = 4;
+const MIN_CALIBRATION_DETECTION_RATE = 0.75;
+
+/** calibration.md + score 元数据 → M9 是否获准承重。无法解析一律 false。 */
+export function m9RankingEligible(candidates: VersionCandidate[], reports: string[] = []): boolean {
+  const versions = new Set(
+    candidates.flatMap((c) => (c.score === null || !c.rubricVersion ? [] : [c.rubricVersion])),
+  );
+  const judges = new Set(candidates.flatMap((c) => (c.score === null || !c.judgeModel ? [] : [c.judgeModel])));
+  if (versions.size !== 1 || judges.size !== 1) return false;
+  const [rubricVersion] = versions;
+  const [judgeModel] = judges;
+  return reports.some((report) => {
+    const rubric = report.match(/rubric v([^｜\s]+)/)?.[1];
+    const judge = report.match(/judge\s+([^（｜\s]+)/)?.[1];
+    const summary = report.match(/检出\s+(\d+)\s*\/\s*(\d+)\s*=\s*([\d.]+)%[^\n]*逆序\s+(\d+)/);
+    if (!summary || rubric !== rubricVersion || judge !== judgeModel) return false;
+    const detected = Number(summary[1]);
+    const judgeable = Number(summary[2]);
+    const reportedRate = Number(summary[3]) / 100;
+    const inverted = Number(summary[4]);
+    return (
+      judgeable >= MIN_CALIBRATION_JUDGEABLE &&
+      detected / judgeable >= MIN_CALIBRATION_DETECTION_RATE &&
+      reportedRate >= MIN_CALIBRATION_DETECTION_RATE &&
+      inverted === 0
+    );
+  });
+}
 
 /** 降序比较：null 永远排在数字之后。 */
 const descNullsLast = (a: number | null, b: number | null): number => {
@@ -91,9 +133,13 @@ const ascNullsLast = (a: number | null, b: number | null): number => {
 /** advisory 文案的唯一出处：stats 的「⚠ M9 诊断」列与题页读的是同一句。 */
 export const VETO_ADVISORY = "M9 报了虚构类断言 veto（诊断，不影响择优）";
 
-export function selectVersion(candidates: VersionCandidate[]): VersionChoice {
+export function selectVersion(
+  candidates: VersionCandidate[],
+  evidence: VersionSelectionEvidence = {},
+): VersionChoice {
+  const m9Eligible = m9RankingEligible(candidates, evidence.calibrationReports);
   if (candidates.length === 0) {
-    return { winner: null, ranked: [], reason: "没有候选版本", eliminated: [], advisories: [] };
+    return { m9Eligible, winner: null, ranked: [], reason: "没有候选版本", eliminated: [], advisories: [] };
   }
 
   const eliminated: VersionChoice["eliminated"] = [];
@@ -110,12 +156,12 @@ export function selectVersion(candidates: VersionCandidate[]): VersionChoice {
   const advisories = survivors.filter((c) => c.veto).map((c) => ({ runId: c.runId, note: VETO_ADVISORY }));
 
   if (survivors.length === 0) {
-    return { winner: null, ranked: [], reason: "没有版本通过交付 gate", eliminated, advisories };
+    return { m9Eligible, winner: null, ranked: [], reason: "没有版本通过交付 gate", eliminated, advisories };
   }
 
   const ranked = [...survivors].sort(
     (a, b) =>
-      descNullsLast(a.score, b.score) ||
+      (m9Eligible ? descNullsLast(a.score, b.score) : 0) ||
       descNullsLast(a.refs, b.refs) ||
       ascNullsLast(a.tokens, b.tokens) ||
       a.runId.localeCompare(b.runId),
@@ -126,13 +172,17 @@ export function selectVersion(candidates: VersionCandidate[]): VersionChoice {
   const reason =
     runnerUp === undefined
       ? "唯一通过 gate 的版本"
-      : descNullsLast(winner.score, runnerUp.score) !== 0
+      : m9Eligible && descNullsLast(winner.score, runnerUp.score) !== 0
         ? "M9 总分更高"
         : descNullsLast(winner.refs, runnerUp.refs) !== 0
-          ? "M9 总分持平，refs 更多"
+          ? m9Eligible
+            ? "M9 总分持平，refs 更多"
+            : "M9 未达校准阈值，refs 更多"
           : ascNullsLast(winner.tokens, runnerUp.tokens) !== 0
-            ? "M9 总分与 refs 持平，token 成本更低"
+            ? m9Eligible
+              ? "M9 总分与 refs 持平，token 成本更低"
+              : "M9 未达校准阈值，refs 持平，token 成本更低"
             : "各级全部持平，按 run id 取最早的一版";
 
-  return { winner, ranked, reason, eliminated, advisories };
+  return { m9Eligible, winner, ranked, reason, eliminated, advisories };
 }

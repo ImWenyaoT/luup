@@ -113,7 +113,7 @@ export default async function Dashboard() {
           ]}
         />
         <div className="mt-2 text-[11px] text-faint">
-          全部 no-store · 只读，唯一写操作是 POST /api/runs 触发子进程 · 无鉴权（本地评审工具）
+          工件读取为只读；触发运行会写入工件并产生真实 API 费用 · 全部 no-store · 无鉴权（本地评审工具）
         </div>
       </Panel>
 
