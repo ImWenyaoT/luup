@@ -1,7 +1,7 @@
 # 全局文献索引
 
 由 `agent/lib/campaignMemory.ts` 从 `library/papers/` 自动重建，请勿手改。
-共 83 篇 · 12 个学科 · 更新于 2026-08-08T13:40:14.473Z
+共 86 篇 · 12 个学科 · 更新于 2026-08-09T10:38:19.833Z
 
 > 本索引只是**线索**。引用必须经 `arxiv_save` 在本次 run 实检落盘才算数（criteria B1）。
 
@@ -40,8 +40,10 @@
 | 2201.07376 | 2022 | Probing magnetar formation channels with high-precision astrometry: The progress of VLBA astrometry of the fastest-spinning magnetar Swift J1818.0-1607 | Boasting supreme magnetic strengths, magnetars are among the prime candidates to generate fast radio bursts. | q61 |
 | 2205.03989 | 2022 | Wide binary pulsars from electron-capture supernovae | Neutron stars receive velocity kicks at birth in supernovae. | - |
 | 2206.01269 | 2022 | A new scenario for magnetar formation: Tayler-Spruit dynamo in a proto-neutron star spun up by fallback | Magnetars are isolated young neutron stars characterized by the most intense magnetic fields known in the universe. | q61 |
+| 2209.02711 | 2022 | Kicks and Induced Spins of Neutron Stars at Birth | Using simulations of non-rotating supernova progenitors, we explore the kicks imparted to and the spins induced in the compact objects birthed in core collapse. | - |
 | 2210.11430 | 2022 | Delayed teraelectronvolt emission from GRB 980425/SN 1998bw and the origin of ultra-high-energy cosmic rays | The origin of ultra-high-energy cosmic rays (UHECRs, E $> 10^{18}$ eV) is one of the great mysteries of modern astrophysics. | q54 |
 | 2302.06791 | 2023 | Ultra High Energy Cosmic Ray Source Models: Successes, Challenges and General Predictions | Understanding the acceleration of Ultra High Energy Cosmic Rays is one of the great challenges of contemporary astrophysics. | q54 |
+| 2305.08920 | 2023 | Neutron star kicks and implications for their rotation at birth | Neutron stars are born out of core-collapse supernovae, and they are imparted natal kicks at birth as a consequence of asymmetric ejection of matter and possibly neutrinos. | - |
 | 2305.10251 | 2023 | Model of Cosmic Ray Propagation in the Milky Way at the Knee | We present a new model of anisotropic cosmic ray propagation in the Milky Way, where cosmic rays are injected at discrete transient sources in the disc and propagated in the Galactic magnetic field. | q54 |
 | 2411.13793 | 2024 | Unveiling the nature of the knee in the cosmic ray energy spectrum | The knee-like structure around 4 PeV is the most striking feature in the cosmic ray energy spectrum, whose origin remains enigmatic. | q54 |
 | 2507.19243 | 2025 | Large-scale anisotropies of ultra-high-energy cosmic rays measured at the Pierre Auger Observatory | Measurements of anisotropies in the arrival directions of ultra-high-energy cosmic rays are crucial to pinpoint their sources, which are yet to be discovered. | q54 |
@@ -52,6 +54,7 @@
 | 2604.24970 | 2026 | Core Collapse Supernova Modeling: The Next Ten Years | Core collapse supernova modeling has advanced considerably since the first numerical simulations were performed sixty years ago. | q61 |
 | 2606.11299 | 2026 | A magnetar formation in binary neutron star merger | We conduct a global general relativistic neutrino-radiation-transfer magnetohydrodynamics simulation of a $1.35$-$1.35M_\odot$ binary neutron star with the unprecedented spatial resolution of $6.25$\,m on the Japanese supercomputer FUGAKU. | q61 |
 | 2606.30839 | 2026 | Magnetar Formation from Accretion Induced Collapse of White Dwarfs | We aim to characterize the post-collapse evolution of accretion-induced collapse (AIC) remnants of rapidly rotating, magnetized white dwarfs, focusing on their rotational, magnetic, and thermal structure, as well as the development of inst… | q61 |
+| 2607.06664 | 2026 | Effects of Rotation on 3D Core-Collapse Supernova Models for Low-Mass Progenitors | We explore the dependence upon rotation rate alone of various supernova observables simulated to their saturation for the explosion of a 9-$M_{\odot}$ progenitor. | - |
 
 ## astro-ph.IM
 

@@ -32,7 +32,15 @@ import { resolveRunDir } from "./runContext.ts";
  */
 export const QWEN_CONTEXT_WINDOW_TOKENS = 131_072;
 
-/** Default model id. Deliberately not read from `.env` (only key + base URL are). */
+/**
+ * Default model id. Deliberately not read from `.env` (only key + base URL are).
+ *
+ * 模型选型分权（2026-08-09）：代际追最新（用户定）；档位由裁决（理论+实践）定。
+ * 3.8 代端点仅有 -max 档：默认档回落 3.7-plus（成本），3.8-max 留作两个 gigachad
+ * 场景——①M9/M10 评分 judge（校准检出率说话）②批跑失败题救援升档。sanity 三项
+ * （responses / enable_thinking / function tool）已实测通过；全链路 full-run eval
+ * 见 runs/ 相应记录。换代纪律：ch6 model-swap，先过评估再切换。
+ */
 export const QWEN_DEFAULT_MODEL_ID = "qwen3.7-plus";
 
 export type QwenModelOptions = {
