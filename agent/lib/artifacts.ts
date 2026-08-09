@@ -34,7 +34,12 @@ export class ArtifactPathError extends Error {
 /** 只有 paperStore 能写的区域（见文件头约束 2）。比较用小写，见 resolveArtifactPath。 */
 const PROTECTED_KEYS = [`memory${sep}papers`, `memory${sep}index.md`].map((p) => p.toLowerCase());
 
-/** 写入即按契约校验的工件。 */
+/**
+ * 写入即按契约校验的工件。这里是**写出端**的工件名；读入端（web 的节点/标签页/清单）
+ * 全部派生自 `lib/nodes.ts` 的注册表 —— 改工件名两边都要动，只改这里就是 2026-08-08
+ * `critique.md` → `critique.json` 那次的复现（新老 run 的批判标签一起灰显）。
+ * 不合并成一处：这张表挂着 zod schema，而注册表要能进客户端 bundle。
+ */
 const SCHEMA_GUARDS: Array<{
   test: (rel: string) => boolean;
   name: string;

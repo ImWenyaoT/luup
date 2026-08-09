@@ -21,6 +21,7 @@ import { join, resolve } from "node:path";
 import { archiveRunOutcome } from "#lib/campaignMemory.ts";
 import { ProposalSchema, type Proposal } from "#lib/contracts.ts";
 import { utcStamp } from "#lib/runContext.ts";
+import { NODES } from "../lib/nodes.ts";
 import { REPO_ROOT, RUNS_DIR } from "../lib/paths.ts";
 import { rebuildRunsIndex } from "../lib/runsIndex.ts";
 
@@ -314,14 +315,11 @@ if (proposal.data) {
   console.error("[luup] 未产出 proposal.json（流水线未走到终点或已判 FAILED）。");
 }
 
-/* 工件清单 */
+/* 工件清单：节点工件从注册表派生（改名只改 lib/nodes.ts），run 自己写的那几个显式列 */
 const artifacts = [
   "question.md",
   "meta.json",
-  "evidence.md",
-  "hypotheses.md",
-  "critique.json",
-  "proposal.json",
+  ...NODES.filter((n) => n.inManifest).map((n) => n.artifact),
   "proposal.md",
   "FAILED.md",
   "memory/index.md",

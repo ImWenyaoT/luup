@@ -1,14 +1,6 @@
 import { fmtDur, fmtTime } from "@/lib/format";
+import { NODE_BY_KEY } from "@/lib/nodes";
 import type { NodeState, SpineNode } from "@/lib/types";
-
-/** 节点 → 工件标签页 id，点击节点即滚到对应工件。 */
-export const NODE_TAB: Record<string, string> = {
-  literature: "evidence",
-  hypothesis: "hypotheses",
-  critique: "critique",
-  proposal: "proposal",
-  verify: "verification",
-};
 
 const STATE_TEXT: Record<NodeState, string> = {
   done: "已产出",
@@ -29,7 +21,7 @@ export function Spine({ nodes }: { nodes: SpineNode[] }) {
         <li key={n.key} className="relative pb-4 pl-6">
           <div className="spine-dot absolute top-1.5 left-0" data-state={n.state} aria-hidden />
           <a
-            href={`#tab-${NODE_TAB[n.key]}`}
+            href={`#tab-${NODE_BY_KEY[n.key].tab.id}`}
             className="block hover:text-accent"
             aria-label={`跳到 ${n.label} 工件`}
           >
@@ -61,5 +53,3 @@ export function MiniSpine({ states, marks }: { states: NodeState[]; marks: strin
     </span>
   );
 }
-
-export const SUMMARY_MARKS = ["L", "H", "C", "W"];

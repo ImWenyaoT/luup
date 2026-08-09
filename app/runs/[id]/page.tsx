@@ -11,11 +11,32 @@ import { Verdicts } from "@/components/Verdicts";
 import { VerifyTable } from "@/components/VerifyTable";
 import { EmptyState, Kv, Pill } from "@/components/ui";
 import { STATUS_LABEL, STATUS_TONE, fmtDur, fmtTime } from "@/lib/format";
+import { NODE_BY_KEY, resolveArtifact } from "@/lib/nodes";
 import { isRunId } from "@/lib/paths";
 import { scanRun } from "@/lib/phase";
 import { readArtifactFrom, readRunFrom } from "@/lib/runs";
+import type { NodeKey } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * kind:"json" 工件的面板：缩进即可读性，套 <Markdown> 只会把 JSON 揉成一段。
+ * 解析失败退回原文 —— 工件是模型写的，一个裸 JSON.parse 抛出去就是整页 500，
+ * 而「JSON 写坏了」恰恰是最该被看见的一种内容。
+ */
+function JsonArtifact({ source }: { source: string }) {
+  let body = source;
+  try {
+    body = JSON.stringify(JSON.parse(source), null, 2);
+  } catch {
+    /* 原样显示 */
+  }
+  return (
+    <pre className="overflow-x-auto border border-line bg-panel-2 p-3 text-[11.5px] leading-relaxed">
+      <code>{body}</code>
+    </pre>
+  );
+}
 
 export default async function RunDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -56,39 +77,39 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
     <EmptyState title="尚无研究计划" hint="proposal.json / proposal.md 都未产出" />
   );
 
+  /**
+   * 节点工件面板全部由注册表派生：标签 id、渲染形态、以及工件改名后老 run 的回退路径，
+   * 都不在这里第二次写死（2026-08-08 的 critique.md → critique.json 就是这么漏掉的）。
+   * proposal 与 verify 不走这里 —— 它们的面板是派生视图而非工件原文，见下。
+   */
+  const nodeTab = (key: NodeKey): Tab => {
+    const spec = NODE_BY_KEY[key];
+    const found = resolveArtifact(spec, has);
+    return {
+      id: spec.tab.id,
+      label: spec.tab.id,
+      disabled: found === null,
+      content:
+        found === null ? (
+          <EmptyState title={`未产出 ${spec.artifact}`} />
+        ) : found.kind === "json" ? (
+          <JsonArtifact source={md(found.file)} />
+        ) : (
+          <Markdown source={md(found.file)} />
+        ),
+    };
+  };
+
   const tabs: Tab[] = [
     ...(run.failedText
       ? [{ id: "failed", label: "FAILED", tone: "danger" as const, content: <Markdown source={run.failedText} /> }]
       : []),
+    nodeTab("literature"),
+    nodeTab("hypothesis"),
+    nodeTab("critique"),
     {
-      id: "evidence",
-      label: "evidence",
-      disabled: !has("evidence.md"),
-      content: has("evidence.md") ? <Markdown source={md("evidence.md")} /> : <EmptyState title="未产出 evidence.md" />,
-    },
-    {
-      id: "hypotheses",
-      label: "hypotheses",
-      disabled: !has("hypotheses.md"),
-      content: has("hypotheses.md") ? <Markdown source={md("hypotheses.md")} /> : <EmptyState title="未产出 hypotheses.md" />,
-    },
-    {
-      id: "critique",
-      label: "critique",
-      // 工件在 2026-08-08 由 critique.md 改为结构化 critique.json；老 run 仍是 md
-      disabled: !has("critique.json") && !has("critique.md"),
-      content: has("critique.json") ? (
-        <pre className="overflow-x-auto rounded border border-[var(--line)] bg-[var(--panel)] p-4 text-xs leading-relaxed">
-          {JSON.stringify(JSON.parse(md("critique.json") || "null"), null, 2)}
-        </pre>
-      ) : has("critique.md") ? (
-        <Markdown source={md("critique.md")} />
-      ) : (
-        <EmptyState title="未产出 critique.json" />
-      ),
-    },
-    {
-      id: "proposal",
+      // 计划节点的工件是 proposal.json，但这里端的是 run.ts 确定性渲染出的 proposal.md
+      id: NODE_BY_KEY.proposal.tab.id,
       label: "proposal.md",
       disabled: !has("proposal.md") && !run.proposalRejected,
       content: proposalPanel,
@@ -100,7 +121,8 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
       content: <Verdicts verdicts={run.verdicts} />,
     },
     {
-      id: "verification",
+      // 验收报告不按 markdown 端出去：结论要能分组、能统计，那需要解析后的结构
+      id: NODE_BY_KEY.verify.tab.id,
       label: "verification",
       content: <VerifyTable report={run.verify} runId={id} />,
     },

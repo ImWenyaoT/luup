@@ -20,8 +20,11 @@ import { RUNS_INDEX_FILE } from "./paths.ts";
 import { listRunIds, readSummary } from "./runs.ts";
 import type { RunSummary } from "./types.ts";
 
-/** 形状变了就 +1：老 index.json 会因版本不符被当作损坏，自动退回扫盘。 */
-export const RUNS_INDEX_VERSION = 1;
+/**
+ * 形状或字段语义变了就 +1：老 index.json 会因版本不符被当作损坏，自动退回扫盘。
+ * v2：deriveNodes 开始认历史工件名（老 run 的 critique.md），已定型条目的 nodes 会变。
+ */
+export const RUNS_INDEX_VERSION = 2;
 
 export type RunsIndex = {
   version: number;
