@@ -22,4 +22,14 @@
 - **selftest fixture 共享（R7）/ p 与 p2 合并（R8）**：低于共享阈值。
 - **DB / vector 检索 / LLM compaction 摘要 / mermaid 谱系图**：见 architecture.md 存储裁决与 memory.md non-goals；谱系图等真实战役数据积累后再议。
 
+## openclaw/pi 研究裁决（2026-08-09 增补）
+
+采纳（战役前采纳包执行中）：预算裁决器 lib/rework.ts（openclaw child-admission 模式——轮次预算从 prompt 层收归 artifact_write 机制层）；backlog F 全量（usage 走 resolveRunDir + questionId 收编 runContext）；pi 工具 replay 声明；pi 状态×崩溃表落档。
+
+推迟（带触发）：
+- openclaw 截断会计（BootstrapInjectionStat 模式，handoff 注入的三级预算与被截断可见性）——触发 = 首次观测到 handoff 截断问题或 R2 context 工作启动时。
+- 全量 trace.jsonl 统一——**有意不做**：现有异构工件链（verdicts/usage/invoke-result）已过 MVP 审计且本身是交付物，再造统一 trace 是勿增实体。
+
+技术报告素材（G4）：「为什么自研而非基于 OpenClaw」三个结构性错配论据（session vs run 执行形态、验证环空 vs 验证环主体、证据链可判定性）+ 10 条概念对标（见会话 openclaw-study.md，报告期取用）；pi 的 explicit-state 纸面稿作为"同代 harness 的收敛趋势"引用（其树不变式与我们 .eve/ vs runs/ 边界独立同划）。
+
 已知洞（已文档化于代码注释）：dirMtime 新鲜度检测不到"就地重写已有文件"（唯一这么干的 run.ts 收尾回写 meta 恰在自己重建索引之时）；run-batch 两题之间不持锁，web 可插队导致下一题显式 failed（符合设计）。
