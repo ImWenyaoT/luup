@@ -90,6 +90,14 @@ runs/<ts>/memory/
 
 输入题库 = 《Science》125 前沿科学问题（lib/science125.json，权威来源抓取）。E2E 默认用例从中选天文类一题；批量 runner 支持按题号列表串行出多份结果（提交期跑全量 125）。
 
+## 目录布局法理（2026-08-09，依 next/eve 本地文档 + steve 考证）
+
+- Next 只认领 `app/ pages/ public/ src/` 四个顶层目录（本版本 02-project-structure.md:11-28），`lib/`/`components/` 是官方明说的无框架语义占位名，唯一规范是"选一种策略保持一致"——我们用文档策略 A（应用代码在根、app/ 纯路由）。
+- eve 只认领 `agent/` 与根级 `evals/`；根 `lib/` 对 eve 不可见，无碰撞。
+- 数据文件归属：官方四个静态 JSON 先例全部与消费者共置并 import——`lib/science125.json` 与之同形；`public/` 定义是"served directly without processing"，数据文件放那反而违反定义。
+- **架构约束（比配置更本质）**：luup 是**有状态自托管应用**（runs/、memory/ 是运行期读写的本地状态），不做 serverless/standalone 部署；`outputFileTracingIncludes` 之类的 serverless 追踪配置因此不适用。若将来要上无持久卷平台，先回头看存储裁决的 PG 路径。
+- `lib/` 的双内容（web 消费 + harness）判定为"共享内核 + 三消费者"（paths/runId/nodes/mdTable/types 被 web+scripts+agent 三方共用），不拆——拆散会破坏 REPO_ROOT 单一定义点。
+
 ## 存储裁决（2026-08-08，依 loopx/hermes/steve 三方取证）
 
 **不引入数据库。** 判据与证据（详见会话 db-evaluation 报告）：
