@@ -75,8 +75,17 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
     {
       id: "critique",
       label: "critique",
-      disabled: !has("critique.md"),
-      content: has("critique.md") ? <Markdown source={md("critique.md")} /> : <EmptyState title="未产出 critique.md" />,
+      // 工件在 2026-08-08 由 critique.md 改为结构化 critique.json；老 run 仍是 md
+      disabled: !has("critique.json") && !has("critique.md"),
+      content: has("critique.json") ? (
+        <pre className="overflow-x-auto rounded border border-[var(--line)] bg-[var(--panel)] p-4 text-xs leading-relaxed">
+          {JSON.stringify(JSON.parse(md("critique.json") || "null"), null, 2)}
+        </pre>
+      ) : has("critique.md") ? (
+        <Markdown source={md("critique.md")} />
+      ) : (
+        <EmptyState title="未产出 critique.json" />
+      ),
     },
     {
       id: "proposal",
