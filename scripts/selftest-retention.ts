@@ -200,7 +200,7 @@ const built = rebuildRunsIndex();
 eq("索引条目数 == 真实 run 目录数", built.count, realRunDirs.length);
 check("index.json 已落盘", existsSync(built.path));
 
-const readBack = readRunsIndex(500);
+const readBack = readRunsIndex(500, null);
 check("读回来不是 null", readBack !== null);
 eq("读回条目数一致", readBack?.length ?? -1, realRunDirs.length);
 check(

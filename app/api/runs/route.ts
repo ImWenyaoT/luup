@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { fail, json } from "@/lib/http";
-import { acquire, release } from "@/lib/lock";
+import { acquire } from "@/lib/lock";
 import { activeRun, listRuns } from "@/lib/runs";
 import { readRunsIndex } from "@/lib/runsIndex";
 import { findQuestion } from "@/lib/science125";
@@ -16,8 +16,9 @@ export function GET(request: NextRequest) {
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > 500) {
     return fail(400, "bad_limit", "limit 必须是 1..500 的整数");
   }
-  // 派生缓存优先；缺失/损坏/过期时 readRunsIndex 返回 null，退回全量扫盘
-  return json({ active: activeRun(), runs: readRunsIndex(parsed) ?? listRuns(parsed) });
+  // 锁读一次往下传（running 的唯一来源）；派生缓存优先，缺失/损坏/过期时退回全量扫盘
+  const active = activeRun();
+  return json({ active, runs: readRunsIndex(parsed, active) ?? listRuns(parsed, active) });
 }
 
 /**
@@ -95,19 +96,19 @@ export async function POST(request: NextRequest) {
   const lock = acquire();
   if (!lock.ok) {
     return fail(409, "run_in_progress", "已有运行中的 run，pipeline 串行执行", {
-      activeRunId: lock.held.runId,
+      activeRunId: lock.holder.runId,
     });
   }
 
   try {
-    const { runId, runDir } = await startRun(text, questionId);
+    const { runId, runDir } = await startRun(text, questionId, lock);
     return json(
       { runId, runDir, status: "running", pollUrl: `/api/runs/${runId}?view=status` },
       202,
     );
   } catch (e) {
-    // 归属释放：startRun 内部可能已经放过一次，这里的补偿不能误删下一个 run 的锁
-    release({ pid: process.pid, runId: null });
+    // startRun 内部可能已经放过一次；重复释放是 no-op（归属比对在 lock.release 里）
+    lock.release();
     return fail(500, "spawn_failed", e instanceof Error ? e.message : String(e));
   }
 }

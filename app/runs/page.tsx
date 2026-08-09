@@ -8,8 +8,8 @@ export const dynamic = "force-dynamic";
 
 export default function RunsPage() {
   // 与 GET /api/runs 同一条路径：派生缓存优先，缺失/损坏/过期时退回全量扫盘
-  const runs = readRunsIndex(500) ?? listRuns(500);
   const active = activeRun();
+  const runs = readRunsIndex(500, active) ?? listRuns(500, active);
 
   return (
     <div className="space-y-4">

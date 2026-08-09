@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { fail, json, text } from "@/lib/http";
 import { BoundaryError } from "@/lib/paths";
 import { isRunId } from "@/lib/runId";
-import { readArtifact, readRun, readStatusView } from "@/lib/runs";
+import { activeRun, readArtifact, readRun, readStatusView } from "@/lib/runs";
 
 export const dynamic = "force-dynamic";
 
@@ -20,11 +20,11 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ id: str
       return text(body);
     }
     if (sp.get("view") === "status") {
-      const view = readStatusView(id);
+      const view = readStatusView(id, activeRun());
       if (!view) return fail(404, "run_not_found", `run 目录不存在：${id}`);
       return json(view);
     }
-    const detail = readRun(id);
+    const detail = readRun(id, activeRun());
     if (!detail) return fail(404, "run_not_found", `run 目录不存在：${id}`);
     return json(detail);
   } catch (e) {

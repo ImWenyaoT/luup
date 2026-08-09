@@ -7,9 +7,11 @@
  *
  * 1. **两个证据构造器等价**：`readRunEvidence(dir)`（脚本侧）与 `evidenceFromScan(scan)`
  *    （web 侧）对同一个目录必须给出逐字段相同的证据。两条取证通路是这次收敛的唯一分叉点。
- * 2. **六个读者与判定一致**：web 五态、runs 索引的定型集合、run-batch 续跑认领、
- *    retention 的终态、rebuild-memory 的三字符串、run.ts 的退出码。
+ * 2. **五个读者与判定一致**：web 五态、run-batch 续跑认领、retention 的终态、
+ *    rebuild-memory 的三字符串、run.ts 的退出码。
  *    重点是**续跑判据与 web `passed` 对同一目录必须同判**（只差一个题号）。
+ *    锁在 web 五态里是显式入参（deriveStatus 的 activeId），所以这里能对同一个目录
+ *    分别摆出「没人持锁」与「锁在自己手上」两半 —— 锁自己的行为在 selftest-lock.ts。
  * 3. **没有回归**：把收编前那六份手写判据作为 oracle 写在下面（`legacy*` 函数），
  *    对每个形态断言新判定与它一致 —— 一致性有意的例外单独标注 `legacy: "changed"`。
  *
@@ -21,7 +23,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { RUNS_DIR } from "../lib/paths.ts";
-import { SETTLED_STATUSES, deriveStatus, evidenceFromScan, scanDir, scanRun } from "../lib/phase.ts";
+import { deriveStatus, evidenceFromScan, scanDir, scanRun } from "../lib/phase.ts";
 import { planPrune } from "../lib/retention.ts";
 import { RUN_ID_RE, isRunId, stampToMs, utcStamp } from "../lib/runId.ts";
 import {
@@ -94,9 +96,6 @@ const legacyTerminal = (f: Files) =>
 /** 旧 scripts/rebuild-memory.ts 的三字符串。 */
 const legacyVerdict = (f: Files) =>
   f["FAILED.md"] !== undefined ? "FAILED" : legacyAllPass(f["verification-report.md"] ?? null) ? "ALL PASS" : "UNVERIFIED";
-
-/** 旧 lib/runsIndex.ts SETTLED。 */
-const LEGACY_SETTLED = new Set<RunStatus>(["passed", "failed", "completed"]);
 
 /** 旧 scripts/run.ts 的 `rendered`：proposal.json 过了契约校验 —— 等价于 proposal.md 刚被写出来。 */
 const legacyRendered = (f: Files) => f["proposal.md"] !== undefined;
@@ -367,28 +366,19 @@ eq("目录根本不存在时仍能从 run id 取到起始时间", noEvidence.sta
 /* 3. 六个读者                                                          */
 /* ------------------------------------------------------------------ */
 
-console.log("\n[3] 读者 ① web 五态 ② runs 索引定型集合");
+console.log("\n[3] 读者 ① web 五态 —— 锁是显式入参，同一个目录能摆出两半");
 for (const c of CASES) {
   const scan = scanDir(dirOf(c));
-  const status = scan ? deriveStatus(scan) : null;
-  eq(`${c.id} deriveStatus`, status, c.status);
-  eq(
-    `${c.id} 定型集合与 phase 同步`,
-    status !== null && SETTLED_STATUSES.has(status),
-    c.phase !== "unsettled",
-  );
+  eq(`${c.id} deriveStatus（没人持锁）`, scan ? deriveStatus(scan, null) : null, c.status);
+  eq(`${c.id} deriveStatus（锁在别的 run 手上）`, scan ? deriveStatus(scan, "20201231-000000") : null, c.status);
+  eq(`${c.id} deriveStatus（锁就在自己手上）`, scan ? deriveStatus(scan, c.id) : null, "running");
 }
-check(
-  "定型集合就是收编前手写的那三个状态",
-  isDeepStrictEqual(new Set(SETTLED_STATUSES), LEGACY_SETTLED),
-  `实际 ${JSON.stringify([...SETTLED_STATUSES])}`,
-);
 
 console.log("\n[4] 读者 ③ run-batch 续跑认领 —— 与 web passed 同判");
 for (const c of CASES) {
   const e = evidenceOf(c);
   const scan = scanDir(dirOf(c));
-  const status = scan ? deriveStatus(scan) : null;
+  const status = scan ? deriveStatus(scan, null) : null;
   const o = runOutcome(e);
   eq(`${c.id} deliveredQuestionId`, deliveredQuestionId(e), c.delivered);
   // 同判：两个读者只允许差一个题号（报告不带题号，meta 写坏就认不出来）
@@ -453,7 +443,7 @@ for (const c of CASES) {
     continue;
   }
   const scan = scanDir(dirOf(c));
-  eq(`${c.id} 状态未变`, scan ? deriveStatus(scan) : null, legacyStatus(c.files));
+  eq(`${c.id} 状态未变`, scan ? deriveStatus(scan, null) : null, legacyStatus(c.files));
   eq(`${c.id} 续跑认领未变`, deliveredQuestionId(evidenceOf(c)), legacyDelivered(c.files));
   const o = runOutcome(evidenceOf(c));
   if (c.id === "20200107-000000") {
@@ -518,9 +508,8 @@ for (const id of realIds) {
     if (rel.includes("/")) continue;
     files[rel] = readTextOr(join(RUNS_DIR, id, rel));
   }
-  const status = deriveStatus(scan);
-  // 锁只有 web API 走：真有 run 在跑时它判 running，旧判据看不到锁，这一条不比
-  if (status !== "running") eq(`${id} 状态未变`, status, legacyStatus(files));
+  // activeId 传 null：旧判据看不到锁，比的就是「不算锁」的那一半
+  eq(`${id} 状态未变`, deriveStatus(scan, null), legacyStatus(files));
   eq(`${id} 续跑认领未变`, deliveredQuestionId(fromDir), legacyDelivered(files));
 }
 

@@ -15,9 +15,7 @@
  * 这条回退路径必须一直活着 —— 缓存可以错，交付面不能空。
  */
 import { readFileSync, writeFileSync } from "node:fs";
-import { activeRunId } from "./lock.ts";
 import { RUNS_INDEX_FILE } from "./paths.ts";
-import { SETTLED_STATUSES } from "./phase.ts";
 import { listRunIds, readSummary } from "./runs.ts";
 import type { RunSummary } from "./types.ts";
 
@@ -27,8 +25,10 @@ import type { RunSummary } from "./types.ts";
  * v3：终态判定收敛到 lib/runOutcome.ts。status 对现存 run 全部不变，但结束时间的兜底
  *     从「目录内所有文件的最新 mtime」收窄为「顶层文件」，缺 meta.finishedAt 的老 run
  *     的 finishedAt / durationSec 会变。
+ * v4：缓存不再存 running（见 buildRunsIndex）。老索引里被写死成 running 的条目会随
+ *     版本作废 —— 那正是它们该有的下场。
  */
-export const RUNS_INDEX_VERSION = 3;
+export const RUNS_INDEX_VERSION = 4;
 
 export type RunsIndex = {
   version: number;
@@ -38,10 +38,17 @@ export type RunsIndex = {
   runs: RunSummary[];
 };
 
+/**
+ * `activeId` 显式传 null：缓存里只存 run 目录里看得出来的事实。
+ *
+ * 重建的时机恰恰是「某个 run 刚跑完、锁还没放」（scripts/run.ts 收尾段），读锁就会把
+ * 那一条写死成 running —— 一条永远不会自己变回去的谎。running 是进程外事实，读的时候
+ * 由 readRunsIndex 现叠加。
+ */
 export function buildRunsIndex(): RunsIndex {
   const runs: RunSummary[] = [];
   for (const id of listRunIds()) {
-    const s = readSummary(id);
+    const s = readSummary(id, null);
     if (s) runs.push(s);
   }
   return {
@@ -84,16 +91,11 @@ function parseIndex(raw: string): RunsIndex | null {
  * 对不上就作废。这一次 readdir 是整个缓存唯一的必付成本，换来的是缓存不会悄悄骗人 ——
  * 一个陈旧的列表页比一个慢的列表页更糟。
  *
- * **未定型的条目永远现算**。缓存只对已经定型的 run 有意义：passed/failed/completed 之后
- * 目录不会再变，缓存与磁盘永远一致。running/stale 则相反 —— 尤其 stale，它是 CLI 批跑
- * （run-batch.ts 不持 runs/.active.json 锁，锁只有 web API 走）里**在跑的 run** 的样子：
- * deriveStatus 看不到锁，就只能判 stale。把这类条目现算，缓存就不会在批跑途中骗人；
- * 代价是每次多扫几个目录，而未定型的 run 通常只有 0~1 个。
- *
- * 「定型」的判据不在这里手写：`SETTLED_STATUSES` 由 run outcome 的 phase 表派生
- * （lib/phase.ts），终态判定改了这里自动跟上。
+ * **只有活跃的那一条现算**，靠的是单并发锁（lib/lock.ts）：同一时刻至多一个 pipeline，
+ * 还在写盘的就只可能是活跃的那个 run。别的条目连 stale 都是定型的 —— stale 是中断残留，
+ * 没有任何进程还会碰它。
  */
-export function readRunsIndex(limit = 50): RunSummary[] | null {
+export function readRunsIndex(limit: number, activeId: string | null): RunSummary[] | null {
   let index: RunsIndex | null;
   try {
     index = parseIndex(readFileSync(RUNS_INDEX_FILE, "utf8"));
@@ -108,9 +110,5 @@ export function readRunsIndex(limit = 50): RunSummary[] | null {
     if (actual[i] !== index.runs[i].id) return null; // 顺序也必须一致（同为 id 倒序）
   }
 
-  const active = activeRunId();
-  const runs = index.runs
-    .slice(0, limit)
-    .map((r) => (r.id === active || !SETTLED_STATUSES.has(r.status) ? readSummary(r.id) ?? r : r));
-  return runs;
+  return index.runs.slice(0, limit).map((r) => (r.id === activeId ? readSummary(r.id, activeId) ?? r : r));
 }

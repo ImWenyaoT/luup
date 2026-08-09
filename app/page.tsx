@@ -14,9 +14,9 @@ export const dynamic = "force-dynamic";
 
 export default async function Dashboard() {
   // 与 GET /api/runs 同一条路径：派生缓存优先，缺失/损坏/过期时退回全量扫盘
-  const runs = readRunsIndex(500) ?? listRuns(500);
   const active = activeRun();
-  const activeView = active ? readStatusView(active) : null;
+  const runs = readRunsIndex(500, active) ?? listRuns(500, active);
+  const activeView = active ? readStatusView(active, active) : null;
   const s125 = readScience125();
 
   const h = await headers();

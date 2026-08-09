@@ -8,9 +8,10 @@
  * 可选环境变量 LUUP_QUESTION_ID=<Science-125 题号>：只写进 meta.json 做续跑索引，
  * 不参与提问（问题原文仍来自 argv/文件），run-batch 靠它认领已完成的题（criteria G5）。
  *
- * 顺序是有讲究的：**先建 runs/<ts>/ 并 export LUUP_RUN_DIR，再启动 eve**。
+ * 顺序是有讲究的：**先拿单并发锁，再建 runs/<ts>/ 并 export LUUP_RUN_DIR，最后启动 eve**。
  * 文献工具与工件工具都在 app runtime 里读这个环境变量来定位 run 目录；
  * 晚设一步，文献就会落到 paperStore 的回退目录里，与本 run 的 proposal.json 分家。
+ * 锁则要在建目录之前 —— 撞锁时不该留下一个空 run 目录。
  *
  * 触发方式选 `eve invoke`：headless、自带一次性 host、无需先起 dev server，
  * 且 WP1 已在本仓库真机验证过（eve/client 需要外部常驻 server，多一个失败面）。
@@ -20,6 +21,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { archiveRunOutcome } from "#lib/campaignMemory.ts";
 import { ProposalSchema, type Proposal } from "#lib/contracts.ts";
+import { type Held, acquire, parentHoldsLock } from "../lib/lock.ts";
 import { NODES } from "../lib/nodes.ts";
 import { REPO_ROOT, RUNS_DIR } from "../lib/paths.ts";
 import { utcStamp } from "../lib/runId.ts";
@@ -148,6 +150,26 @@ function readQuestionId(): number | null {
 }
 
 /* ------------------------------------------------------------------ */
+/* 单并发锁：lib/lock.ts 的 CLI adapter                                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 拿锁，或者退 2。返回 null = 锁已经在父进程手里（web 入口起的子进程），不重复拿也不由我们放。
+ *
+ * 撞锁不排队：批内的串行由 run-batch 的循环保证（子进程逐个起，本来就撞不上），撞上了
+ * 就说明真有两个入口同时在起流水线 —— 那必须当场看得见，而不是排一个谁也没要求的队。
+ */
+function holdLock(): Held | null {
+  if (parentHoldsLock()) return null;
+  const got = acquire();
+  if (got.ok) return got;
+  const { runId, pid, startedAt } = got.holder;
+  console.error(`[luup] 已有 pipeline 在跑：run=${runId ?? "(目录未定)"} pid=${pid} 起于 ${startedAt}`);
+  console.error("[luup] 单并发是硬约束（端点并发阈值 + memory 单写者）；等它跑完再来。");
+  process.exit(2);
+}
+
+/* ------------------------------------------------------------------ */
 /* 触发 eve                                                             */
 /* ------------------------------------------------------------------ */
 
@@ -233,8 +255,19 @@ function invokeEve(prompt: string, runDir: string): Promise<{ code: number; stdo
 /* ------------------------------------------------------------------ */
 
 const { question, source } = readQuestion(process.argv[2]);
-const runDir = join(RUNS_DIR, utcStamp());
+
+const lock = holdLock();
+// 怎么退都要放锁：正常收尾、未捕获异常、Ctrl-C 都会走到 exit；SIGKILL 只能靠陈旧锁接管
+process.on("exit", () => {
+  lock?.release();
+});
+process.on("SIGINT", () => process.exit(130));
+process.on("SIGTERM", () => process.exit(143));
+
+const runId = utcStamp();
+const runDir = join(RUNS_DIR, runId);
 mkdirSync(runDir, { recursive: true });
+lock?.setRunId(runId);
 // 关键顺序：先 export，再启动 eve（工具在 app runtime 读它定位 run 目录）
 process.env.LUUP_RUN_DIR = runDir;
 

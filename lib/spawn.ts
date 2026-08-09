@@ -1,7 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { type WriteStream, createWriteStream, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import { release, setRunId } from "./lock.ts";
+import { LOCK_PID_ENV, type Held } from "./lock.ts";
 import { RUNS_DIR, REPO_ROOT } from "./paths.ts";
 import { isRunId } from "./runId.ts";
 
@@ -32,15 +32,23 @@ type Started = { runId: string; runDir: string; child: ChildProcess };
  * LUUP_QUESTION_ID 必须显式置位或删除，绝不能继承 server 自身的环境：
  * 若启服务的 shell 里残留一个值，自由输入的 run 会被写上错误的题号，
  * run-batch 的续跑索引（meta.questionId）随即误判该题已交付。
+ *
+ * LUUP_LOCK_PID 是锁的交接：子进程就是 scripts/run.ts，它自己也会拿锁（CLI adapter），
+ * 拿到我们这个 pid 才知道该认领而不是去抢（lib/lock.ts parentHoldsLock）。
  */
 function childEnv(questionId: number | null): NodeJS.ProcessEnv {
-  const env = { ...process.env };
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  env[LOCK_PID_ENV] = String(process.pid);
   if (questionId === null) delete env.LUUP_QUESTION_ID;
   else env.LUUP_QUESTION_ID = String(questionId);
   return env;
 }
 
-export function startRun(text: string, questionId: number | null): Promise<Started> {
+/**
+ * `lock` 由调用方（POST /api/runs）先拿好：拿不到锁就不该走到起进程这一步。
+ * 下面三个回调在一次失败的启动里可能先后释放同一把锁 —— 重复释放是 no-op（见 Held.release）。
+ */
+export function startRun(text: string, questionId: number | null, lock: Held): Promise<Started> {
   return new Promise<Started>((resolveStart, rejectStart) => {
     const child = spawn(process.execPath, [PIPELINE_SCRIPT, text], {
       cwd: REPO_ROOT,
@@ -54,14 +62,11 @@ export function startRun(text: string, questionId: number | null): Promise<Start
     let log: WriteStream | null = null;
     let settled = false;
 
-    /** 释放只针对本次启动持有的那把锁：三个回调可能先后触发，迟到的一次必须是 no-op。 */
-    const releaseMine = () => release({ pid: process.pid, runId });
-
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
       child.kill("SIGTERM");
-      releaseMine();
+      lock.release();
       rejectStart(new SpawnFailure("10s 内未从 scripts/run.ts 拿到 run 目录"));
     }, RUN_DIR_TIMEOUT_MS);
 
@@ -83,7 +88,7 @@ export function startRun(text: string, questionId: number | null): Promise<Start
 
       runId = id;
       clearTimeout(timer);
-      setRunId(id);
+      lock.setRunId(id);
       try {
         log = createWriteStream(`${dir}/console.log`, { flags: "a" });
         log.write(buffer);
@@ -101,7 +106,7 @@ export function startRun(text: string, questionId: number | null): Promise<Start
 
     child.on("error", (err) => {
       clearTimeout(timer);
-      releaseMine();
+      lock.release();
       if (!settled) {
         settled = true;
         rejectStart(new SpawnFailure(`spawn 失败：${err.message}`));
@@ -122,7 +127,7 @@ export function startRun(text: string, questionId: number | null): Promise<Start
         }
       }
       log?.end();
-      releaseMine();
+      lock.release();
       if (!settled) {
         settled = true;
         rejectStart(new SpawnFailure(`scripts/run.ts 未产出 run 目录即退出（exit ${code}）`));

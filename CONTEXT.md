@@ -14,5 +14,6 @@
 | **续跑（resume）** | 批量跑跳过「已交付」题：meta.questionId 命中 + exitCode 0 + 报告 ALL PASS 双条件 | scripts/run-batch.ts |
 | **handoff 工件** | 节点间显式传递的文件（subagent 不共享上下文，message 里只放需要的一切） | agent/instructions.md |
 | **负结果（negative result）** | 被拒假设及理由。run 内在 rejected.md，跨 run 在题页——防止重蹈死路 | memory/questions/ |
-| **单写者假设** | campaignMemory 无锁 read-modify-write 的前提。现由 web 锁 + CLI 串行两套不相交机制"保证"（候选 D 要给它一个 owner） | campaignMemory.ts 头注 |
+| **单写者假设** | campaignMemory 无锁 read-modify-write 的前提。owner 是 `runs/.active.json` 单并发锁，web 与 CLI 都是它的 adapter（CLI 撞锁退 2，不排队） | lib/lock.ts |
+| **活跃 run（activeId）** | 此刻持锁的 run id，`running` 态的唯一来源。是进程外事实，不在 run 目录里，因此一律作为显式入参往下传（deriveStatus 不自己读锁，派生缓存显式传 null） | lib/lock.ts activeRunId |
 | **保留策略（retention）** | eve durable 流数据（纯重放工件）在 run 终结后可清；runs/ 与 memory/ 永不清 | lib/retention.ts |

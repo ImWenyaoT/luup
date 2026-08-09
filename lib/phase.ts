@@ -8,7 +8,6 @@
  */
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
-import { activeLock } from "./lock.ts";
 import { parseTableRows } from "./mdTable.ts";
 import { NODES, resolveArtifact } from "./nodes.ts";
 import { runDir } from "./paths.ts";
@@ -181,22 +180,14 @@ const STATUS_BY_PHASE: Record<RunPhase, Exclude<RunStatus, "running">> = {
 };
 
 /**
- * 「已定型」的状态集合 —— runs/index.json 缓存只对它们有意义（目录不会再变）。
- * 从 phase 表派生而不是手写：unsettled 之外的 phase 都蕴含 terminal，
- * 所以它们映射到的状态就是定型态；stale 永远现算。
+ * `activeId` = 此刻持锁的 run（lib/lock.ts `activeRunId()`），没有就是 null。
+ *
+ * 它是显式入参而不是在这里读锁：「谁在跑」是进程外事实，不在 run 目录里；读进来就等于
+ * 给判定塞了一个看不见的入参，测试再也摆不出「同一个目录、锁在别人手上」这一半。
+ * 调用方在自己的入口取一次往下传（lib/runs.ts），派生缓存则显式传 null（lib/runsIndex.ts）。
  */
-export const SETTLED_STATUSES: ReadonlySet<RunStatus> = new Set(
-  (Object.keys(STATUS_BY_PHASE) as RunPhase[]).filter((p) => p !== "unsettled").map((p) => STATUS_BY_PHASE[p]),
-);
-
-/**
- * 锁的判定留在 runOutcome 之外：「谁在跑」是进程外事实，不在 run 目录里，
- * 把它读进纯函数就等于给终态判定塞了一个看不见的入参。
- */
-export function deriveStatus(scan: Scan): RunStatus {
-  const lock = activeLock();
-  if (lock?.runId === scan.id) return "running";
-  return STATUS_BY_PHASE[outcomeOf(scan).phase];
+export function deriveStatus(scan: Scan, activeId: string | null): RunStatus {
+  return activeId === scan.id ? "running" : STATUS_BY_PHASE[outcomeOf(scan).phase];
 }
 
 export function deriveNodes(scan: Scan, status: RunStatus, verdicts: Verdict[]): SpineNode[] {

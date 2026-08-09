@@ -23,9 +23,9 @@
  *     不做增量追加 —— 与 run 层 `paperStore.rebuildIndex` 同一条纪律。agent 不可直写。
  *  4. **单写者假设**：本模块没有文件锁。`upsertLibraryPaper` 是「读卡 → 合并 questionIds
  *     → 写回」，两个 pipeline 进程同时 upsert **同一 arxivId** 会丢反向索引条目
- *     （实测 8 进程并发丢 1~2 个题号）。生产上由 `runs/.active.json` 单并发锁
- *     （`lib/lock.ts`，web 入口）与 `scripts/run-batch.ts` 的串行循环保证单写者，
- *     手工并行跑多个 `scripts/run.ts` 则会踩到。**丢的只是「用于题号」这一列线索**：
+ *     （实测 8 进程并发丢 1~2 个题号）。这条假设由 `runs/.active.json` 单并发锁
+ *     （`lib/lock.ts`）撑着，且只由它一个撑着：web 入口与 `scripts/run.ts` 都是这把锁的
+ *     adapter，第二条流水线起不来（CLI 撞锁退 2）。**丢的只是「用于题号」这一列线索**：
  *     卡片元数据、index 行数、B1 证据链都不受影响（index 每次整份重建，下一次
  *     upsert 自愈）。compaction（约束 5）把这条假设的代价抬高了一档：它是「读整份 →
  *     写分片 → 重写主文件」，另一个进程在这中间追加的条目会被主文件的重写覆盖掉

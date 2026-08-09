@@ -18,6 +18,7 @@
     "validate": "pnpm typecheck && npx eve info",
     "run:pipeline": "node scripts/run.ts",
     "selftest:literature": "node scripts/selftest-literature.ts",
+    "selftest:lock": "node scripts/selftest-lock.ts",
     "selftest:memory": "node scripts/selftest-memory.ts",
     "selftest:outcome": "node scripts/selftest-outcome.ts",
     "selftest:retention": "node scripts/selftest-retention.ts",

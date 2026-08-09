@@ -14,7 +14,7 @@ import { STATUS_LABEL, STATUS_TONE, fmtDur, fmtTime } from "@/lib/format";
 import { NODE_BY_KEY, resolveArtifact } from "@/lib/nodes";
 import { isRunId } from "@/lib/runId";
 import { scanRun } from "@/lib/phase";
-import { readArtifactFrom, readRunFrom } from "@/lib/runs";
+import { activeRun, readArtifactFrom, readRunFrom } from "@/lib/runs";
 import type { NodeKey } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -44,7 +44,7 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
   // 目录只扫这一次：详情与下面每个 tab 的工件原文都从同一个 Scan 里取
   const scan = scanRun(id);
   if (!scan) notFound();
-  const run = readRunFrom(scan);
+  const run = readRunFrom(scan, activeRun());
 
   const has = (name: string) => run.artifacts[name] === true;
   const md = (name: string) => readArtifactFrom(scan, name) ?? "";

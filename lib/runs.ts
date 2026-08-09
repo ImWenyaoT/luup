@@ -37,10 +37,14 @@ export function listRunIds(): string[] {
   return entries.sort().reverse();
 }
 
-export function readSummary(id: string): RunSummary | null {
+/**
+ * 每个读入口都要一个 `activeId`（此刻持锁的 run，`activeRun()`）：它是 running 态的
+ * 唯一来源，也是这一层唯一的进程外事实。列表页取一次往下传，一次请求只读一次锁。
+ */
+export function readSummary(id: string, activeId: string | null): RunSummary | null {
   const scan = scanRun(id);
   if (!scan) return null;
-  const status = deriveStatus(scan);
+  const status = deriveStatus(scan, activeId);
   const verdicts = parseVerdicts(scan);
   const nodes = deriveNodes(scan, status, verdicts);
   const q = parseQuestion(readText(scan, "question.md"));
@@ -69,11 +73,11 @@ export function readSummary(id: string): RunSummary | null {
   };
 }
 
-export function listRuns(limit = 50): RunSummary[] {
+export function listRuns(limit: number, activeId: string | null): RunSummary[] {
   const out: RunSummary[] = [];
   for (const id of listRunIds()) {
     if (out.length >= limit) break;
-    const s = readSummary(id);
+    const s = readSummary(id, activeId);
     if (s) out.push(s);
   }
   return out;
@@ -122,8 +126,8 @@ export function parsePapers(text: string | null): Paper[] {
  * 一次 scanRun 是一次递归 readdir + 每文件 statSync；一次请求扫一遍就够。
  * 所以详情侧的读取全部以 Scan 为入参（*From 后缀），id 版只是「扫一次再转发」的薄壳。
  */
-export function statusViewFrom(scan: Scan): RunStatusView {
-  const status = deriveStatus(scan);
+export function statusViewFrom(scan: Scan, activeId: string | null): RunStatusView {
+  const status = deriveStatus(scan, activeId);
   const verdicts = parseVerdicts(scan);
   const nodes = deriveNodes(scan, status, verdicts);
   const names = [...scan.files.keys()];
@@ -138,13 +142,13 @@ export function statusViewFrom(scan: Scan): RunStatusView {
   };
 }
 
-export function readStatusView(id: string): RunStatusView | null {
+export function readStatusView(id: string, activeId: string | null): RunStatusView | null {
   const scan = scanRun(id);
-  return scan ? statusViewFrom(scan) : null;
+  return scan ? statusViewFrom(scan, activeId) : null;
 }
 
-export function readRunFrom(scan: Scan): RunDetail {
-  const base = statusViewFrom(scan);
+export function readRunFrom(scan: Scan, activeId: string | null): RunDetail {
+  const base = statusViewFrom(scan, activeId);
   const q = parseQuestion(readText(scan, "question.md"));
   const started = startedAtMs(scan);
   const finished = finishedAtMs(scan, base.status);
@@ -165,9 +169,9 @@ export function readRunFrom(scan: Scan): RunDetail {
   };
 }
 
-export function readRun(id: string): RunDetail | null {
+export function readRun(id: string, activeId: string | null): RunDetail | null {
   const scan = scanRun(id);
-  return scan ? readRunFrom(scan) : null;
+  return scan ? readRunFrom(scan, activeId) : null;
 }
 
 export const activeRun = activeRunId;
