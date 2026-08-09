@@ -173,7 +173,11 @@ const nonThinkingProvider = createProvider(false);
  * });
  */
 export function qwenModel(opts: QwenModelOptions = {}): LanguageModel {
-  const { thinking = false, modelId = QWEN_DEFAULT_MODEL_ID } = opts;
+  const { thinking = false } = opts;
+  // 救援通道专用覆盖：批跑对 status=failed 的题重跑一轮时，run-batch.ts 用 `--rescue-model=<id>`
+  // 把档位经 LUUP_MODEL_ID 注入子进程，整条流水线随之升档。只盖**默认档** —— 显式传入的
+  // modelId（judge 自己定档，见 scripts/judgeClient.ts）优先，救援轮不会顺手改判分器。
+  const modelId = opts.modelId ?? (process.env.LUUP_MODEL_ID?.trim() || QWEN_DEFAULT_MODEL_ID);
   const provider = thinking ? thinkingProvider : nonThinkingProvider;
   return provider.responses(modelId);
 }

@@ -37,9 +37,21 @@ mkdirSync(EVAL_DIR, { recursive: true });
 // 评估层的用量单独记账，绝不混进被评估 run 的 usage.jsonl
 process.env.LUUP_RUN_DIR = EVAL_DIR;
 
-const { qwenModel, QWEN_DEFAULT_MODEL_ID } = await import("#lib/model.ts");
+const { qwenModel } = await import("#lib/model.ts");
 
-export const JUDGE_MODEL_ID = QWEN_DEFAULT_MODEL_ID;
+/**
+ * judge 档位。**写死成字面量，不继承 `QWEN_DEFAULT_MODEL_ID`** —— 这是刻意的：
+ * `qwenModel` 的默认档现在可被 `LUUP_MODEL_ID` 覆盖（救援通道，见 agent/lib/model.ts），
+ * 若 judge 隐式吃默认档，一次救援批跑就会顺手把判分器也换档，救援轮的分与主批不再可比。
+ * 显式传档 + 字面量 = 判分器档位由这一行独占声明，环境变量碰不到。
+ *
+ * **3.8-max 校准实验 2026-08-09 中止**（单次调用 ~6 分钟，超出旧的 600s 判分超时，
+ * 六次调用的检出率表跑不完）。无校准数据 → 预写的「检出 ≥3/4 才升档」规则无从执行，
+ * 档位按替补判据回落 3.7-plus：慢且未证准是最差组合，而 M9 本就是 advisory（不进 gate），
+ * 同族自评偏置的天花板也不因换档消失。若 M9 判别力将来成为承重项再重启该实验，
+ * 重启入口 = `scripts/calibrate-judge.ts`。
+ */
+export const JUDGE_MODEL_ID = "qwen3.7-plus";
 /** judge 开思考：评分要读全文做归因，关思考实测会退化成「看起来还行」式打分。 */
 export const JUDGE_THINKING = true;
 
@@ -52,7 +64,7 @@ export async function askJudge(req: JudgeRequest, label: string): Promise<JudgeR
   const started = Date.now();
   process.stderr.write(`[luup:judge] ${label} …`);
   const { text } = await generateText({
-    model: qwenModel({ thinking: JUDGE_THINKING }),
+    model: qwenModel({ thinking: JUDGE_THINKING, modelId: JUDGE_MODEL_ID }),
     system: req.system,
     prompt: req.prompt,
     timeout: TIMEOUT_MS,
