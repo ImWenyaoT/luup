@@ -5,7 +5,8 @@
  *
  * 覆盖 docs/design/memory.md 的五条验收线：
  *  1. savePaper 落 run 卡后**由代码**同步全局卡，`library/index.md` 整份重建、按学科分组、带反向索引
- *  2. `memory_note` 写后读回，返回 `{written[], failed[]}`；缺 questionId 时进 failed 而不是静默成功
+ *  2. `memory_note` 写后读回，返回 `{written[], failed[]}`；题号取自运行环境（不是模型入参），
+ *     环境里没有题号时进 failed 而不是静默成功
  *  3. `searchMemory` 在 library / questions / lessons 三处都能命中，返回 L0 行 + 路径（无 embedding）
  *  4. **compaction**：log 超行数→滚分片、题页超字数→降层归档；条目逐字保留、run 指针完好、幂等
  *  5. **删掉 memory/ 后全部函数静默 no-op**：不抛、不重建目录，run 收尾照跑（可删除性红线）
@@ -159,10 +160,12 @@ check(
 check("run 内 index.md 未被 campaign 层污染", readIndex(runDir).includes("| arXiv id | 年份 | 标题 | 一句话摘要 |"));
 
 // ---- 3. memory_note：写后读回 ------------------------------------------
+// 题号来自运行环境（LUUP_QUESTION_ID → runContext.resolveQuestionId），**不是工具入参**：
+// 模型选不了写哪一题，这里也只能靠改环境变量来切题页。
 console.log("\n[3] memory_note 写后读回 → {written[], failed[]}");
+process.env.LUUP_QUESTION_ID = "54";
 const note1 = await callTool(memoryNoteTool, {
   target: "question" as const,
-  questionId: 54,
   note: "verdict: SUCCESS。胜出假设：磁图序列的时序注意力可提前 6 小时预警。被拒假设：纯统计外推（无物理机制，critique 一致驳回）。有效检索词：magnetogram flare prediction transformer。",
 });
 check("written 含 questions/q54.md 与 log.md", note1.written.length === 2, note1.written.map((w) => w.path).join(", "));
@@ -174,24 +177,24 @@ check("q54.md 首次创建带 append-only 表头", q54.startsWith("# q54") && q5
 
 const note2 = await callTool(memoryNoteTool, {
   target: "question" as const,
-  questionId: 54,
   note: "第二次跑：假设「用 GOES X 射线单通道即可」被拒——数据分辨率不足。",
 });
 const q54b = readFileSync(layout.questionPage(54), "utf8");
 check("append-only：第二条追加后第一条仍在", q54b.includes("磁图序列的时序注意力") && q54b.includes("GOES X 射线单通道"), `bytes ${q54.length} → ${q54b.length}`);
 check("第二次 written 仍为 2 条且无 failed", note2.written.length === 2 && note2.failed.length === 0);
 
+// 题号从环境里拿掉 = 这次 run 没有题号（直接手跑）：题页无从落笔，必须进 failed
+delete process.env.LUUP_QUESTION_ID;
 const note3 = await callTool(memoryNoteTool, {
   target: "question" as const,
-  questionId: null,
   note: "没有题号，应当进 failed 而不是静默成功。",
 });
-check("target=question 缺 questionId → failed 非空", note3.failed.length === 1, JSON.stringify(note3.failed));
+check("环境无题号时 target=question → failed 非空", note3.failed.length === 1, JSON.stringify(note3.failed));
+check("failed 的理由指向环境题号而不是入参", note3.failed[0]?.reason.includes("LUUP_QUESTION_ID") === true, JSON.stringify(note3.failed));
 check("此时 hint 明说没写成（不许被总结盖过去）", note3.hint.includes("未写入"), note3.hint);
 
 const note4 = await callTool(memoryNoteTool, {
   target: "lessons" as const,
-  questionId: null,
   note: "教训：astro-ph.SR 的 arXiv 覆盖良好，hep-ex 的实验细节多在 CERN 内部报告，检索命中率低（样本：3 题）。",
 });
 check("lessons 写入成功且无 failed", note4.written.length === 2 && note4.failed.length === 0, note4.written.map((w) => w.path).join(", "));
@@ -385,7 +388,7 @@ try {
   const w = writeNote({ target: "lessons", note: "should be dropped" });
   noop.tool = w.skipped === true;
 
-  const t = await callTool(memoryNoteTool, { target: "lessons" as const, questionId: null, note: "dropped" });
+  const t = await callTool(memoryNoteTool, { target: "lessons" as const, note: "dropped" });
   noop.tool = noop.tool && t.skipped === true && t.written.length === 0 && t.failed.length === 0;
 
   const ts = await callTool(memorySearchTool, { query: "magnetogram flare", limit: 20 });

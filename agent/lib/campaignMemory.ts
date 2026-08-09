@@ -58,6 +58,8 @@ import { dirname, join, resolve } from "node:path";
 import { escapeCell } from "../../lib/mdTable.ts";
 import { REPO_ROOT } from "../../lib/paths.ts";
 import { type PaperCard, paperFilename } from "./paperStore.ts";
+// 题号只有 runContext 一个读点（LUUP_QUESTION_ID），本模块不再自带一份解析
+import { resolveQuestionId } from "./runContext.ts";
 
 /* ------------------------------------------------------------------ */
 /* 路径解析                                                             */
@@ -220,18 +222,6 @@ function readLibraryCardFile(file: string): LibraryCard | null {
       ? head.questionIds.filter((n): n is number => typeof n === "number")
       : [],
   };
-}
-
-/* ------------------------------------------------------------------ */
-/* 题号                                                                 */
-/* ------------------------------------------------------------------ */
-
-/** Science-125 题号；不合法或未设返回 null（直接手跑的 run 没有题号）。 */
-function resolveQuestionId(raw = process.env.LUUP_QUESTION_ID): number | null {
-  const s = String(raw ?? "").trim();
-  if (!s) return null;
-  const n = Number.parseInt(s, 10);
-  return Number.isInteger(n) && n >= 1 && n <= 125 ? n : null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1014,7 +1004,13 @@ export function archiveRunOutcome(input: {
   return { skipped: false, written, failed };
 }
 
-/** memory_note 工具的落盘实现：题页/教训 + 一条日志，全部写后读回。 */
+/**
+ * memory_note 工具的落盘实现：题页/教训 + 一条日志，全部写后读回。
+ *
+ * `questionId` 省略时取自 `runContext.resolveQuestionId()`（与 `upsertLibraryPaper` 同款）——
+ * 工具面因此不必、也不允许把题号交给模型填。显式传 `null` 仍然是「明知没有题号」，
+ * 会照旧进 failed 而不是静默成功。
+ */
 export function writeNote(input: {
   target: "question" | "lessons";
   questionId?: number | null;
@@ -1026,11 +1022,15 @@ export function writeNote(input: {
   if (!memoryEnabled(dir)) return { skipped: true, written: [], failed: [], reason: "memory/ 不存在" };
   const written: WriteOutcome[] = [];
   const failed: Array<{ path: string; reason: string }> = [];
+  const questionId = input.questionId === undefined ? resolveQuestionId() : input.questionId;
 
   if (input.target === "question") {
-    const qid = input.questionId ?? null;
+    const qid = questionId;
     if (qid === null || !Number.isInteger(qid)) {
-      failed.push({ path: "memory/questions/q<id>.md", reason: "target=question 必须给 questionId（1–125）" });
+      failed.push({
+        path: "memory/questions/q<id>.md",
+        reason: "本次 run 没有 Science-125 题号（LUUP_QUESTION_ID 未设或不合法），题页无从落笔：改用 target='lessons'",
+      });
     } else {
       collect(
         appendQuestionNote({ questionId: qid, note: input.note, source: input.source ?? "memory_note", memoryDir: dir }),
@@ -1051,7 +1051,7 @@ export function writeNote(input: {
   collect(
     appendLog({
       action: "note",
-      questionId: input.target === "question" ? (input.questionId ?? null) : null,
+      questionId: input.target === "question" ? questionId : null,
       verdict: "-",
       detail: input.note,
       memoryDir: dir,

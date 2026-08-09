@@ -6,6 +6,8 @@
  *
  * **它不放松 B1**：这里命中的文献只是线索。任何要进 references 的 id 仍必须经
  * `arxiv_save` 在本次 run 实检落盘。
+ *
+ * replay: "safe" —— 只读逐行匹配，不写任何文件。
  */
 import { defineTool } from "eve/tools";
 import { z } from "zod";

@@ -1,7 +1,11 @@
 /**
- * run outcome 自测（零 API，零网络）。
+ * run outcome + 返工预算自测（零 API，零网络）。
  *
  *   node scripts/selftest-outcome.ts
+ *
+ * 两个 owner 在这里一起守：`lib/runOutcome.ts`（一次 run 的终态）与 `lib/rework.ts`
+ * （一个节点还能不能再来一轮）。放同一个进程是因为它们共用同一批 run 目录形态，
+ * 且都是「唯一 owner + 纯函数 + 目录即状态」的同一条纪律。
  *
  * 终态判定收敛成一个 owner（lib/runOutcome.ts）之后，这里守住三件事：
  *
@@ -17,15 +21,20 @@
  *
  * 形态取自真实 runs/：终态成功、如实 FAILED、中断无 finishedAt、只有报告没有 meta
  * （手工验收过的 eval run）、meta 写坏、渲染了但验收没过、FAILED 与 proposal 并存。
+ *
+ * 另外三节（[11]–[13]）：崩溃表三形态、返工预算纯函数、以及预算的执行点
+ * `artifact_write` 真的拒写第 4 轮。
  */
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
+import { writeArtifact } from "#lib/artifacts.ts";
 import { RUNS_DIR } from "../lib/paths.ts";
 import { check, eq, report } from "./selftestHarness.ts";
 import { deriveStatus, evidenceFromScan, scanDir, scanRun } from "../lib/phase.ts";
 import { planPrune } from "../lib/retention.ts";
+import { type VerdictFact, admitVerdict, reworkBudget, verdictFact } from "../lib/rework.ts";
 import { RUN_ID_RE, isRunId, stampToMs, utcStamp } from "../lib/runId.ts";
 import {
   type RunPhase,
@@ -491,6 +500,184 @@ for (const id of realIds) {
   // activeId 传 null：旧判据看不到锁，比的就是「不算锁」的那一半
   eq(`${id} 状态未变`, deriveStatus(scan, null), legacyStatus(files));
   eq(`${id} 续跑认领未变`, deliveredQuestionId(fromDir), legacyDelivered(files));
+}
+
+/* ------------------------------------------------------------------ */
+/* 7. 崩溃表三形态（docs/design/architecture.md「run 终态判定」）           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 文档那张崩溃表的可执行版本。三个崩溃点取自 `scripts/run.ts` 的落盘顺序：
+ * ① meta.json 写之前 ② meta 写完、收尾回写之前 ③ 收尾回写之后。
+ * 表里每一格（phase / terminal / 续跑认领）在这里各有一条断言 —— 文档改了这里会挂。
+ */
+console.log("\n[11] 崩溃表 —— 进程死在三个点上各是什么终态判定");
+const caseById = (id: string) => CASES.find((c) => c.id === id)!;
+
+for (const [point, id, expect] of [
+  ["① meta.json 写之前（只有 question.md）", "20200108-000000", "unsettled"],
+  ["② meta 写完、收尾回写之前（finishedAt/exitCode 皆 null）", "20200103-000000", "unsettled"],
+  ["③ 收尾回写之后（meta.exitCode 已落盘）", "20200101-000000", "verified"],
+] as const) {
+  const c = caseById(id);
+  const o = runOutcome(evidenceOf(c));
+  eq(`崩溃点 ${point} → phase`, o.phase, expect);
+  eq(
+    `崩溃点 ${point} → terminal`,
+    o.terminal,
+    id === "20200101-000000",
+  );
+  eq(
+    `崩溃点 ${point} → 续跑认领（null = 这题要重跑）`,
+    deliveredQuestionId(evidenceOf(c)),
+    id === "20200101-000000" ? 7 : null,
+  );
+}
+// ②的补注：终结判定不等 run.ts 收尾——proposal 正文或验收报告先落盘就已经 terminal
+{
+  const c = caseById("20200104-000000");
+  const o = runOutcome(evidenceOf(c));
+  check("崩溃点 ② 补注：报告先落盘 ⇒ 没有 meta 也算 terminal", o.terminal && c.files["meta.json"] === undefined);
+  eq("崩溃点 ② 补注：但 proposal 正文没渲染出来就仍是 unsettled", o.phase, "unsettled");
+}
+
+/* ------------------------------------------------------------------ */
+/* 8. 返工预算（lib/rework.ts）—— verdicts/ 目录即计数器                   */
+/* ------------------------------------------------------------------ */
+
+console.log("\n[12] reworkBudget —— 纯函数：轮数 / 熔断 / 格式重试 / 跨节点独立");
+
+const facts = (...files: Array<[file: string, node: string, verdict: string]>): VerdictFact[] =>
+  files.map(([file, node, verdict]) => verdictFact(file, { node, verdict }));
+
+const budgetOf = (verdicts: VerdictFact[], drafts: string[] = []) => reworkBudget({ verdicts, drafts });
+
+{
+  const b = budgetOf([]);
+  eq("没跑过：literature remaining=3", b.literature.remaining, 3);
+  eq("没跑过：verdict=allow", b.literature.verdict, "allow");
+  eq("四个节点都在表里（verify 不在，它没有返工一说）", Object.keys(b).length, 4);
+}
+{
+  const b = budgetOf(facts(["literature-r1.json", "literature", "reject"]));
+  eq("r1 落盘：semanticRounds=1", b.literature.semanticRounds, 1);
+  eq("r1 落盘：remaining=2，仍 allow", b.literature.verdict === "allow" ? b.literature.remaining : -1, 2);
+  eq("跨节点独立计数：hypothesis 余额未动", b.hypothesis.remaining, 3);
+}
+{
+  const b = budgetOf(
+    facts(
+      ["literature-r1.json", "literature", "reject"],
+      ["literature-r2.json", "literature", "reject"],
+    ),
+  );
+  eq("r1..r2 全 reject：还剩 1 轮", b.literature.remaining, 1);
+  eq("r1..r2 全 reject：尚未熔断", b.literature.verdict, "allow");
+}
+{
+  const b = budgetOf(
+    facts(
+      ["literature-r1.json", "literature", "reject"],
+      ["literature-r2.json", "literature", "reject"],
+      ["literature-r3.json", "literature", "reject"],
+    ),
+  );
+  eq("连续 3 次 reject → exhausted", b.literature.verdict, "exhausted");
+  eq(
+    "管事的是熔断器而不是轮数（governingCap 必须说清）",
+    b.literature.verdict === "exhausted" ? b.literature.governingCap : null,
+    "node.circuitBreaker",
+  );
+  eq("熔断时 remaining=0", b.literature.remaining, 0);
+}
+{
+  const b = budgetOf(
+    facts(
+      ["critique-r1.json", "critique", "reject"],
+      ["critique-r2.json", "critique", "reject"],
+      ["critique-r3.json", "critique", "pass"],
+    ),
+  );
+  eq("3 轮用满但末轮 pass → 仍 exhausted", b.critique.verdict, "exhausted");
+  eq(
+    "此时管事的是轮数上限（不是熔断器）",
+    b.critique.verdict === "exhausted" ? b.critique.governingCap : null,
+    "node.maxRounds",
+  );
+  eq("末轮 pass ⇒ consecutiveRejects 归零", b.critique.consecutiveRejects, 0);
+}
+{
+  const b = budgetOf(facts(["proposal-r1.json", "proposal", "reject"]), [
+    "proposal-r1.json.rejected.json",
+    "proposal-r2.json.rejected.json",
+  ]);
+  eq("格式重试计数独立：formatRetries=2", b.proposal.formatRetries, 2);
+  eq("**格式重试不占语义轮**：semanticRounds 仍是 1", b.proposal.semanticRounds, 1);
+  eq("格式重试不吃余额：remaining 仍是 2", b.proposal.remaining, 2);
+  eq("格式重试再多也不熔断", b.proposal.verdict, "allow");
+}
+{
+  const e = { verdicts: facts(["literature-r1.json", "literature", "reject"]), drafts: [] };
+  const fourth = admitVerdict(e, { node: "literature", file: "literature-r4.json" });
+  eq("轮号 r4 就算文件数没到 3 也拒（挡改名绕行）", fourth.ok, false);
+  eq(
+    "拒写带 governingCap",
+    fourth.ok ? null : fourth.governingCap,
+    "node.maxRounds",
+  );
+  const rewrite = admitVerdict(e, { node: "literature", file: "literature-r1.json" });
+  eq("覆写已落盘的同一轮 → 放行（容忍瞬时失败重放）", rewrite.ok, true);
+  eq("且不新增轮次", rewrite.ok ? rewrite.reason : null, "same-round-rewrite");
+}
+
+/* ------------------------------------------------------------------ */
+/* 9. 执行点：artifact_write 真的拒写第 4 轮                              */
+/* ------------------------------------------------------------------ */
+
+console.log("\n[13] artifact_write —— 预算的执行点（fail-closed：模型数错也过不去）");
+const budgetRun = join(root, "budget-run");
+mkdirSync(budgetRun, { recursive: true });
+
+const verdictJson = (node: string, verdict: "pass" | "reject") =>
+  JSON.stringify({
+    node,
+    verdict,
+    checks: [{ criterion: "B1", pass: verdict === "pass", reason: "自测用" }],
+    ...(verdict === "reject" ? { rework: "补齐证据后重来" } : {}),
+  });
+
+const writeVerdict = (node: string, round: number, verdict: "pass" | "reject" = "reject") =>
+  writeArtifact(`verdicts/${node}-r${round}.json`, verdictJson(node, verdict), budgetRun);
+
+for (const round of [1, 2, 3]) {
+  const r = writeVerdict("literature", round);
+  eq(`literature-r${round} 落盘`, r.ok, true);
+  eq(`literature-r${round} 返回余额 remaining=${3 - round}`, r.budget?.remaining, 3 - round);
+}
+{
+  const r4 = writeVerdict("literature", 4);
+  eq("第 4 轮被拒写", r4.ok, false);
+  eq("拒写理由是预算而不是 schema（deniedBy 显式）", r4.deniedBy, "node.circuitBreaker");
+  check("拒写不落文件", !existsSync(join(budgetRun, "verdicts", "literature-r4.json")));
+  check("拒写也不留 .rejected.json 草稿（草稿会被算成格式重试）", !existsSync(join(budgetRun, "verdicts", "literature-r4.json.rejected.json")));
+  check("拒写的理由里带得走的下一步：写 FAILED.md", (r4.issues[0] ?? "").includes("FAILED.md"), r4.issues[0]);
+}
+{
+  // 格式重试走的是另一本账：schema 打回留草稿，语义轮一分不扣
+  const bad = writeArtifact("verdicts/hypothesis-r1.json", '{"node":"hypothesis"}', budgetRun);
+  eq("schema 不合格 → 拒写", bad.ok, false);
+  eq("这类拒写不是预算拒写（deniedBy 不设）", bad.deniedBy, undefined);
+  check("草稿留存", existsSync(join(budgetRun, "verdicts", "hypothesis-r1.json.rejected.json")));
+  const good = writeVerdict("hypothesis", 1);
+  eq("改对之后照样能落 r1", good.ok, true);
+  eq("格式重试没吃掉语义轮：remaining 仍是 2", good.budget?.remaining, 2);
+  eq("但格式重试记在账上：formatRetries=1", good.budget?.formatRetries, 1);
+}
+{
+  // literature 已经熔断，别的节点不受牵连
+  const c = writeVerdict("critique", 1, "pass");
+  eq("跨节点独立：critique 照常落盘", c.ok, true);
+  eq("critique 余额未被 literature 的熔断牵连", c.budget?.remaining, 2);
 }
 
 /* ------------------------------------------------------------------ */

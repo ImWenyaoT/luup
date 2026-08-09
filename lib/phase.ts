@@ -11,6 +11,7 @@ import { basename, join } from "node:path";
 import { parseTableRows } from "./mdTable.ts";
 import { NODES, resolveArtifact } from "./nodes.ts";
 import { runDir } from "./paths.ts";
+import { isVerdictFile, verdictFact } from "./rework.ts";
 import {
   RESULT_PREFIX,
   type RunEvidence,
@@ -114,18 +115,17 @@ function normalizeChecks(raw: unknown): VerdictCheck[] {
   });
 }
 
+/** 文件名/内容的解析（哪些文件算 verdict、node 与 round 怎么取）在 `./rework.ts`：返工预算
+ *  用同一份口径数轮次，两处各写一遍正则就等于给「第几轮」造两个答案。 */
 export function parseVerdicts(scan: Scan): Verdict[] {
   const out: Verdict[] = [];
   for (const rel of [...scan.files.keys()].sort()) {
-    if (!rel.startsWith("verdicts/") || !rel.endsWith(".json") || rel.endsWith(".rejected.json")) continue;
+    if (!rel.startsWith("verdicts/") || !isVerdictFile(rel)) continue;
     const raw = readJson<Record<string, unknown>>(scan, rel);
     if (!raw) continue;
     const file = rel.slice("verdicts/".length);
     out.push({
-      file,
-      node: typeof raw.node === "string" ? raw.node : file.split("-")[0],
-      round: typeof raw.round === "number" ? raw.round : Number(/-r(\d+)/.exec(file)?.[1] ?? 1),
-      verdict: typeof raw.verdict === "string" ? raw.verdict : "unknown",
+      ...verdictFact(file, raw),
       checks: normalizeChecks(raw.checks),
       rework: typeof raw.rework === "string" ? raw.rework : null,
       rejectedRaw: readText(scan, `${rel}.rejected.json`),

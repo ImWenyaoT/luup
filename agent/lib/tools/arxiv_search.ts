@@ -2,6 +2,8 @@
  * 文献检索工具（architecture.md「引用真实性防线」第 1 条）。
  * L 节点只能通过本工具（及 arxiv_save）获得文献；返回的一切字段都来自 arXiv API。
  * 本工具只读、不落盘 —— 要进 memory 必须再调 arxiv_save。
+ *
+ * replay: "safe" —— 纯 GET 查询，不落盘、不改任何状态；重放最多多花一次 arXiv 配额。
  */
 import { defineTool } from "eve/tools";
 import { z } from "zod";

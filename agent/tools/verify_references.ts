@@ -4,6 +4,8 @@
  * 拜占庭假设（architecture.md 防线第 3 条）：本工具不看任何 agent 的推理过程，
  * 只拿最终 references 条目 ⑴ 比对本 run 的 memory/papers/、⑵ 反查 arXiv 核对标题。
  * 判据与 scripts/verify-proposal.ts 一致，实现走 agent/lib/verifyRefs.ts。
+ *
+ * replay: "safe" —— 读 proposal 工件 + 反查 arXiv（GET），一个字节都不写。
  */
 import { defineTool } from "eve/tools";
 import { z } from "zod";

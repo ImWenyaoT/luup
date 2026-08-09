@@ -1,6 +1,8 @@
 /**
  * 读本次 run 的文献索引 index.md（architecture.md「memory 布局」L0/L1 层）。
  * 这是无向量库的「模糊检索」入口：agent 先读索引挑候选，再按需读整卡。
+ *
+ * replay: "safe" —— 只读 run 目录的索引与卡片清单，无副作用。
  */
 import { defineTool } from "eve/tools";
 import { z } from "zod";

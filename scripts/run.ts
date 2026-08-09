@@ -21,6 +21,9 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { join, resolve } from "node:path";
 import { archiveRunOutcome } from "#lib/campaignMemory.ts";
 import { ProposalSchema, type Proposal } from "#lib/contracts.ts";
+// 题号的解析只有一份实现（agent/lib/runContext.ts）：驱动写进 meta.json 的那个数字，
+// 与 app runtime 里 memory_note 定位题页用的那个数字，必须是同一个判定。
+import { resolveQuestionId } from "#lib/runContext.ts";
 import { type Held, acquire, parentHoldsLock } from "../lib/lock.ts";
 import { NODES } from "../lib/nodes.ts";
 import { science125Text } from "../lib/questionText.ts";
@@ -144,13 +147,6 @@ export type RunMeta = {
   exitCode: number | null;
 };
 
-function readQuestionId(): number | null {
-  const raw = process.env.LUUP_QUESTION_ID?.trim();
-  if (!raw) return null;
-  const n = Number.parseInt(raw, 10);
-  return Number.isInteger(n) && n >= 1 && n <= 125 ? n : null;
-}
-
 /* ------------------------------------------------------------------ */
 /* 单并发锁：lib/lock.ts 的 CLI adapter                                   */
 /* ------------------------------------------------------------------ */
@@ -182,10 +178,10 @@ function buildPrompt(question: string, runDir: string, questionId: number | null
     "科学问题：",
     question,
     "",
-    // 题号是 memory_note 的定位键：没有它，master 无法把战役记录归到正确的 q 页。
+    // 题号只是知会：memory_note 的定位键取自 LUUP_QUESTION_ID（agent/lib/runContext.ts），不经模型。
     ...(questionId === null
       ? ["本次运行没有 Science-125 题号（直接手跑）：memory_note 只能用 target=\"lessons\"。", ""]
-      : [`Science-125 题号：Q${questionId}（memory_note 的 questionId 用这个数字）。`, ""]),
+      : [`Science-125 题号：Q${questionId}（memory_note 写题页时由运行环境自动定位，你不必也不能传题号）。`, ""]),
     `本次 run 目录：${runDir}（已建好；artifact_write / artifact_read 的路径一律相对它）。`,
     "按 instructions 里的 DAG 与循环控制硬规格执行：literature → hypothesis → critique → proposal，",
     "逐节点认证并落盘 verdicts/，最后必须跑 verify_references 并拿到 ok:true 才算成功；",
@@ -276,7 +272,7 @@ process.env.LUUP_RUN_DIR = runDir;
 writeFileSync(join(runDir, "question.md"), `${question}\n`, "utf8");
 
 const meta: RunMeta = {
-  questionId: readQuestionId() ?? defaultId ?? null,
+  questionId: resolveQuestionId() ?? defaultId ?? null,
   question,
   startedAt: new Date().toISOString(),
   finishedAt: null,

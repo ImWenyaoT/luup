@@ -67,7 +67,8 @@ runs/<ts>/memory/
 ## 循环控制（吸收 4-harness 实测模式）
 
 - 每节点最大重做轮数 N=3；全局 master 认证轮 ≤3。
-- **熔断器**（codex guardian 模式）：同节点连续 3 次 reject → 不做第 4 次重试，升级处理（换策略重派或整体 FAILED），防无限打回。
+- **预算是代码，不是提示词**（`lib/rework.ts`，openclaw child-admission 模式）：轮数 / 熔断 / 格式重试的判定是纯函数，执行点在 `artifact_write` 写 `verdicts/` 的路径上——第 4 轮直接拒写，返回带 `governingCap`（哪条上限在管事）与 `remaining`（余额）。计数器就是 `verdicts/` 目录本身，无额外状态、崩溃后照样算得出。收编前这三条只写在 `agent/instructions.md` 里由 master 自己数，eval#1 的事故正是它数错了。
+- **熔断器**（codex guardian 模式）：同节点连续 3 次 reject → 不做第 4 次重试，升级处理（换策略重派或整体 FAILED），防无限打回。拒写即熔断。
 - **fail-closed 认证**：verdict 必须是合法结构化 JSON；解析失败/超时一律按 reject 处理，不宽松解析放行。
 - **两套重试分开计数**（hermes 模式）：schema 格式错误重试 ≤1 次（打回消息只带校验错误原文，不重贴 schema）；语义 reject 走节点轮数预算。
 - **typed 回传**（hermes SubagentResult 模式）：subagent 结果区分 exit_reason ∈ {completed, max_turns, error}——"做完但不合格"与"预算耗尽被截断"处置不同（前者定向打回，后者直接升级）。
@@ -75,6 +76,38 @@ runs/<ts>/memory/
 - **负结果记忆**：被 reject 的假设及理由写入 runs/<ts>/memory/rejected.md，重派时必带——防 master 反复批准同一条死路（4 家 harness 共同缺失的 gap，我们补上；跨 run 版本为 post-MVP）。
 - 每轮 verdict 落盘 runs/<ts>/verdicts/；token 用量累计记录。
 - 超预算 → FAILED 报告（差哪几项判据、最近产物路径）。
+
+## run 终态判定（状态表 + 崩溃表）
+
+判定的唯一 owner 是 `lib/runOutcome.ts` 的纯函数 `runOutcome(evidence)`。下面两张表是**从代码抄下来的**（判定顺序见该文件 `runOutcome()`），不是另写一份规格：改代码必须同步改表，`scripts/selftest-outcome.ts` 第 [11] 节按崩溃表逐格断言。
+
+**证据**（全部一眼可从 run 目录看出）：`FAILED.md` 在否、`proposal.md` 在否、`verification-report.md` 原文、`meta.json`、`exit.json`。判定顺序：`FAILED.md` → `proposal.md` → 非零退出码 → 其余。
+
+**状态表**（当前 phase × 新落盘的证据 → 下一 phase）：
+
+| 当前 | 触发（某个证据落盘） | 下一状态 | 说明 |
+|---|---|---|---|
+| unsettled | `FAILED.md` | **failed** | 失败凭据压过一切 |
+| unsettled | `proposal.md`（无报告或报告非 ALL PASS） | **rendered** | 跑到终点 ≠ 验收通过 |
+| unsettled | `meta.exitCode` / `exit.exitCode` 非零 | **failed** | 只在没有 proposal 正文时才由退出码定性 |
+| unsettled | `verification-report.md`（但无 `proposal.md`） | unsettled | phase 不动，`terminal` 变真（报告只可能在 eve 退出后写） |
+| rendered | 报告 `结果: ALL PASS` 且无非零退出码 | **verified** | 唯一的 `deliverable=true` |
+| rendered | 非零退出码 | rendered | 退出码在 proposal 分支里只挡 verified，不倒推成 failed |
+| verified | 非零退出码后补落盘 | **rendered** | 降级：交付资格被退出码收回（web `passed` 与续跑认领由此同判） |
+| rendered / verified | `FAILED.md` | **failed** | 同上，失败凭据压过一切 |
+| failed | 任何后续证据 | failed | 吸收态 |
+
+`terminal` 与 phase 正交，五个凭据任一即真：`FAILED.md` / 报告存在 / `proposal.md` / meta 落了 `finishedAt` 或 `exitCode` / exit.json 落了 `endedAt` 或 `exitCode`。`deliverable` 有且只有 `phase === "verified"`。
+
+**崩溃表**（`scripts/run.ts` 的落盘顺序：question.md → meta.json(startedAt) → eve invoke → invoke-result.json → proposal.md → meta 回写 finishedAt/exitCode → memory 归档 / 索引重建）：
+
+| 进程死在 | 盘上留下什么 | 终态判定 | 恢复动作 |
+|---|---|---|---|
+| meta.json 写之前 | 只有 `question.md`（或空目录） | unsettled，**非** terminal，续跑认领 null | 整题重跑；起始时间从 run id 解析 |
+| meta 写完、收尾回写之前 | meta 有 `startedAt`，`finishedAt`/`exitCode` 皆 null；工件停在死掉那一刻 | phase 看已落盘的工件（多为 unsettled；`FAILED.md` 或 `proposal.md` 已落则相应为 failed / rendered），terminal 只由工件凭据给出 | 整题重跑——续跑粒度是「题」不是「节点」（`run-batch` 的认领判据 `deliveredQuestionId`）；`memory/library` 的无锁 RMW 可能停在半路，由下次 `arxiv_save` 或 `scripts/rebuild-memory.ts` 自愈 |
+| 收尾回写之后 | meta 有 `finishedAt` + `exitCode` | terminal 必真；phase 由 `FAILED.md` / `proposal.md` / 报告决定 | 不重跑；`deliverable` 且 meta 有题号才算该题已交付 |
+
+不可消除的不确定区间：**meta 已落 startedAt、收尾尚未回写**。这段里 run 目录既可能是"正在跑"也可能是"已死"，两者从目录本身分不出来——「谁在跑」是进程外事实，由 `runs/.active.json` 单并发锁回答（`lib/lock.ts`），并作为显式入参进 `deriveStatus`。这是 harness 层的诚实非目标，不是待修的 bug。
 
 ## 模型接线（已依 eve 能力图谱定稿）
 

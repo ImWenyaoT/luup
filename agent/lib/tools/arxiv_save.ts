@@ -7,6 +7,10 @@
  * （标题反查一致）才有意义。
  *
  * runDir 取自环境变量 LUUP_RUN_DIR，不暴露给模型（理由见 agent/lib/paperStore.ts）。
+ *
+ * replay: "never" —— run 卡本身是覆盖写、幂等的，但它同时 upsert 跨 run 的
+ * `memory/library/`，而那是一段**无锁的读-改-写**（campaignMemory 约束 4：单写者假设）。
+ * 重放与另一个写者交错会丢反向索引条目。要重放先确认没有第二个 pipeline 在跑。
  */
 import { defineTool } from "eve/tools";
 import { z } from "zod";
