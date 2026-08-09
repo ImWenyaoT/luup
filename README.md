@@ -50,8 +50,13 @@ pnpm selftest:metrics         # 上述全部的零 API 自测（含对现有 run
 ```
 
 judge 与被测 agent 同族（criteria D1 锁死百炼 Qwen），同族自评偏置无法用换族 judge 消解 ——
-处置是**结构性降权**：M9 只进版本择优（`lib/versionSelect.ts` 的字典序纯函数）与诊断，
-永不进 gate、永不进技术报告的「成绩」栏。judge 有没有在判事，看 M10 的检出率。
+处置是**结构性降权**：M9 是诊断分，永不进 gate、永不进技术报告的「成绩」栏。
+
+M10 首次实测（`runs/20260808-134046/calibration.md`）：**检出 0/4**，同一份 proposal 三次采样
+得分 20/21/22，而变异体效应量落在 −2…+1 —— judge 的自噪声带比它要测的差异还宽。据此
+master 2026-08-09 裁决：择优字典序 = **交付 gate（只认确定性判据）→ M9 总分（tie-break）
+→ refs → token 升序 → run id**；**M9 的 veto 从 gate 降为 advisory**，只在 stats 的
+「⚠ M9 诊断」列展示，不再否掉任何版本。`score.json` 原样保留 veto 字段（动决策权，不动数据）。
 
 ## 交付面（Next.js + eve 单项目）
 
@@ -92,7 +97,7 @@ pnpm start         # next start，把 /eve/v1/* 代理到 4274
 | verification-report.md | 确定性验收报告（A/B1–B4 逐项） |
 | FAILED.md | 预算耗尽时的如实失败报告（成功则无） |
 | usage.jsonl | 每次模型调用的 token 用量（D1 凭证 + M6 成本会计的数据源） |
-| score.json | M9 诊断分（跑过 `pnpm score` 才有；不进 gate） |
+| score.json | M9 诊断分 + 断言归因 + veto 位（跑过 `pnpm score` 才有；**全部不进 gate**） |
 | calibration.md | M10 变异体检出率（跑过 `pnpm calibrate` 才有） |
 
 评估层自己的 judge 调用落在 `runs/.eval/usage.jsonl` —— 点开头，不被当成一次 run，

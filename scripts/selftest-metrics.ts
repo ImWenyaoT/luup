@@ -48,7 +48,7 @@ import {
   totalScore,
 } from "../lib/scoring.ts";
 import { MUTATIONS, detectionTable } from "../lib/mutate.ts";
-import { selectVersion } from "../lib/versionSelect.ts";
+import { VETO_ADVISORY, selectVersion } from "../lib/versionSelect.ts";
 import { check, eq, report } from "./selftestHarness.ts";
 
 /* ================================================================== */
@@ -506,13 +506,29 @@ eq("gate 先过滤：不可交付的高分版出局", gate.winner!.runId, "b");
 eq("出局理由写明", gate.eliminated[0].reason, "未通过交付 gate（runOutcome 判定不可交付）");
 eq("gate 层分出胜负", gate.reason, "唯一通过 gate 的版本");
 
+/* master 裁决 2026-08-09：M9 veto 降为 advisory —— 只记录不出局。
+   依据是 criteria H 的预先原则（gate 全确定性）+ 本仓库 M10 实测（检出 0/4，
+   judge 自噪声带 20/21/22 宽于变异体效应量 −2…+1）。 */
 const vetoed2 = selectVersion([cand("a", { veto: true, score: 99 }), cand("b", { score: 1 })]);
-eq("veto 版出局", vetoed2.winner!.runId, "b");
-eq("veto 出局理由", vetoed2.eliminated[0].reason, "M9 虚构类断言 veto");
+eq("veto 不出局：高分 veto 版照样胜出", vetoed2.winner!.runId, "a");
+eq("veto 版没有被算作出局", vetoed2.eliminated.length, 0);
+eq("veto 记成 advisory", vetoed2.advisories[0].runId, "a");
+eq("advisory 文案单点", vetoed2.advisories[0].note, VETO_ADVISORY);
+check("advisory 不含「出局」「gate」字样", !/出局|gate/.test(vetoed2.advisories[0].note));
 
-const allOut = selectVersion([cand("a", { deliverable: false }), cand("b", { veto: true })]);
-eq("全部出局则无胜者", allOut.winner, null);
-eq("全部出局的理由", allOut.reason, "没有版本通过 gate");
+const bothVetoed = selectVersion([cand("a", { veto: true, score: 10 }), cand("b", { veto: true, score: 20 })]);
+eq("两版都 veto 仍要选出胜者（不再退化成「无胜者」）", bothVetoed.winner!.runId, "b");
+eq("两条 advisory 都记下来", bothVetoed.advisories.length, 2);
+eq("胜者本身带 veto 也照样是胜者", bothVetoed.winner!.veto, true);
+
+const vetoIrrelevant = selectVersion([cand("a", { veto: true, score: 10, refs: 7, tokens: 1 }), cand("b", { veto: false, score: 10, refs: 7, tokens: 1 })]);
+eq("veto 不参与 tie-break（全平时仍按 run id）", vetoIrrelevant.winner!.runId, "a");
+
+const allOut = selectVersion([cand("a", { deliverable: false }), cand("b", { deliverable: false, veto: true })]);
+eq("只有确定性 gate 能让人全部出局", allOut.winner, null);
+eq("全部出局的理由", allOut.reason, "没有版本通过交付 gate");
+eq("出局的都是不可交付，与 veto 无关", allOut.eliminated.length, 2);
+eq("出局者不进 advisories", allOut.advisories.length, 0);
 
 const byScore = selectVersion([cand("a", { score: 12, refs: 99, tokens: 1 }), cand("b", { score: 18, refs: 5, tokens: 9 })]);
 eq("第 2 级：M9 总分高者胜（哪怕 refs 少、token 贵）", byScore.winner!.runId, "b");
@@ -539,20 +555,30 @@ eq("落败版本不删，全部进 ranked", tie.ranked.length, 2);
 const stable = selectVersion([cand("a", { score: 10, refs: 7, tokens: 100 }), cand("z", { score: 10, refs: 7, tokens: 100 })]);
 eq("输入顺序反过来结论不变", stable.winner!.runId, "a");
 
-// 与真实数据接：q61 两版都可交付、都未评分 → 落到 refs（7 vs 7）再落到 token（一版无 usage）
+/* 与真实数据接：q61 两版（062829 / 134046）都可交付、都跑过 M9、**都报了 veto**。
+   veto 降为 advisory 之后，胜负必须由 M9 总分分出（21 > 19），而不是退化成「无胜者」。 */
 const q61 = groups.get(61)!;
-const realChoice = selectVersion(
-  q61.map((r) => ({
-    runId: r.id,
-    deliverable: r.deliverable,
-    veto: false,
-    score: null,
-    refs: r.literature.refs,
-    tokens: r.usageMissing ? null : r.usage.all.total,
-  })),
-);
-eq("q61 择优落到 token 层（refs 同为 7）", realChoice.winner!.runId, "20260808-134046");
-eq("q61 择优理由", realChoice.reason, "M9 总分与 refs 持平，token 成本更低");
+const realCands = q61.map((r) => ({
+  runId: r.id,
+  deliverable: r.deliverable,
+  veto: r.score?.veto ?? false,
+  score: r.score?.weighted ?? null,
+  refs: r.literature.refs,
+  tokens: r.usageMissing ? null : r.usage.all.total,
+}));
+eq("q61 两版都跑过 M9", realCands.filter((c) => c.score !== null).length, 2);
+eq("q61 两版都报了 veto", realCands.filter((c) => c.veto).length, 2);
+const realChoice = selectVersion(realCands);
+eq("q61 胜者 = 134046（M9 21 > 19）", realChoice.winner!.runId, "20260808-134046");
+eq("q61 择优理由落在 M9 总分层", realChoice.reason, "M9 总分更高");
+check("胜者自己带着 veto 标志，但那只是诊断", realChoice.winner!.veto);
+eq("两版的 veto 都进 advisories", realChoice.advisories.length, 2);
+eq("没有任何版本因 veto 出局", realChoice.eliminated.length, 0);
+
+// 只看 Tier1（不接 M9）时胜者相同，但分出胜负的层次不同 —— 两条路都要留住
+const tier1Only = selectVersion(realCands.map((c) => ({ ...c, score: null, veto: false })));
+eq("只看 Tier1 时 q61 落到 token 层", tier1Only.reason, "M9 总分与 refs 持平，token 成本更低");
+eq("只看 Tier1 时胜者仍是 134046", tier1Only.winner!.runId, "20260808-134046");
 
 check("RUNS_DIR 指向本仓库 runs/", RUNS_DIR.endsWith("/runs"));
 

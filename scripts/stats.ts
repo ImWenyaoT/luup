@@ -40,6 +40,17 @@ import { REWORK_CAPS, REWORK_NODES } from "../lib/rework.ts";
 import { selectVersion } from "../lib/versionSelect.ts";
 
 const DASH = "—";
+
+/**
+ * M9 在本报告里的**统一称谓**（master 裁决 2026-08-09）。分数与 veto 一律以「诊断」出现，
+ * 不以「成绩」「不合格」出现 —— 措辞就是权限声明，一处写成「未通过」，读的人就会拿它当 gate 用。
+ * 校准数字硬编在这里而不是现算：它来自一次真实的 M10 跑（见各 run 的 calibration.md），
+ * 重跑校准后要顺手改这两个常量，别让报告替一个没做过的实验背书。
+ */
+const CALIBRATION_DETECTED = 0;
+const CALIBRATION_JUDGEABLE = 4;
+const M9_CAPTION = `诊断分（同族 judge，M10 校准检出 ${CALIBRATION_DETECTED}/${CALIBRATION_JUDGEABLE}，结构性降权；不进 gate）`;
+
 const readTextOrNull = (path: string): string | null => {
   try {
     return readFileSync(path, "utf8");
@@ -306,9 +317,9 @@ if (runs.length === 0) {
   out.push("> 命中率与复用率是**先行**指标：学科覆盖差的题会先在这里露头，再在交付率上露头。");
   out.push("");
 
-  /* ---------------- M9 搬运（不是成绩栏） ---------------- */
+  /* ---------------- M9 搬运（诊断分，不是成绩栏） ---------------- */
   const scored = runs.filter((r) => r.score !== null);
-  out.push("## M9 诊断分（搬运自 score.json，**不是成绩**）");
+  out.push(`## M9 ${M9_CAPTION}`);
   out.push("");
   if (scored.length === 0) {
     out.push("还没有任何 run 跑过 `pnpm score`。择优因此只能落到 refs / token 层。");
@@ -316,13 +327,13 @@ if (runs.length === 0) {
   } else {
     out.push(
       ...table(
-        ["run", "题号", "加权分", "百分制", "veto", "rubric"],
+        ["run", "题号", "加权分", "百分制", "⚠ M9 诊断", "rubric"],
         scored.map((r) => [
           r.id,
           r.questionId === null ? DASH : `Q${r.questionId}`,
           `${r.score!.weighted}/${r.score!.max}`,
           `${r.score!.percent}%`,
-          r.score!.veto ? "⛔ 触发" : "未触发",
+          r.score!.veto ? "⚠ 虚构类断言 veto" : DASH,
           `v${r.score!.rubricVersion}`,
         ]),
       ),
@@ -334,10 +345,14 @@ if (runs.length === 0) {
       out.push("");
     }
     out.push(
-      "> **这一栏永远不进 gate、不进技术报告的「成绩」栏。** judge 与被测 agent 同族" +
-        "（criteria D1 锁死百炼 Qwen），同族自评偏置无法用换族 judge 消解 —— 唯一诚实的处置是" +
-        "结构性降权：M9 只用于版本择优与诊断。judge 灵敏度见 `pnpm calibrate` 的检出率表。",
+      "> **这一栏永远不进 gate、不进技术报告的「成绩」栏，veto 也不例外。** judge 与被测 agent 同族" +
+        "（criteria D1 锁死百炼 Qwen），同族自评偏置无法用换族 judge 消解；" +
+        `本仓库的 M10 实测更直接：**检出 ${CALIBRATION_DETECTED}/${CALIBRATION_JUDGEABLE}**，` +
+        "同一份 proposal 三次采样得分 20/21/22，而变异体效应量落在 −2…+1 —— judge 的自噪声带比它要测的差异还宽。" +
+        "据此 master 于 2026-08-09 裁决：M9 总分只做 tie-break，**veto 从 gate 降为 advisory**（只记录不出局）。",
     );
+    out.push("");
+    out.push("> ⚠ 列是**诊断线索**，不是不合格判定：它指出正文里哪些具体断言挂不到出处，供重跑时消费（题页 memory 已带原文）。");
     out.push("");
   }
 
@@ -368,17 +383,27 @@ if (runs.length === 0) {
         list.map((r) => r.id).join(" → "),
         choice.winner?.runId ?? DASH,
         choice.reason,
+        choice.advisories.length === 0 ? DASH : choice.advisories.map((a) => a.runId).join("、"),
         choice.eliminated.length === 0 ? DASH : choice.eliminated.map((e) => `${e.runId}：${e.reason}`).join("；"),
       ]);
     }
-    out.push(...table(["题号", "候选（时间序）", "胜出", "理由", "出局"], rows));
+    out.push(...table(["题号", "候选（时间序）", "胜出", "理由", "⚠ M9 诊断", "出局"], rows));
     out.push("");
     const noWinner = rows.filter((r) => r[2] === DASH).map((r) => r[0]);
     if (noWinner.length > 0) {
       out.push(
-        `> ${noWinner.join(", ")} **没有任何版本通过 gate** —— 不是脚本坏了，是这几题当前没有可交付的版本。` +
-          "M9 veto 比确定性验收器更严：B1–B4 验的是「引用条目本身真不真」，veto 验的是「正文的具体断言挂不挂得到出处」，" +
-          "两者可以一个过一个不过。处置是重跑这几题（题页 memory 已带着无出处断言的原文），不是放宽 gate。",
+        `> ${noWinner.join(", ")} **没有任何版本通过交付 gate** —— 不是脚本坏了，也与 M9 无关：` +
+          "这几题当前没有一版被确定性验收器（A/B1–B4 + 终态判定）判为可交付。处置是重跑。",
+      );
+      out.push("");
+    }
+    const advised = rows.filter((r) => r[4] !== DASH);
+    if (advised.length > 0) {
+      out.push(
+        "> ⚠ 列里的版本（含胜者）被 M9 报了虚构类断言 veto。**这不改变胜负** —— veto 是 advisory，" +
+          "gate 只认确定性判据。它的用处是告诉你正文里哪些具体断言挂不到出处：" +
+          "B1–B4 验的是「引用条目本身真不真」，veto 看的是「正文断言挂不挂得到出处」，两者可以一个过一个不过。" +
+          "题页 memory 已带着无出处断言的原文，下一次重跑能直接消费。",
       );
       out.push("");
     }
@@ -386,14 +411,15 @@ if (runs.length === 0) {
     if (mixed.length > 0) {
       out.push(
         `> 告警：${mixed.map(([q]) => `Q${q}`).join(", ")} 的候选里既有评过分的也有没评过的。` +
-          "veto 是硬 gate，而**没评过分的版本不会被 veto** —— 混着比，等于奖励「没测过」。" +
-          "择优前请把同题的候选全部跑一遍 `pnpm score`。",
+          "未评分的版本 score 为 null，在 tie-break 里一律排到已评分版本之后 —— " +
+          "于是「谁赢」有可能只是「谁被评过」。择优前请把同题的候选全部跑一遍 `pnpm score`。",
       );
       out.push("");
     }
     out.push(
-      "> 择优是纯函数（`lib/versionSelect.ts`），字典序：交付 gate（含 M9 veto）→ M9 总分 → refs 数 → token 成本升序。" +
-        "没跑过 `pnpm score` 的版本 score 为 null，排在所有已评分版本之后 ——「没测过」不是「测过且很好」。",
+      "> 择优是纯函数（`lib/versionSelect.ts`），字典序：**交付 gate（只认确定性判据）** → M9 总分（tie-break）" +
+        " → refs 数 → token 成本升序 → run id。没跑过 `pnpm score` 的版本 score 为 null，" +
+        "排在所有已评分版本之后 ——「没测过」不是「测过且很好」。",
     );
     out.push("");
     out.push("> 落败版本不删：负结果是记忆的一部分，下次重跑要知道哪一版为什么没被选。");
