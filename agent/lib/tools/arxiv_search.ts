@@ -18,7 +18,10 @@ export default defineTool({
     "Pass a plain phrase (it is matched across all fields), or arXiv query syntax such as " +
     '`ti:"solar flare" AND cat:astro-ph.SR`. To keep a result as evidence you must then call `arxiv_save` with its id.',
   inputSchema: z.object({
-    query: z.string().min(2).describe("Search phrase, or raw arXiv query syntax."),
+    query: z
+      .string()
+      .min(2)
+      .describe("Search phrase, or raw arXiv query syntax."),
     maxResults: z
       .number()
       .int()
@@ -43,7 +46,9 @@ export default defineTool({
         authors: p.authors.slice(0, 6),
         primaryCategory: p.primaryCategory,
         summary:
-          p.summary.length > SUMMARY_LIMIT ? `${p.summary.slice(0, SUMMARY_LIMIT)}…` : p.summary,
+          p.summary.length > SUMMARY_LIMIT
+            ? `${p.summary.slice(0, SUMMARY_LIMIT)}…`
+            : p.summary,
         url: p.absUrl,
       })),
       hint:

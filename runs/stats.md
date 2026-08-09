@@ -1,6 +1,6 @@
 # luup Tier1 指标报告
 
-生成时间：2026-08-09T10:21:40.184Z
+生成时间：2026-08-09T10:27:28.473Z
 
 数据源只有既有工件（runOutcome / verdicts / usage.jsonl / meta.json / memory/papers / score.json），**本脚本零新增采集、零 LLM 调用**。M9 分是从 `score.json` 搬进来的（`pnpm score` 产生），M10 判别力校准另见各 run 的 `calibration.md`（`pnpm calibrate` 产生）。
 
