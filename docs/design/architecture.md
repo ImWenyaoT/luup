@@ -104,7 +104,9 @@ runs/<ts>/memory/
 - 触发条件一条不满足：写者恒为 1（百炼配额刻意串行）；runs/ 全量外推仅 ~21MB；且 runs/ 是交付物与防虚构证据链本身，进 DB 净损失。
 - 参照系：loopx 零 DB（许可 SQLite 而终未用，查询走可丢弃的派生缓存）；hermes 迁 SQLite 的触发是 6 类真并发写者 + 全局 FTS（我们都没有），且其记忆本体仍是平文件；steve 的 PG 只装 eve workflow 引擎内部状态，业务数据不进。
 - 边界即 .gitignore：runs/ + memory/（不 ignore = source of truth = 永远是文件）vs .eve/（ignore = 可丢弃派生态）。
-- 将来唯一可能的引入路径：PG + @workflow/world-postgres（eve 官方线），触发三选一——真并行跑 / 无持久卷部署 / 磁盘不可删。SQLite、Mongo 明确排除。
+- 将来唯一可能的引入路径：PG + @workflow/world-postgres（eve 官方线），触发三选一——真并行跑 / 无持久卷部署 / 磁盘不可删。
+- **允许集（用户 2026-08-09 限定）**：若上 DB 只在 {SQLite, MongoDB, PostgreSQL} 内选。当前裁决在此约束下：PG 是唯一触发路径；SQLite 的候场理由（跨 run 统计）由确定性脚本覆盖；Mongo 维持排除（无文档型查询需求）。DuckDB 类"SQL 透镜"方案不在允许集内，作废。
+- 2026-08-09 二次评估（战役末态实测外推：runs ~18MB/125 目录、library ~1750 卡、单写者经 D 加固）：结论不变。
 
 **评估暴露的真雷（125 全量跑前置修复）**：.eve/.workflow-data 已 1.1GB/7 万文件（仅 7 次 run），外推 125 题 ≈20GB/125 万文件而本机余 95GB，eve 自动 prune 不覆盖 → ①批量跑加保留策略（题间清理已验收 run 的 workflow 状态）②派生 runs/index.json 缓存 ③web 列表 mtime memo。
 
