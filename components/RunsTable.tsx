@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { STATUS_LABEL, STATUS_TONE, fmtDur, fmtTime } from "@/lib/format";
+import { SUMMARY_MARKS } from "@/lib/nodes";
 import type { RunStatus, RunSummary } from "@/lib/types";
-import { MiniSpine, SUMMARY_MARKS } from "./Spine";
+import { MiniSpine } from "./Spine";
 import { EmptyState, Pill } from "./ui";
 
 type Key = "id" | "domain" | "refs" | "verify" | "durationSec";
@@ -12,7 +13,7 @@ const COLS: { key: Key | null; label: string; className?: string }[] = [
   { key: "id", label: "id" },
   { key: "domain", label: "学科" },
   { key: null, label: "问题" },
-  { key: null, label: "L H C W" },
+  { key: null, label: SUMMARY_MARKS.join(" ") },
   { key: "refs", label: "refs" },
   { key: "verify", label: "验收" },
   { key: "durationSec", label: "耗时" },

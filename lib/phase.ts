@@ -1,10 +1,14 @@
+/**
+ * 状态机的唯一输入是文件系统——没有数据库，也不该有。
+ * 每个节点绑一个产出工件（绑定关系在 ./nodes.ts），工件存在即节点完成，mtime 差即耗时。
+ */
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { activeLock } from "./lock.ts";
 import { parseTableRows } from "./mdTable.ts";
+import { NODES, resolveArtifact } from "./nodes.ts";
 import { runDir } from "./paths.ts";
 import type {
-  NodeKey,
   NodeState,
   RunStatus,
   SpineNode,
@@ -13,18 +17,6 @@ import type {
   VerifyCheck,
   VerifyReport,
 } from "./types.ts";
-
-/**
- * 状态机的唯一输入是文件系统——没有数据库，也不该有。
- * 每个节点绑一个产出工件，工件存在即节点完成，mtime 差即耗时。
- */
-export const NODES: { key: NodeKey; mark: string; label: string; artifact: string }[] = [
-  { key: "literature", mark: "L", label: "文献", artifact: "evidence.md" },
-  { key: "hypothesis", mark: "H", label: "假设", artifact: "hypotheses.md" },
-  { key: "critique", mark: "C", label: "批判", artifact: "critique.json" },
-  { key: "proposal", mark: "W", label: "计划", artifact: "proposal.json" },
-  { key: "verify", mark: "✓", label: "验收", artifact: "verification-report.md" },
-];
 
 /** run 目录快照：相对路径（posix 风格）→ mtimeMs。目录只下探 verdicts/ 与 memory/。 */
 export type Scan = { id: string; dir: string; files: Map<string, number> };
@@ -176,8 +168,12 @@ export function deriveNodes(scan: Scan, status: RunStatus, verdicts: Verdict[]):
   }
   let prev = startedAtMs(scan);
   let activeTaken = status !== "running";
-  return NODES.map(({ key, mark, label, artifact }) => {
-    const mtime = scan.files.get(artifact) ?? null;
+  return NODES.map((spec) => {
+    const { key, mark, label } = spec;
+    // 认历史工件名：老 run 的 critique.md 也是「批判节点已产出」，不是 pending
+    const found = resolveArtifact(spec, (f) => scan.files.has(f));
+    const artifact = found?.file ?? spec.artifact;
+    const mtime = found !== null ? (scan.files.get(found.file) ?? null) : null;
     let state: NodeState;
     if (mtime !== null) {
       state = "done";
