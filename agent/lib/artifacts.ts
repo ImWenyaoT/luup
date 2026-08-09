@@ -21,6 +21,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
+import { NODE_BY_KEY } from "../../lib/nodes.ts";
 import { CritiqueSchema, ProposalSchema, VerdictSchema } from "#lib/contracts.ts";
 import { resolveRunDir } from "./runContext.ts";
 
@@ -35,18 +36,18 @@ export class ArtifactPathError extends Error {
 const PROTECTED_KEYS = [`memory${sep}papers`, `memory${sep}index.md`].map((p) => p.toLowerCase());
 
 /**
- * 写入即按契约校验的工件。这里是**写出端**的工件名；读入端（web 的节点/标签页/清单）
- * 全部派生自 `lib/nodes.ts` 的注册表 —— 改工件名两边都要动，只改这里就是 2026-08-08
- * `critique.md` → `critique.json` 那次的复现（新老 run 的批判标签一起灰显）。
- * 不合并成一处：这张表挂着 zod schema，而注册表要能进客户端 bundle。
+ * 写入即按契约校验的工件。工件名本身仍取自 `lib/nodes.ts` 的注册表（那是单一事实源，
+ * 2026-08-08 `critique.md` → `critique.json` 就是漏改这一侧漏出来的），这张表只多挂
+ * 一个 zod schema —— 不合并进注册表，是因为注册表要能进客户端 bundle，而 schema 不能。
+ * 注册表本身没有运行时依赖（只有常量），import 它是安全的。
  */
 const SCHEMA_GUARDS: Array<{
   test: (rel: string) => boolean;
   name: string;
   schema: typeof ProposalSchema | typeof VerdictSchema | typeof CritiqueSchema;
 }> = [
-  { test: (rel) => rel === "proposal.json", name: "ProposalSchema", schema: ProposalSchema },
-  { test: (rel) => rel === "critique.json", name: "CritiqueSchema", schema: CritiqueSchema },
+  { test: (rel) => rel === NODE_BY_KEY.proposal.artifact, name: "ProposalSchema", schema: ProposalSchema },
+  { test: (rel) => rel === NODE_BY_KEY.critique.artifact, name: "CritiqueSchema", schema: CritiqueSchema },
   {
     test: (rel) => rel.startsWith(`verdicts${sep}`) && rel.endsWith(".json"),
     name: "VerdictSchema",

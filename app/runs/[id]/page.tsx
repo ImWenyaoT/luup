@@ -11,10 +11,11 @@ import { Verdicts } from "@/components/Verdicts";
 import { VerifyTable } from "@/components/VerifyTable";
 import { EmptyState, Kv, Pill } from "@/components/ui";
 import { STATUS_LABEL, STATUS_TONE, fmtDur, fmtTime } from "@/lib/format";
+import { activeRunId } from "@/lib/lock";
 import { NODE_BY_KEY, resolveArtifact } from "@/lib/nodes";
 import { isRunId } from "@/lib/runId";
 import { scanRun } from "@/lib/phase";
-import { activeRun, readArtifactFrom, readRunFrom } from "@/lib/runs";
+import { readArtifactFrom, readRunFrom } from "@/lib/runs";
 import type { NodeKey } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -44,9 +45,11 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
   // 目录只扫这一次：详情与下面每个 tab 的工件原文都从同一个 Scan 里取
   const scan = scanRun(id);
   if (!scan) notFound();
-  const run = readRunFrom(scan, activeRun());
+  const run = readRunFrom(scan, activeRunId());
 
-  const has = (name: string) => run.artifacts[name] === true;
+  // 「有没有这个工件」与「?artifact= 能取哪些」是同一个集合，不再各存一份
+  const artifacts = new Set(run.artifactNames);
+  const has = (name: string) => artifacts.has(name);
   const md = (name: string) => readArtifactFrom(scan, name) ?? "";
 
   const h = await headers();
@@ -86,8 +89,8 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
     const spec = NODE_BY_KEY[key];
     const found = resolveArtifact(spec, has);
     return {
-      id: spec.tab.id,
-      label: spec.tab.id,
+      id: spec.tabId,
+      label: spec.tabId,
       disabled: found === null,
       content:
         found === null ? (
@@ -109,8 +112,8 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
     nodeTab("critique"),
     {
       // 计划节点的工件是 proposal.json，但这里端的是 run.ts 确定性渲染出的 proposal.md
-      id: NODE_BY_KEY.proposal.tab.id,
-      label: "proposal.md",
+      id: NODE_BY_KEY.proposal.tabId,
+      label: NODE_BY_KEY.proposal.tabId,
       disabled: !has("proposal.md") && !run.proposalRejected,
       content: proposalPanel,
     },
@@ -122,8 +125,10 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
     },
     {
       // 验收报告不按 markdown 端出去：结论要能分组、能统计，那需要解析后的结构
-      id: NODE_BY_KEY.verify.tab.id,
-      label: "verification",
+      id: NODE_BY_KEY.verify.tabId,
+      label: NODE_BY_KEY.verify.tabId,
+      // 报告没落盘、也解析不出结构 ⇒ 与别的未产出工件一样灰显
+      disabled: run.verify === null && !has(NODE_BY_KEY.verify.artifact),
       content: <VerifyTable report={run.verify} runId={id} />,
     },
     {

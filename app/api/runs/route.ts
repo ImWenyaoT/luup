@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { fail, json } from "@/lib/http";
-import { acquire } from "@/lib/lock";
-import { activeRun, listRuns } from "@/lib/runs";
+import { acquire, activeRunId } from "@/lib/lock";
+import { listRuns } from "@/lib/runs";
 import { readRunsIndex } from "@/lib/runsIndex";
 import { findQuestion } from "@/lib/science125";
 import { freeformText, science125Text, startRun } from "@/lib/spawn";
@@ -17,7 +17,7 @@ export function GET(request: NextRequest) {
     return fail(400, "bad_limit", "limit 必须是 1..500 的整数");
   }
   // 锁读一次往下传（running 的唯一来源）；派生缓存优先，缺失/损坏/过期时退回全量扫盘
-  const active = activeRun();
+  const active = activeRunId();
   return json({ active, runs: readRunsIndex(parsed, active) ?? listRuns(parsed, active) });
 }
 

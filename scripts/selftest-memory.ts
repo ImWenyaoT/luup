@@ -32,23 +32,11 @@ import {
 import { listPapers, readIndex, savePaper } from "#lib/paperStore.ts";
 import { RUN_DIR_ENV } from "#lib/runContext.ts";
 import { parseTableRows } from "../lib/mdTable.ts";
+import { check, report } from "./selftestHarness.ts";
 import memoryNoteTool from "#tools/memory_note.ts";
 import memorySearchTool from "#tools/memory_search.ts";
 
 /* ---------------------------------------------------------------- */
-
-let passed = 0;
-const failures: string[] = [];
-
-function check(label: string, ok: boolean, detail = ""): void {
-  if (ok) {
-    passed++;
-    console.log(`  PASS ${label}${detail ? ` — ${detail}` : ""}`);
-  } else {
-    failures.push(label);
-    console.log(`  FAIL ${label}${detail ? ` — ${detail}` : ""}`);
-  }
-}
 
 /** 与 selftest-literature 同款：直接调 defineTool 的 execute，ctx 用不到。 */
 type ToolLike<I, O> = { execute(input: I, ctx: never): Promise<O> | O | AsyncIterable<O> };
@@ -407,10 +395,10 @@ try {
   const cl = compactLog();
   const cq = compactQuestionPage({ questionId: 54 });
   noop.compact =
-    cl.skipped &&
     !cl.compacted &&
-    cq.skipped &&
+    cl.reason === "memory/ 不存在" &&
     !cq.compacted &&
+    cq.reason === "memory/ 不存在" &&
     !existsSync(layout.questionArchive(54)) &&
     !existsSync(layout.logShard(new Date().toISOString().slice(0, 7)));
 } catch (e) {
@@ -425,7 +413,7 @@ check("searchMemory 返回 enabled:false + 空 hits", noop.search);
 check("archiveRunOutcome 静默 skipped（run.ts 收尾不炸）", noop.archive);
 check("memory_note 工具返回 skipped、written/failed 皆空", noop.tool);
 check("memory_search 工具返回 enabled:false 且 hint 说明不是错误", noop.toolSearch);
-check("compactLog / compactQuestionPage 静默 skipped 且不建任何文件", noop.compact);
+check("compactLog / compactQuestionPage 静默 no-op（reason=memory/ 不存在）且不建任何文件", noop.compact);
 check("**未偷偷重建 memory/**（删掉就是删掉）", !existsSync(memoryDir));
 
 // run.ts 收尾那段的等价调用：整段包 try 后仍能算出退出码
@@ -450,6 +438,4 @@ if (savedQuestionEnv === undefined) delete process.env.LUUP_QUESTION_ID;
 else process.env.LUUP_QUESTION_ID = savedQuestionEnv;
 check("现场已恢复（临时沙箱删除）", !existsSync(sandbox));
 
-console.log(`\n${failures.length === 0 ? "ALL PASS" : "FAILED"}: ${passed} passed, ${failures.length} failed`);
-if (failures.length > 0) console.log(failures.map((f) => `  - ${f}`).join("\n"));
-process.exit(failures.length === 0 ? 0 : 1);
+report("selftest-memory");

@@ -19,6 +19,7 @@ import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { check, eq, report } from "./selftestHarness.ts";
 
 /* LUUP_REPO_ROOT 在 lib/paths.ts 的模块加载期读取 —— 必须先设好再 import。 */
 const root = mkdtempSync(join(tmpdir(), "luup-lock-"));
@@ -29,23 +30,6 @@ const { deriveStatus, scanDir } = await import("../lib/phase.ts");
 const RUN_SCRIPT = join(import.meta.dirname, "run.ts");
 const RUNS = join(root, "runs");
 const LOCK_FILE = join(RUNS, ".active.json");
-
-let passed = 0;
-let failed = 0;
-
-function check(name: string, cond: boolean, detail = ""): void {
-  if (cond) {
-    passed += 1;
-    console.log(`  ✔ ${name}`);
-  } else {
-    failed += 1;
-    console.error(`  ✘ ${name}${detail ? ` — ${detail}` : ""}`);
-  }
-}
-
-function eq<T>(name: string, actual: T, expected: T): void {
-  check(name, Object.is(actual, expected), `期望 ${String(expected)}，实际 ${String(actual)}`);
-}
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -212,5 +196,4 @@ check("Ctrl-C 之后锁文件没了", !existsSync(LOCK_FILE), `残留 ${JSON.str
 /* ------------------------------------------------------------------ */
 
 rmSync(root, { recursive: true, force: true });
-console.log(`\n[selftest-lock] ${passed} passed, ${failed} failed`);
-process.exit(failed === 0 ? 0 : 1);
+report("selftest-lock");

@@ -178,7 +178,8 @@ export function deliveredQuestionId(e: RunEvidence): number | null {
 
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 
-const ms = (v: unknown): number | null => {
+/** ISO 时间串 → ms。落盘时间的解析口径只有这一份（retention 也用它）。 */
+export const parseMs = (v: unknown): number | null => {
   if (typeof v !== "string") return null;
   const t = Date.parse(v);
   return Number.isNaN(t) ? null : t;
@@ -190,8 +191,8 @@ export function metaEvidence(raw: unknown): MetaEvidence | null {
   const m = raw as Record<string, unknown>;
   return {
     questionId: num(m.questionId),
-    startedMs: ms(m.startedAt),
-    finishedMs: ms(m.finishedAt),
+    startedMs: parseMs(m.startedAt),
+    finishedMs: parseMs(m.finishedAt),
     exitCode: num(m.exitCode),
   };
 }
@@ -199,14 +200,15 @@ export function metaEvidence(raw: unknown): MetaEvidence | null {
 export function exitEvidence(raw: unknown): ExitEvidence | null {
   if (typeof raw !== "object" || raw === null) return null;
   const x = raw as Record<string, unknown>;
-  return { exitCode: num(x.exitCode), endedMs: ms(x.endedAt) };
+  return { exitCode: num(x.exitCode), endedMs: parseMs(x.endedAt) };
 }
 
-function readJsonFile(path: string): unknown {
+/** JSON 读盘：不存在 / 写坏 / 混进了 eve 的 stdout 噪声 —— 一律当没有。 */
+export function readJsonFile<T = unknown>(path: string): T | null {
   try {
-    return JSON.parse(readFileSync(path, "utf8")) as unknown;
+    return JSON.parse(readFileSync(path, "utf8")) as T;
   } catch {
-    return null; // 不存在 / 写坏 / 混进了 eve 的 stdout 噪声 —— 一律当没有
+    return null;
   }
 }
 
@@ -239,10 +241,14 @@ export function readRunEvidence(dir: string, id = basename(dir)): RunEvidence {
     }
   };
 
+  // 一遍循环拿两件事：最新 mtime，以及 question.md 自己的 mtime（别为它再 stat 一次）
   let newestMs: number | null = null;
+  let questionMs: number | null = null;
   for (const name of names) {
     const t = mtime(name);
-    if (t !== null && (newestMs === null || t > newestMs)) newestMs = t;
+    if (t === null) continue;
+    if (name === "question.md") questionMs = t;
+    if (newestMs === null || t > newestMs) newestMs = t;
   }
 
   return {
@@ -252,7 +258,7 @@ export function readRunEvidence(dir: string, id = basename(dir)): RunEvidence {
     report: present.has("verification-report.md") ? readTextFile(join(dir, "verification-report.md")) : null,
     meta: present.has("meta.json") ? metaEvidence(readJsonFile(join(dir, "meta.json"))) : null,
     exit: present.has("exit.json") ? exitEvidence(readJsonFile(join(dir, "exit.json"))) : null,
-    questionMs: mtime("question.md"),
+    questionMs,
     newestMs,
   };
 }

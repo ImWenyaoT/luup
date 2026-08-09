@@ -20,27 +20,7 @@ import { join } from "node:path";
 import { REPO_ROOT, RUNS_DIR } from "../lib/paths.ts";
 import { RUN_ID_RE } from "../lib/runId.ts";
 import { planPrune } from "../lib/retention.ts";
-
-/* ------------------------------------------------------------------ */
-/* 断言                                                                 */
-/* ------------------------------------------------------------------ */
-
-let passed = 0;
-let failed = 0;
-
-function check(name: string, cond: boolean, detail = ""): void {
-  if (cond) {
-    passed += 1;
-    console.log(`  ✔ ${name}`);
-  } else {
-    failed += 1;
-    console.error(`  ✘ ${name}${detail ? ` — ${detail}` : ""}`);
-  }
-}
-
-function eq<T>(name: string, actual: T, expected: T): void {
-  check(name, Object.is(actual, expected), `期望 ${String(expected)}，实际 ${String(actual)}`);
-}
+import { check, eq, report } from "./selftestHarness.ts";
 
 /* ------------------------------------------------------------------ */
 /* fixture                                                             */
@@ -237,5 +217,4 @@ rmSync(tmpRoot, { recursive: true, force: true });
 
 /* ------------------------------------------------------------------ */
 
-console.log(`\n[selftest-retention] ${passed} passed, ${failed} failed`);
-process.exit(failed === 0 ? 0 : 1);
+report("selftest-retention");

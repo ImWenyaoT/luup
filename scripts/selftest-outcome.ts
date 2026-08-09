@@ -23,6 +23,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { RUNS_DIR } from "../lib/paths.ts";
+import { check, eq, report } from "./selftestHarness.ts";
 import { deriveStatus, evidenceFromScan, scanDir, scanRun } from "../lib/phase.ts";
 import { planPrune } from "../lib/retention.ts";
 import { RUN_ID_RE, isRunId, stampToMs, utcStamp } from "../lib/runId.ts";
@@ -42,27 +43,6 @@ function readTextOr(path: string): string {
   } catch {
     return "";
   }
-}
-
-/* ------------------------------------------------------------------ */
-/* 断言                                                                 */
-/* ------------------------------------------------------------------ */
-
-let passed = 0;
-let failed = 0;
-
-function check(name: string, cond: boolean, detail = ""): void {
-  if (cond) {
-    passed += 1;
-    console.log(`  ✔ ${name}`);
-  } else {
-    failed += 1;
-    console.error(`  ✘ ${name}${detail ? ` — ${detail}` : ""}`);
-  }
-}
-
-function eq<T>(name: string, actual: T, expected: T): void {
-  check(name, Object.is(actual, expected), `期望 ${String(expected)}，实际 ${String(actual)}`);
 }
 
 /* ------------------------------------------------------------------ */
@@ -517,5 +497,4 @@ for (const id of realIds) {
 
 rmSync(root, { recursive: true, force: true });
 
-console.log(`\n[selftest-outcome] ${passed} passed, ${failed} failed`);
-process.exit(failed === 0 ? 0 : 1);
+report("selftest-outcome");

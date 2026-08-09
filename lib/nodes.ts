@@ -29,12 +29,8 @@ export type NodeSpec = {
   label: string;
   /** 当前工件名（run 目录相对路径） */
   artifact: string;
-  /**
-   * 详情页标签页。`id` 同时是 spine 的跳转锚点（`#tab-<id>`）；`kind` 是**工件自身**的
-   * 格式，只有走通用面板的三个节点（evidence / hypotheses / critique）会照它渲染 ——
-   * proposal 与 verify 的面板是手写的派生视图（proposal.md、解析后的验收表），不读 kind。
-   */
-  tab: { id: string; kind: ArtifactKind };
+  /** 详情页标签页 id，同时是 spine 的跳转锚点（`#tab-<id>`）。 */
+  tabId: string;
   /** 是否进 scripts/run.ts 收尾打印的工件清单（验收报告由 `pnpm verify` 后补，不在其中）。 */
   inManifest: boolean;
   /** 历史工件名，只用于读老 run；新 run 一律只写 `artifact`。 */
@@ -47,7 +43,7 @@ export const NODES: NodeSpec[] = [
     mark: "L",
     label: "文献",
     artifact: "evidence.md",
-    tab: { id: "evidence", kind: "markdown" },
+    tabId: "evidence",
     inManifest: true,
   },
   {
@@ -55,7 +51,7 @@ export const NODES: NodeSpec[] = [
     mark: "H",
     label: "假设",
     artifact: "hypotheses.md",
-    tab: { id: "hypotheses", kind: "markdown" },
+    tabId: "hypotheses",
     inManifest: true,
   },
   {
@@ -63,7 +59,7 @@ export const NODES: NodeSpec[] = [
     mark: "C",
     label: "批判",
     artifact: "critique.json",
-    tab: { id: "critique", kind: "json" },
+    tabId: "critique",
     inManifest: true,
     // 2026-08-08 前是自由格式 markdown，仓库里的老 run 仍是它
     legacyArtifacts: ["critique.md"],
@@ -73,7 +69,7 @@ export const NODES: NodeSpec[] = [
     mark: "W",
     label: "计划",
     artifact: "proposal.json",
-    tab: { id: "proposal", kind: "json" },
+    tabId: "proposal",
     inManifest: true,
   },
   {
@@ -81,7 +77,7 @@ export const NODES: NodeSpec[] = [
     mark: "✓",
     label: "验收",
     artifact: "verification-report.md",
-    tab: { id: "verification", kind: "markdown" },
+    tabId: "verification",
     inManifest: false,
   },
 ];
@@ -96,8 +92,14 @@ export const NODE_BY_KEY = Object.fromEntries(NODES.map((n) => [n.key, n])) as R
 export const SUMMARY_MARKS = NODES.filter((n) => n.key !== "verify").map((n) => n.mark);
 
 /**
+ * 渲染形态由**文件名**决定，不是注册表里的第二个字段：`.json` 走 JSON 面板，其余走
+ * markdown。写成字段就得在改工件名时记得同步改它，而那正是这张表要消灭的那类漏改。
+ */
+const kindOf = (file: string): ArtifactKind => (file.endsWith(".json") ? "json" : "markdown");
+
+/**
  * 在一次 run 的工件集合里定位某节点的产出：先当前名，再历史名。
- * `exists` 由调用方给（web 侧是 run.artifacts 表，phase 侧是目录快照），注册表不碰 fs。
+ * `exists` 由调用方给（web 侧是工件名集合，phase 侧是目录快照），注册表不碰 fs。
  *
  * kind 跟着实际命中的文件走：老 run 的 critique.md 是 markdown，新 run 的 critique.json 是 JSON。
  */
@@ -105,9 +107,8 @@ export function resolveArtifact(
   spec: NodeSpec,
   exists: (file: string) => boolean,
 ): { file: string; kind: ArtifactKind } | null {
-  if (exists(spec.artifact)) return { file: spec.artifact, kind: spec.tab.kind };
-  for (const file of spec.legacyArtifacts ?? []) {
-    if (exists(file)) return { file, kind: file.endsWith(".json") ? "json" : "markdown" };
+  for (const file of [spec.artifact, ...(spec.legacyArtifacts ?? [])]) {
+    if (exists(file)) return { file, kind: kindOf(file) };
   }
   return null;
 }

@@ -5,8 +5,9 @@ import { Picker } from "@/components/Picker";
 import { MiniSpine } from "@/components/Spine";
 import { EmptyState, Meter, Panel, Pill } from "@/components/ui";
 import { STATUS_LABEL, STATUS_TONE, fmtDur, fmtTime } from "@/lib/format";
+import { activeRunId } from "@/lib/lock";
 import { SUMMARY_MARKS } from "@/lib/nodes";
-import { activeRun, listRuns, readStatusView } from "@/lib/runs";
+import { listRuns, readStatusView } from "@/lib/runs";
 import { readRunsIndex } from "@/lib/runsIndex";
 import { readScience125 } from "@/lib/science125";
 
@@ -14,7 +15,7 @@ export const dynamic = "force-dynamic";
 
 export default async function Dashboard() {
   // 与 GET /api/runs 同一条路径：派生缓存优先，缺失/损坏/过期时退回全量扫盘
-  const active = activeRun();
+  const active = activeRunId();
   const runs = readRunsIndex(500, active) ?? listRuns(500, active);
   const activeView = active ? readStatusView(active, active) : null;
   const s125 = readScience125();

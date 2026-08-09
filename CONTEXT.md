@@ -6,7 +6,7 @@
 |------|------|---------|
 | **run** | 一次完整流水线执行：question → L→H→C→W → master 认证 → 验收。工件全部落在 `runs/<ts>/` | scripts/run.ts |
 | **run outcome** | 一次 run 的终态判定：phase（进行到哪）+ terminal（是否终结）+ deliverable（是否可交付 = 通过独立验收）+ 起止时间。全系统唯一 owner，纯函数，入参是一份 RunEvidence（锁不在其中：「谁在跑」由调用方显式带入） | lib/runOutcome.ts |
-| **工件（artifact）** | 节点产出的落盘文件（evidence.md / hypotheses.md / critique.json / proposal.json …）。注册表 NODES 是其单一事实源：节点↔工件↔tab↔清单 | lib/phase.ts NODES |
+| **工件（artifact）** | 节点产出的落盘文件（evidence.md / hypotheses.md / critique.json / proposal.json …）。注册表 NODES 是其单一事实源：节点↔工件↔tab↔清单 | lib/nodes.ts NODES |
 | **认证（verdict）** | master 对节点产物的逐项判定（pass/reject + checks + rework）。写出端契约与读入端视图是两个类型（VerdictView 分裂中） | agent/lib/contracts.ts |
 | **判据（criterion）** | 验收锚点 criteria.md 中可核验的检查项（A 契约 / B 引用真实性 / C 闭环 / D 合规 / E 复现 / G 交付） | docs/design/criteria.md |
 | **独立验收（offline verification）** | 零 LLM 的确定性重放：schema + 引用逐条反查 arXiv（B1–B4）。与环内 verify_references 共享判据、独立数据通路 | scripts/verify-proposal.ts |

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { LOCK_FILE, RUNS_DIR } from "./paths.ts";
 
 /**
@@ -54,8 +54,8 @@ export function isAlive(pid: number): boolean {
   }
 }
 
+/** 锁不在、读不动、写坏了 —— 一律「没有锁」。读失败本身就是答案，不必先 existsSync 问一遍。 */
 export function readLock(): Lock | null {
-  if (!existsSync(LOCK_FILE)) return null;
   try {
     return parse(readFileSync(LOCK_FILE, "utf8"));
   } catch {

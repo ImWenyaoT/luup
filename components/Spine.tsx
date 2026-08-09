@@ -21,7 +21,7 @@ export function Spine({ nodes }: { nodes: SpineNode[] }) {
         <li key={n.key} className="relative pb-4 pl-6">
           <div className="spine-dot absolute top-1.5 left-0" data-state={n.state} aria-hidden />
           <a
-            href={`#tab-${NODE_BY_KEY[n.key].tab.id}`}
+            href={`#tab-${NODE_BY_KEY[n.key].tabId}`}
             className="block hover:text-accent"
             aria-label={`跳到 ${n.label} 工件`}
           >

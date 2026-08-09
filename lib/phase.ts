@@ -169,7 +169,19 @@ export function evidenceFromScan(scan: Scan): RunEvidence {
   return e;
 }
 
-export const outcomeOf = (scan: Scan): RunOutcome => runOutcome(evidenceFromScan(scan));
+/** 判定本身也只算一次：状态、起止时间、题号在一次请求里会被问好几遍。 */
+const OUTCOME = new WeakMap<Scan, RunOutcome>();
+
+export function outcomeOf(scan: Scan): RunOutcome {
+  const cached = OUTCOME.get(scan);
+  if (cached) return cached;
+  const o = runOutcome(evidenceFromScan(scan));
+  OUTCOME.set(scan, o);
+  return o;
+}
+
+/** 验收报告原文。证据里已经有一份，读入端不必再开一次文件。 */
+export const reportOf = (scan: Scan): string | null => evidenceFromScan(scan).report;
 
 /** 表示层：五态里的四态由 phase 决定，running 只能由锁决定（见 deriveStatus）。 */
 const STATUS_BY_PHASE: Record<RunPhase, Exclude<RunStatus, "running">> = {
@@ -196,14 +208,15 @@ export function deriveNodes(scan: Scan, status: RunStatus, verdicts: Verdict[]):
     const n = (rejects.get(v.node) ?? 0) + (v.verdict === "pass" ? 0 : 1) + (v.rejectedRaw ? 1 : 0);
     rejects.set(v.node, n);
   }
-  let prev = startedAtMs(scan);
+  let prev = outcomeOf(scan).startedMs;
   let activeTaken = status !== "running";
   return NODES.map((spec) => {
     const { key, mark, label } = spec;
     // 认历史工件名：老 run 的 critique.md 也是「批判节点已产出」，不是 pending
     const found = resolveArtifact(spec, (f) => scan.files.has(f));
     const artifact = found?.file ?? spec.artifact;
-    const mtime = found !== null ? (scan.files.get(found.file) ?? null) : null;
+    // found 是拿 scan.files.has 判出来的，取得到就一定在表里
+    const mtime = found ? scan.files.get(found.file)! : null;
     let state: NodeState;
     if (mtime !== null) {
       state = "done";
@@ -227,21 +240,6 @@ export function deriveNodes(scan: Scan, status: RunStatus, verdicts: Verdict[]):
     };
   });
 }
-
-/* ------------------------------------------------------------------ */
-/* 时间                                                                 */
-/* ------------------------------------------------------------------ */
-
-/** meta.json 只有一个读点：证据。题号是它唯一被表示层直接用到的字段。 */
-export const questionIdOf = (scan: Scan): number | null => evidenceFromScan(scan).meta?.questionId ?? null;
-
-export const startedAtMs = (scan: Scan): number | null => outcomeOf(scan).startedMs;
-
-/** 在跑的 run 不显示结束时间——这是表示层的选择，与「有没有结束时间」是两件事。 */
-export function finishedAtMs(scan: Scan, status: RunStatus): number | null {
-  return status === "running" ? null : outcomeOf(scan).finishedMs;
-}
-
 
 /* ------------------------------------------------------------------ */
 /* 验收报告                                                             */

@@ -29,24 +29,12 @@ import {
   readIndex,
 } from "#lib/paperStore.ts";
 import { RUN_DIR_ENV } from "#lib/runContext.ts";
+import { check, report } from "./selftestHarness.ts";
 import arxivSaveTool from "#tools/arxiv_save.ts";
 import arxivSearchTool from "#tools/arxiv_search.ts";
 import paperIndexReadTool from "#tools/paper_index_read.ts";
 
 /* ---------------------------------------------------------------- */
-
-let passed = 0;
-const failures: string[] = [];
-
-function check(label: string, ok: boolean, detail = ""): void {
-  if (ok) {
-    passed++;
-    console.log(`  PASS ${label}${detail ? ` — ${detail}` : ""}`);
-  } else {
-    failures.push(label);
-    console.log(`  FAIL ${label}${detail ? ` — ${detail}` : ""}`);
-  }
-}
 
 /**
  * 直接调 defineTool 的 execute。eve 的 ToolContext 只在真实 runtime 里存在，
@@ -200,8 +188,7 @@ check("papers/ 数量未变", listPapers(runDir).length === before, `${before} �
 
 /* ---------------------------------------------------------------- */
 
-console.log(`\n${failures.length === 0 ? "ALL PASS" : "FAILED"}: ${passed} passed, ${failures.length} failed`);
-if (failures.length > 0) console.log(failures.map((f) => `  - ${f}`).join("\n"));
 if (!keepDir) rmSync(runDir, { recursive: true, force: true });
 rmSync(memoryDir, { recursive: true, force: true });
-process.exit(failures.length === 0 ? 0 : 1);
+
+report("selftest-literature");

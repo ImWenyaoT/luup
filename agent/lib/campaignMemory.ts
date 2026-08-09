@@ -12,7 +12,7 @@
  *     questions/q<id>.archive.md  题页超预算后降层的旧条目（整条搬移，逐字未改）
  *     lessons.md         运营级教训（append-only）
  *
- * 三条设计约束，改这个文件前先读一遍：
+ * 五条设计约束，改这个文件前先读一遍：
  *
  *  1. **可删除性红线**（memory.md 验收标准④）：`memory/` 不存在时本模块**每一个**导出
  *     函数都静默 no-op 并返回 `skipped:true`，绝不创建目录、绝不抛异常。长期记忆是
@@ -241,15 +241,33 @@ function resolveQuestionId(raw = process.env.LUUP_QUESTION_ID): number | null {
 export type WriteOutcome = {
   path: string;
   bytes: number;
+  /** 读回内容的行数。compaction 的阈值判定读它，因此不必为量一次大小再整读一遍文件。 */
+  lines: number;
   created: boolean;
   /** 写后读回验证的结果。false ⇒ 这条必须进 failed[]，不许被自然语言总结盖过去。 */
   verified: boolean;
   error?: string;
 };
 
+/** `text.split("\n").length`，但不为了数一个数字把整个文件切成数组。 */
+function lineCount(text: string): number {
+  let n = 1;
+  for (let i = text.indexOf("\n"); i !== -1; i = text.indexOf("\n", i + 1)) n++;
+  return n;
+}
+
 function ensureDir(path: string): void {
   mkdirSync(path, { recursive: true });
 }
+
+const failedWrite = (file: string, error: string): WriteOutcome => ({
+  path: display(file),
+  bytes: 0,
+  lines: 0,
+  created: false,
+  verified: false,
+  error,
+});
 
 /** 覆盖写 + 读回。派生文件（两个 index）用它。 */
 function writeVerified(file: string, content: string): WriteOutcome {
@@ -261,12 +279,13 @@ function writeVerified(file: string, content: string): WriteOutcome {
     return {
       path: display(file),
       bytes: Buffer.byteLength(back, "utf8"),
+      lines: lineCount(back),
       created,
       verified: back === content,
       ...(back === content ? {} : { error: "写后读回内容不一致" }),
     };
   } catch (e) {
-    return { path: display(file), bytes: 0, created: false, verified: false, error: String(e) };
+    return failedWrite(file, String(e));
   }
 }
 
@@ -283,12 +302,13 @@ function appendVerified(file: string, block: string, header?: string): WriteOutc
     return {
       path: display(file),
       bytes: Buffer.byteLength(back, "utf8"),
+      lines: lineCount(back),
       created,
       verified: back.includes(block) && back.length > before.length,
       ...(back.includes(block) ? {} : { error: "写后读回未找到刚追加的内容" }),
     };
   } catch (e) {
-    return { path: display(file), bytes: 0, created: false, verified: false, error: String(e) };
+    return failedWrite(file, String(e));
   }
 }
 
@@ -420,6 +440,9 @@ const flat = (s: string, max = 300) => {
  * 写完顺手查一次阈值：分片是**存储层**的事，调用者不该知道、也没有第二个地方能可靠地
  * 想起来做（memory.md：触发 100% 代码）。分片失败不影响本次追加的返回值 —— 条目已经
  * 在盘上了，只是文件还没瘦下来。
+ *
+ * 阈值判定读的是刚刚**读回**的那份内容的行数（WriteOutcome.lines）：没到阈值就连
+ * compactLog 都不进，日常追加因此一次读盘都不多花。
  */
 function appendLog(input: {
   action: LogAction;
@@ -434,7 +457,7 @@ function appendLog(input: {
   const head = `## [${isoDate()}] ${input.action} | q${q} | ${(input.verdict || "-").trim()}`;
   const block = `${head}\n${input.detail ? `- ${flat(input.detail)}\n` : ""}`;
   const outcome = appendVerified(logPath(dir), block, LOG_HEADER);
-  compactLog({ memoryDir: dir });
+  if (outcome.lines > COMPACTION_DEFAULTS.logMaxLines) compactLog({ memoryDir: dir });
   return outcome;
 }
 
@@ -491,7 +514,10 @@ function appendQuestionNote(input: {
     noteBlock(input.note, input.source ?? "note"),
     questionHeader(input.questionId),
   );
-  compactQuestionPage({ questionId: input.questionId, memoryDir: dir });
+  // 字数预算同样读刚读回的那一份（WriteOutcome.bytes），没超就不进 compact
+  if (outcome.bytes > COMPACTION_DEFAULTS.questionMaxBytes) {
+    compactQuestionPage({ questionId: input.questionId, memoryDir: dir });
+  }
   return outcome;
 }
 
@@ -512,17 +538,11 @@ function appendLesson(input: {
 /* ------------------------------------------------------------------ */
 
 /**
- * 阈值全部**代码判定**，不问模型；导出是为了让调用方（自测、将来的运维脚本）能按字段覆盖。
+ * 阈值全部**代码判定**，不问模型。
  *
  * 为什么是「搬移」而不是「摘要」：questions/ 有 125 的硬上界、文件名稳定，本来就不膨胀；
  * 无界的只有 log 行数与单题页字数。搬移是确定性的、可逆的、逐字节可校验的；摘要要引入
  * 模型、引入不确定性、引入「摘丢了什么」的新问题。MVP 取搬移。
- *
- * **将来钩子（现在不做）**：题页归档时可以让 LLM 对被搬走的条目产一段**增量摘要片段**，
- * 追加到主页面（旧正文一字节不动，摘要只是新增的一段）。落点就是 `compactQuestionPage`
- * 里搬移完成、重写主页面之前那一步。上这个钩子之前先确认三件事：①摘要片段与被搬条目
- * 一一可追溯；②不可压缩字段（run 指针、被拒假设原文）不进摘要、只留指针；③摘要失败
- * 时归档仍照常完成（模型永远不在关键路径上）。
  */
 export type CompactionThresholds = {
   /** log.md 超过这么多行就滚分片。 */
@@ -535,6 +555,13 @@ export type CompactionThresholds = {
   questionKeepEntries: number;
 };
 
+/**
+ * 两个 compact 动词的 `thresholds` 参数**只为自测强制触发**（阈值调到 1 就地滚一次）。
+ * 真要让阈值可调就走 env / config，不在这一层加旋钮：写入路径永远只用下面这份默认值。
+ *
+ * 索引不在这一层重建：搬完之后 `index.md` 的「N 条」是由写入路径出口统一重建的
+ * （archiveRunOutcome / writeNote 各一次）—— 每个动词各自 rebuild 会把同一件事做三遍。
+ */
 export const COMPACTION_DEFAULTS: CompactionThresholds = {
   logMaxLines: 500,
   logKeepLines: 200,
@@ -546,28 +573,15 @@ export const COMPACTION_DEFAULTS: CompactionThresholds = {
 const ENTRY_HEAD = "## [";
 
 export type CompactionResult = {
-  /** memory/ 不在、文件不在、或没到阈值 —— 都不算错。 */
-  skipped: boolean;
   /** 真的搬了东西才为 true。 */
   compacted: boolean;
   /** 搬走的条目数。 */
   moved: number;
-  /** 落点文件（`memory/...` 形式）。 */
-  targets: string[];
-  written: WriteOutcome[];
-  failed: Array<{ path: string; reason: string }>;
+  /** 没搬的原因。memory/ 不在、文件不在、没到阈值 —— 都不算错。 */
   reason?: string;
 };
 
-const noCompaction = (reason: string, skipped = true): CompactionResult => ({
-  skipped,
-  compacted: false,
-  moved: 0,
-  targets: [],
-  written: [],
-  failed: [],
-  reason,
-});
+const noCompaction = (reason: string): CompactionResult => ({ compacted: false, moved: 0, reason });
 
 /**
  * 按 `## [` 首行把文本切成「前言 + 条目」。
@@ -606,45 +620,78 @@ const questionArchiveHeader = (questionId: number) =>
     "",
   ].join("\n");
 
-/**
- * log.md **只分片，永不压缩**：超行数阈值 → 较早条目按其自身日期滚进
- * `log.<YYYY-MM>.md`，主 log 留最近段。时序审计线一字不改。
- *
- * 落盘顺序是有意的：**先写分片、验证通过，再重写主 log**。分片写失败就原地放弃，
- * 主 log 一个字节都不动 —— 宁可文件继续变长，也不能在搬运途中把审计线搞丢。
- */
-export function compactLog(input?: {
-  memoryDir?: string;
-  thresholds?: Partial<CompactionThresholds>;
-}): CompactionResult {
-  const dir = input?.memoryDir ?? resolveMemoryDir();
-  if (!memoryEnabled(dir)) return noCompaction("memory/ 不存在");
-  const t = { ...COMPACTION_DEFAULTS, ...input?.thresholds };
-  const file = logPath(dir);
-  if (!existsSync(file)) return noCompaction("log.md 不存在");
+/** 主页面上那行指针；重写时按前缀识别并替换，永不叠加第二行。 */
+const ARCHIVE_POINTER_PREFIX = "> 更早记录见 ";
+const archivePointer = (questionId: number) =>
+  `${ARCHIVE_POINTER_PREFIX}[q${questionId}.archive.md](./q${questionId}.archive.md)（整条搬移，内容一字未改）。`;
 
+/**
+ * 一次搬移的全部差异面。两个 compact 动词各自只是一份 spec，骨架在 `compactFile`。
+ */
+type CompactSpec = {
+  /** 主文件绝对路径。 */
+  file: string;
+  /** 文件不存在时的 reason（这不是错，只是没得搬）。 */
+  missing: string;
+  /** 超预算判定：只看已在手里的原文。 */
+  overBudget: (text: string) => boolean;
+  /** 从全部条目里挑要搬走的，必须是**最前面的连续若干条**（归档只往更旧的方向长）。 */
+  pickMoved: (blocks: string[]) => string[];
+  /** 被搬走的条目分别进哪个归档文件（log 按年月分片；题页只有一个归档页）。 */
+  archives: (moved: string[]) => Array<{ file: string; header: string; blocks: string[] }>;
+  /** 重写主文件时前言怎么改（题页补一行归档指针；log 原样）。 */
+  head: (preamble: string) => string;
+};
+
+/**
+ * **搬移的唯一实现**：切条目 → 挑要搬的 → 先写归档并验证 → 再重写主文件。
+ *
+ * 落盘顺序是有意的，也只有这一份：归档写失败就原地放弃，主文件一个字节都不动 ——
+ * 宁可文件继续变长，也不能在搬运途中把审计线搞丢。log 分片与题页归档共用它，
+ * 因此这条纪律不可能只在一边成立。
+ */
+function compactFile(spec: CompactSpec): CompactionResult {
+  if (!existsSync(spec.file)) return noCompaction(spec.missing);
   let text: string;
   try {
-    text = readFileSync(file, "utf8");
+    text = readFileSync(spec.file, "utf8");
   } catch (e) {
-    return { ...noCompaction(String(e), false), failed: [{ path: display(file, dir), reason: String(e) }] };
+    return noCompaction(String(e));
   }
-  if (text.split("\n").length <= t.logMaxLines) return { ...noCompaction("未到阈值"), skipped: false };
+  if (!spec.overBudget(text)) return noCompaction("未到阈值");
 
   const { preamble, blocks } = splitEntries(text);
-  // 从最新往回收，收满「最近段」预算为止；至少留 1 条，且绝不腰斩条目。
+  const moved = spec.pickMoved(blocks);
+  if (moved.length === 0) return noCompaction("条目数不足以搬移");
+
+  let failure: string | null = null;
+  for (const a of spec.archives(moved)) {
+    const out = appendVerified(a.file, a.blocks.join("\n"), a.header);
+    if (!out.verified) failure ??= `${out.path}：${out.error ?? "写后读回失败"}`;
+  }
+  if (failure !== null) return noCompaction(`归档写入失败，主文件未改动（${failure}）`);
+
+  const main = writeVerified(spec.file, [spec.head(preamble), ...blocks.slice(moved.length)].join("\n"));
+  // 主文件没重写成：条目已经躺在归档里（重复，不是丢失），下次搬移会把主文件收拾干净
+  if (!main.verified) return { compacted: false, moved: moved.length, reason: main.error ?? "主文件重写失败" };
+  return { compacted: true, moved: moved.length };
+}
+
+/** 从最新往回收，收满「最近段」行数预算为止；至少留 1 条，且绝不腰斩条目。 */
+function keepRecentLines(blocks: string[], maxLines: number): number {
   let keep = 0;
   let lines = 0;
   for (let i = blocks.length - 1; i >= 0; i--) {
-    const n = (blocks[i] ?? "").split("\n").length;
-    if (keep > 0 && lines + n > t.logKeepLines) break;
+    const n = lineCount(blocks[i] ?? "");
+    if (keep > 0 && lines + n > maxLines) break;
     lines += n;
     keep++;
   }
-  const moved = blocks.slice(0, Math.max(0, blocks.length - keep));
-  if (moved.length === 0) return { ...noCompaction("条目数不足以分片"), skipped: false };
+  return keep;
+}
 
-  // 按条目自身日期的年月分组；解析不出来（手改过）就跟随上一条，保持分片连续。
+/** 按条目自身日期的年月分组；解析不出来（手改过）就跟随上一条，保持分片连续。 */
+function groupByMonth(moved: string[]): Array<{ month: string; blocks: string[] }> {
   const groups: Array<{ month: string; blocks: string[] }> = [];
   let month = isoDate().slice(0, 7);
   for (const b of moved) {
@@ -654,34 +701,37 @@ export function compactLog(input?: {
     if (last && last.month === month) last.blocks.push(b);
     else groups.push({ month, blocks: [b] });
   }
-
-  const written: WriteOutcome[] = [];
-  const failed: Array<{ path: string; reason: string }> = [];
-  const targets: string[] = [];
-  for (const g of groups) {
-    const shard = logShardPath(g.month, dir);
-    const out = appendVerified(shard, g.blocks.join("\n"), logShardHeader(g.month));
-    targets.push(display(shard, dir));
-    if (out.verified) written.push(out);
-    else failed.push({ path: out.path, reason: out.error ?? "写后读回失败" });
-  }
-  if (failed.length > 0) {
-    // 分片没落稳 —— 主 log 保持原样，下次再试。
-    return { skipped: false, compacted: false, moved: 0, targets, written, failed, reason: "分片写入失败，主 log 未改动" };
-  }
-
-  const main = writeVerified(file, [preamble, ...blocks.slice(moved.length)].join("\n"));
-  if (main.verified) written.push(main);
-  else failed.push({ path: main.path, reason: main.error ?? "写后读回失败" });
-  // 条目搬家了，index 的「N 条」就不再成立 —— 只在真搬过时重建，日常追加不受影响。
-  if (failed.length === 0) rebuildMemoryIndex(dir);
-  return { skipped: false, compacted: failed.length === 0, moved: moved.length, targets, written, failed };
+  return groups;
 }
 
-/** 主页面上那行指针；重写时按前缀识别并替换，永不叠加第二行。 */
-const ARCHIVE_POINTER_PREFIX = "> 更早记录见 ";
-const archivePointer = (questionId: number) =>
-  `${ARCHIVE_POINTER_PREFIX}[q${questionId}.archive.md](./q${questionId}.archive.md)（整条搬移，内容一字未改）。`;
+/**
+ * log.md **只分片，永不压缩**：超行数阈值 → 较早条目按其自身日期滚进
+ * `log.<YYYY-MM>.md`，主 log 留最近段。时序审计线一字不改。
+ */
+export function compactLog(input?: {
+  memoryDir?: string;
+  thresholds?: Partial<CompactionThresholds>;
+}): CompactionResult {
+  const dir = input?.memoryDir ?? resolveMemoryDir();
+  if (!memoryEnabled(dir)) return noCompaction("memory/ 不存在");
+  const t = { ...COMPACTION_DEFAULTS, ...input?.thresholds };
+  const result = compactFile({
+    file: logPath(dir),
+    missing: "log.md 不存在",
+    overBudget: (text) => lineCount(text) > t.logMaxLines,
+    pickMoved: (blocks) => blocks.slice(0, Math.max(0, blocks.length - keepRecentLines(blocks, t.logKeepLines))),
+    archives: (moved) =>
+      groupByMonth(moved).map((g) => ({
+        file: logShardPath(g.month, dir),
+        header: logShardHeader(g.month),
+        blocks: g.blocks,
+      })),
+    head: (preamble) => preamble,
+  });
+  // 分片文件变了，缓存的「分片里共有几条」就不再成立（见 shardedEntryCount）
+  if (result.compacted) SHARD_ENTRIES.delete(resolve(dir));
+  return result;
+}
 
 /**
  * 题页**大页追加 + 归档**：超字数预算 → 除最近 N 条外的旧条目整条搬进
@@ -689,7 +739,6 @@ const archivePointer = (questionId: number) =>
  *
  * 保留最近 N 条（N≥1）这条保证了**刚写完的条目永远还在主页面上**，调用方拿到的
  * WriteOutcome 不会指向一个「内容已经被搬走了」的文件。
- * 与 compactLog 同款落盘顺序：先写归档并验证，再重写主页面。
  */
 export function compactQuestionPage(input: {
   questionId: number;
@@ -700,59 +749,52 @@ export function compactQuestionPage(input: {
   if (!memoryEnabled(dir)) return noCompaction("memory/ 不存在");
   if (!Number.isInteger(input.questionId)) return noCompaction("questionId 非法");
   const t = { ...COMPACTION_DEFAULTS, ...input.thresholds };
-  const file = questionPath(input.questionId, dir);
-  if (!existsSync(file)) return noCompaction("题页不存在");
-
-  let text: string;
-  try {
-    text = readFileSync(file, "utf8");
-  } catch (e) {
-    return { ...noCompaction(String(e), false), failed: [{ path: display(file, dir), reason: String(e) }] };
-  }
-  if (Buffer.byteLength(text, "utf8") <= t.questionMaxBytes) return { ...noCompaction("未到阈值"), skipped: false };
-
-  const { preamble, blocks } = splitEntries(text);
   const keep = Math.max(1, t.questionKeepEntries);
-  if (blocks.length <= keep) return { ...noCompaction("条目数不足以归档"), skipped: false };
-  const moved = blocks.slice(0, blocks.length - keep);
-
-  const archive = questionArchivePath(input.questionId, dir);
-  const out = appendVerified(archive, moved.join("\n"), questionArchiveHeader(input.questionId));
-  const targets = [display(archive, dir)];
-  if (!out.verified) {
-    return {
-      skipped: false,
-      compacted: false,
-      moved: 0,
-      targets,
-      written: [],
-      failed: [{ path: out.path, reason: out.error ?? "写后读回失败" }],
-      reason: "归档写入失败，题页未改动",
-    };
-  }
-
-  // 前言里可能已经有上一次留下的指针行 —— 按前缀剔掉再补一行，指针永远只有一行。
-  const head = preamble.split("\n").filter((l) => !l.startsWith(ARCHIVE_POINTER_PREFIX));
-  while (head.length > 0 && (head[head.length - 1] ?? "").trim() === "") head.pop();
-  const main = writeVerified(
-    file,
-    [[...head, "", archivePointer(input.questionId), ""].join("\n"), ...blocks.slice(moved.length)].join("\n"),
-  );
-  const written = [out];
-  const failed: Array<{ path: string; reason: string }> = [];
-  if (main.verified) written.push(main);
-  else failed.push({ path: main.path, reason: main.error ?? "写后读回失败" });
-  if (failed.length === 0) rebuildMemoryIndex(dir);
-  return { skipped: false, compacted: failed.length === 0, moved: moved.length, targets, written, failed };
+  return compactFile({
+    file: questionPath(input.questionId, dir),
+    missing: "题页不存在",
+    overBudget: (text) => Buffer.byteLength(text, "utf8") > t.questionMaxBytes,
+    pickMoved: (blocks) => (blocks.length <= keep ? [] : blocks.slice(0, blocks.length - keep)),
+    archives: (moved) => [
+      {
+        file: questionArchivePath(input.questionId, dir),
+        header: questionArchiveHeader(input.questionId),
+        blocks: moved,
+      },
+    ],
+    // 前言里可能已经有上一次留下的指针行 —— 按前缀剔掉再补一行，指针永远只有一行
+    head: (preamble) => {
+      const lines = preamble.split("\n").filter((l) => !l.startsWith(ARCHIVE_POINTER_PREFIX));
+      while (lines.length > 0 && (lines[lines.length - 1] ?? "").trim() === "") lines.pop();
+      return [...lines, "", archivePointer(input.questionId), ""].join("\n");
+    },
+  });
 }
 
 /* ------------------------------------------------------------------ */
 /* index.md：内容目录（代码派生）                                          */
 /* ------------------------------------------------------------------ */
 
+/** 条目数 = 切出来的块数。切分式只有 `splitEntries` 一份，数法不会跟搬移的口径分家。 */
 function countBlocks(file: string): number {
   if (!existsSync(file)) return 0;
-  return readFileSync(file, "utf8").split("\n").filter((l) => l.startsWith(ENTRY_HEAD)).length;
+  return splitEntries(readFileSync(file, "utf8")).blocks.length;
+}
+
+/**
+ * 「所有分片里共有几条」的进程内缓存。分片文件只有 `compactLog` 一个作者，
+ * 所以每次重建索引都把它们整读一遍是纯浪费；真搬过东西时由 compactLog 让它失效。
+ * 缓存永远不是真相：进程一退就没了，磁盘照旧是唯一权威。
+ */
+const SHARD_ENTRIES = new Map<string, number>();
+
+function shardedEntryCount(memoryDir: string, shards: string[]): number {
+  const key = resolve(memoryDir);
+  const cached = SHARD_ENTRIES.get(key);
+  if (cached !== undefined) return cached;
+  const n = shards.reduce((sum, f) => sum + countBlocks(join(memoryDir, f)), 0);
+  SHARD_ENTRIES.set(key, n);
+  return n;
 }
 
 /** 重建顶层 index.md（「有什么」）。与 log.md（「发生过什么」）职责严格分开。 */
@@ -761,23 +803,25 @@ function rebuildMemoryIndex(memoryDir = resolveMemoryDir()): WriteOutcome | null
   const cards = listLibraryCards(memoryDir);
   const subjects = new Set(cards.map((c) => c.primaryCategory || "(uncategorized)"));
   const qDir = questionsDir(memoryDir);
-  const qFiles = existsSync(qDir)
-    ? readdirSync(qDir)
-        .filter((f) => /^q\d+\.md$/.test(f))
-        .sort((a, b) => Number.parseInt(a.slice(1), 10) - Number.parseInt(b.slice(1), 10))
-    : [];
+  // 一次 readdir 供两处用：题页清单，以及「这题有没有归档页」（别再逐题 existsSync）
+  const qEntries = existsSync(qDir) ? readdirSync(qDir) : [];
+  const qNames = new Set(qEntries);
+  const qFiles = qEntries
+    .filter((f) => /^q\d+\.md$/.test(f))
+    .sort((a, b) => Number.parseInt(a.slice(1), 10) - Number.parseInt(b.slice(1), 10));
   // compaction 之后「一页」不再等于「一个文件」：主文件旁边可能躺着归档/分片。
   // index 管「有什么」，所以这里如实把降层掉的条目数也报出来，否则读 index 的人会
   // 以为记录变少了。
   const shards = existsSync(memoryDir) ? readdirSync(memoryDir).filter((f) => LOG_SHARD_RE.test(f)).sort() : [];
-  const shardedEntries = shards.reduce((n, f) => n + countBlocks(join(memoryDir, f)), 0);
+  const shardedEntries = shardedEntryCount(memoryDir, shards);
   const rows = [
     `| SCHEMA.md | 契约 | 本目录的行为契约与 non-goals |`,
     `| library/index.md | 文献索引 | ${cards.length} 篇 · ${subjects.size} 个学科 |`,
     ...qFiles.map((f) => {
-      const archived = countBlocks(join(qDir, `${f.slice(0, -3)}.archive.md`));
+      const archiveName = `${f.slice(0, -3)}.archive.md`;
+      const archived = qNames.has(archiveName) ? countBlocks(join(qDir, archiveName)) : 0;
       return `| questions/${f} | 战役页 | ${countBlocks(join(qDir, f))} 条记录${
-        archived > 0 ? ` · 另有 ${archived} 条见 ${f.slice(0, -3)}.archive.md` : ""
+        archived > 0 ? ` · 另有 ${archived} 条见 ${archiveName}` : ""
       } |`;
     }),
     `| lessons.md | 教训 | ${countBlocks(lessonsPath(memoryDir))} 条 |`,

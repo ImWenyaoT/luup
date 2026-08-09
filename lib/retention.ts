@@ -36,11 +36,11 @@
  * 它的 workflow 还是 running、它的 run 目录还没有终态凭据、它的 chunks 还在被写。
  * 任何一条失效，另外两条仍然成立。
  */
-import { readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { readdirSync, rmSync, statSync } from "node:fs";
 import { basename, join, resolve, sep } from "node:path";
 import { REPO_ROOT, RUNS_DIR } from "./paths.ts";
 import { RUN_ID_RE } from "./runId.ts";
-import { readRunEvidence, runOutcome } from "./runOutcome.ts";
+import { parseMs, readJsonFile, readRunEvidence, runOutcome } from "./runOutcome.ts";
 
 /* ------------------------------------------------------------------ */
 /* 常量                                                                 */
@@ -114,14 +114,6 @@ export type PruneResult = {
 /* ------------------------------------------------------------------ */
 /* 工具                                                                 */
 /* ------------------------------------------------------------------ */
-
-function readJsonFile<T>(path: string): T | null {
-  try {
-    return JSON.parse(readFileSync(path, "utf8")) as T;
-  } catch {
-    return null; // 不存在 / 写坏 / 混进了 eve 的 stdout 噪声 —— 一律当没有
-  }
-}
 
 function listDirNames(dir: string): string[] {
   try {
@@ -202,12 +194,6 @@ type RunInfo = {
   /** invoke-result.json 里的 root workflow id（能解析出来才有）。 */
   sessionId: string | null;
 };
-
-function parseMs(v: unknown): number | null {
-  if (typeof v !== "string") return null;
-  const t = Date.parse(v);
-  return Number.isNaN(t) ? null : t;
-}
 
 /**
  * 终态与起止时间全部来自 run outcome —— 保留策略只是它的读者。

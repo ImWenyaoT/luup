@@ -65,7 +65,6 @@ export type RunStatusView = {
   status: RunStatus;
   updatedAt: string;
   nodes: SpineNode[];
-  artifacts: Record<string, boolean>;
   verdicts: Verdict[];
   /** console.log 末 40 行；console.log 不进 ?artifact= 白名单（可能含环境噪声） */
   logTail: string[];
@@ -83,7 +82,10 @@ export type RunDetail = RunStatusView & {
   verify: VerifyReport | null;
   papers: Paper[];
   failedText: string | null;
-  /** 可 ?artifact= 取用的工件全集（读盘算出，不是正则放行） */
+  /**
+   * 可 ?artifact= 取用的工件全集（读盘算出，不是正则放行）。
+   * 「某个工件在不在」也读它 —— 上一版另有一张同源的 artifacts 布尔表，两份一样的东西。
+   */
   artifactNames: string[];
 };
 

@@ -17,7 +17,7 @@
  * 且 WP1 已在本仓库真机验证过（eve/client 需要外部常驻 server，多一个失败面）。
  */
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { archiveRunOutcome } from "#lib/campaignMemory.ts";
 import { ProposalSchema, type Proposal } from "#lib/contracts.ts";
@@ -281,6 +281,8 @@ const meta: RunMeta = {
   exitCode: null,
 };
 const metaPath = join(runDir, "meta.json");
+/** 失败凭据：paused 时可能由这里写，也可能 master 早就自己写过 —— 路径只有一份。 */
+const failedPath = join(runDir, "FAILED.md");
 const writeMeta = () => writeFileSync(metaPath, `${JSON.stringify(meta, null, 2)}\n`, "utf8");
 // 先落一次：中途被 Ctrl-C / OOM 打断也留下 finishedAt=null，续跑不会误判为已完成
 writeMeta();
@@ -302,7 +304,6 @@ if (code === EXIT_PAUSED) {
     "\n[luup] 会话因 token 配额暂停：root 触及 limits.maxInputTokensPerSession，" +
       "eve 已挂起会话并等待 Approve / Stop，这不是流水线判定的失败。",
   );
-  const failedPath = join(runDir, "FAILED.md");
   if (existsSync(failedPath)) {
     console.error(`[luup] ${failedPath} 已存在（master 自己写过），保留原文不覆盖。`);
   } else {
@@ -362,18 +363,15 @@ const artifacts = [
 console.log(`\n[luup] 工件（${runDir}）：`);
 for (const a of artifacts) {
   const p = join(runDir, a);
-  console.log(`  ${existsSync(p) ? "✔" : "·"} ${a}${existsSync(p) ? `  ${p}` : ""}`);
+  const there = existsSync(p);
+  console.log(`  ${there ? "✔" : "·"} ${a}${there ? `  ${p}` : ""}`);
 }
 const verdictsDir = join(runDir, "verdicts");
 if (existsSync(verdictsDir)) {
-  const { readdirSync } = await import("node:fs");
   for (const f of readdirSync(verdictsDir).sort()) console.log(`  ✔ verdicts/${f}`);
 }
 const papersDir = join(runDir, "memory", "papers");
-if (existsSync(papersDir)) {
-  const { readdirSync } = await import("node:fs");
-  console.log(`  ✔ memory/papers/  (${readdirSync(papersDir).length} 篇)`);
-}
+if (existsSync(papersDir)) console.log(`  ✔ memory/papers/  (${readdirSync(papersDir).length} 篇)`);
 
 console.log(`\n[luup] 确定性验收：node scripts/verify-proposal.ts ${runDir}`);
 
@@ -401,13 +399,6 @@ writeMeta();
 /* 加速层绝不允许改变一次真实 run 的退出码。                              */
 /* ------------------------------------------------------------------ */
 function summarizeOutcome(): { verdict: string; summary: string } {
-  const persisted = (() => {
-    try {
-      return JSON.parse(readFileSync(metaPath, "utf8")) as Partial<RunMeta>;
-    } catch {
-      return {} as Partial<RunMeta>;
-    }
-  })();
   const verdict = exitCode === 0 ? "SUCCESS" : exitCode === EXIT_PAUSED ? "PAUSED" : "FAILED";
   const parts: string[] = [];
   if (proposal.data) {
@@ -418,13 +409,13 @@ function summarizeOutcome(): { verdict: string; summary: string } {
   } else if (proposal.issues.length > 0) {
     parts.push(`proposal.json 存在但不可用：${proposal.issues[0]}`);
   }
-  const failedPath = join(runDir, "FAILED.md");
   if (existsSync(failedPath)) {
     const head = readFileSync(failedPath, "utf8").split("\n").filter((l) => l.trim()).slice(0, 8);
     parts.push(`FAILED.md 摘要：\n${head.join("\n")}`);
   }
   if (parts.length === 0) parts.push("未产出 proposal.json，也没有 FAILED.md（流水线中途死亡）。");
-  parts.push(`问题：${(persisted.question ?? question).replace(/\s+/g, " ").slice(0, 200)}`);
+  // 问题原文就在作用域里（meta.question 写的正是它）——不必再把刚写的 meta.json 读回来
+  parts.push(`问题：${question.replace(/\s+/g, " ").slice(0, 200)}`);
   return { verdict, summary: parts.join("\n\n") };
 }
 
