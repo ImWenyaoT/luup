@@ -1,7 +1,7 @@
 /**
  * E2E 驱动（criteria E1：单命令跑通）。
  *
- *   pnpm run:pipeline                       # 用 fixtures/default-question.md
+ *   pnpm run:pipeline                       # 默认题：Science-125 #61（题库+模板派生）
  *   pnpm run:pipeline "<问题原文>"           # 直接给问题
  *   pnpm run:pipeline path/to/question.md   # 从文件读问题
  *
@@ -23,18 +23,20 @@ import { archiveRunOutcome } from "#lib/campaignMemory.ts";
 import { ProposalSchema, type Proposal } from "#lib/contracts.ts";
 import { type Held, acquire, parentHoldsLock } from "../lib/lock.ts";
 import { NODES } from "../lib/nodes.ts";
+import { science125Text } from "../lib/questionText.ts";
+import { findQuestion } from "../lib/science125.ts";
 import { REPO_ROOT, RUNS_DIR } from "../lib/paths.ts";
 import { utcStamp } from "../lib/runId.ts";
 import { reachedProposal, readRunEvidence, runOutcome } from "../lib/runOutcome.ts";
 import { rebuildRunsIndex } from "../lib/runsIndex.ts";
 
-const DEFAULT_QUESTION_FILE = join(REPO_ROOT, "fixtures", "default-question.md");
+const DEFAULT_QUESTION_ID = 61; // 默认演示题：Science-125 #61（How are pulsars formed?）
 
 /* ------------------------------------------------------------------ */
 /* 输入                                                                 */
 /* ------------------------------------------------------------------ */
 
-function readQuestion(arg: string | undefined): { question: string; source: string } {
+function readQuestion(arg: string | undefined): { question: string; source: string; defaultId?: number } {
   const raw = arg?.trim();
   if (raw) {
     // 看起来像路径且文件存在 → 读文件；否则当问题原文
@@ -44,10 +46,10 @@ function readQuestion(arg: string | undefined): { question: string; source: stri
     }
     return { question: raw, source: "(argv)" };
   }
-  if (!existsSync(DEFAULT_QUESTION_FILE)) {
-    throw new Error(`默认问题文件不存在：${DEFAULT_QUESTION_FILE}`);
-  }
-  return { question: readFileSync(DEFAULT_QUESTION_FILE, "utf8").trim(), source: DEFAULT_QUESTION_FILE };
+  // 默认题从题库+模板派生（fixtures/science125.json 是唯一事实源，没有第二份默认题文件）
+  const q = findQuestion(DEFAULT_QUESTION_ID);
+  if (!q) throw new Error(`题库里没有第 ${DEFAULT_QUESTION_ID} 题`);
+  return { question: science125Text(q), source: `science125 #${DEFAULT_QUESTION_ID}`, defaultId: DEFAULT_QUESTION_ID };
 }
 
 /* ------------------------------------------------------------------ */
@@ -254,7 +256,7 @@ function invokeEve(prompt: string, runDir: string): Promise<{ code: number; stdo
 /* main                                                                */
 /* ------------------------------------------------------------------ */
 
-const { question, source } = readQuestion(process.argv[2]);
+const { question, source, defaultId } = readQuestion(process.argv[2]);
 
 const lock = holdLock();
 // 怎么退都要放锁：正常收尾、未捕获异常、Ctrl-C 都会走到 exit；SIGKILL 只能靠陈旧锁接管
@@ -274,7 +276,7 @@ process.env.LUUP_RUN_DIR = runDir;
 writeFileSync(join(runDir, "question.md"), `${question}\n`, "utf8");
 
 const meta: RunMeta = {
-  questionId: readQuestionId(),
+  questionId: readQuestionId() ?? defaultId ?? null,
   question,
   startedAt: new Date().toISOString(),
   finishedAt: null,

@@ -5,6 +5,8 @@ import { defineEval } from "eve/evals";
 import { equals, satisfies } from "eve/evals/expect";
 import { ProposalSchema } from "#lib/contracts.ts";
 import { REPO_ROOT, RUNS_DIR } from "../../lib/paths.ts";
+import { science125Text } from "../../lib/questionText.ts";
+import { findQuestion } from "../../lib/science125.ts";
 
 /**
  * Goal-driven 全链路 eval（criteria 的机器化版本）：
@@ -57,7 +59,10 @@ export default defineEval({
   timeoutMs: 45 * 60_000,
   async test(t) {
     const t0 = Date.now();
-    const question = readFileSync(join(REPO_ROOT, "fixtures", "default-question.md"), "utf8");
+    // 与 scripts/run.ts 的默认题同源派生：题库是唯一事实源，没有第二份默认题文件
+    const q61 = findQuestion(61);
+    if (!q61) throw new Error("题库里没有第 61 题");
+    const question = science125Text(q61);
 
     await t.send(
       [
