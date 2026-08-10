@@ -11,6 +11,8 @@
  *
  * ## 三条边界
  *
+ * - **先过确定性交付 gate。** 缺 proposal.md、独立验收非 ALL PASS 或非零退出码时，
+ *   在初始化 judge 前退出；未验收 proposal 不评分，更不写入题页。
  * - **不进 gate。** 本脚本的退出码只表示「评分这件事本身成没成」，与「这一题算不算交付」
  *   无关 —— 后者由 `scripts/verify-proposal.ts` 与 `lib/runOutcome.ts` 确定性地判。
  * - **不改 proposal。** 评分是只读的旁路，跑几次都不会动交付物。
@@ -21,7 +23,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { writeNote } from "#lib/campaignMemory.ts";
 import { REPO_ROOT } from "../lib/paths.ts";
-import { readJsonFile } from "../lib/runOutcome.ts";
+import { readJsonFile, readRunEvidence, runOutcome } from "../lib/runOutcome.ts";
 import {
   RUBRIC_VERSION,
   SCORE_DIMENSIONS,
@@ -32,7 +34,6 @@ import {
   parseScore,
   totalScore,
 } from "../lib/scoring.ts";
-import { JUDGE_MODEL_ID, JUDGE_THINKING, askJudge } from "./judgeClient.ts";
 
 const arg = process.argv[2];
 if (!arg) {
@@ -46,6 +47,18 @@ if (!existsSync(proposalPath)) {
   console.error(`[luup] ${proposalPath} 不存在：这个 run 没有可评分的交付物。`);
   process.exit(2);
 }
+
+const outcome = runOutcome(readRunEvidence(runDir, runId));
+if (!outcome.deliverable) {
+  console.error(
+    `[luup] ${runId} 不可交付（phase=${outcome.phase}）：score-run 只接受 proposal.md + 独立验收 ALL PASS + 零退出码的 run。`,
+  );
+  process.exit(2);
+}
+
+// Judge 适配器会校验 API key 并初始化模型；必须晚于确定性交付 gate，确保未验收
+// proposal 在任何模型调用与题页写回发生前就被拒绝。
+const { JUDGE_MODEL_ID, JUDGE_THINKING, askJudge } = await import("./judgeClient.ts");
 
 const proposalJson = readFileSync(proposalPath, "utf8");
 const evidencePath = join(runDir, "evidence.md");

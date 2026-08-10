@@ -121,6 +121,7 @@ export function Picker({ data, activeRunId }: { data: Science125 | null; activeR
               ? `自由输入 ${free.trim().length} 字`
               : "未选题"}
         </span>
+        <span className="text-[11px] text-faint">单次通常运行 10–20 分钟，并产生真实 API 费用</span>
         {blocked ? (
           <span className="text-[11px] text-muted">
             已有运行中 ·{" "}

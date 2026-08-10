@@ -201,11 +201,13 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
         ) : null}
       </header>
 
-      <div className="grid gap-4 md:grid-cols-[13rem_minmax(0,1fr)]">
-        <aside className="md:sticky md:top-4 md:self-start">
-          <div className="mb-2 text-[11px] tracking-wide text-muted uppercase">reasoning spine</div>
-          <Spine nodes={run.nodes} />
-        </aside>
+      <div className={`grid gap-4 ${run.status === "running" ? "" : "md:grid-cols-[13rem_minmax(0,1fr)]"}`}>
+        {run.status === "running" ? null : (
+          <aside className="md:sticky md:top-4 md:self-start">
+            <div className="mb-2 text-[11px] tracking-wide text-muted uppercase">reasoning spine</div>
+            <Spine nodes={run.nodes} />
+          </aside>
+        )}
 
         <div className="min-w-0 space-y-3">
           {run.status === "running" ? <Monitor runId={id} initial={run} /> : null}

@@ -52,6 +52,35 @@ export const ProposalSchema = z.object({
 export type Proposal = z.infer<typeof ProposalSchema>;
 export type Reference = z.infer<typeof ReferenceSchema>;
 
+export const ScientistOutputSchema = z.object({
+  evidence: z
+    .array(
+      z.object({
+        claim: z.string().min(1),
+        arxivId: z.string().regex(arxivIdPattern),
+        relevance: z.string().min(1),
+      }),
+    )
+    .min(5),
+  proposal: ProposalSchema,
+});
+
+export const ReviewSchema = z.object({
+  verdict: z.enum(["pass", "revise"]),
+  findings: z
+    .array(
+      z.object({
+        issue: z.string().min(1),
+        checkedWith: z.string().min(1),
+      }),
+    )
+    .min(1),
+  requiredChanges: z.array(z.string().min(1)),
+});
+
+export type ScientistOutput = z.infer<typeof ScientistOutputSchema>;
+export type Review = z.infer<typeof ReviewSchema>;
+
 /**
  * C→W handoff 契约。批判结论走结构化返回而非自由文本：胜出假设与强制修改要求
  * 是 W 的必需输入，用 markdown 传递时 master 得靠正则去捞，捞错就静默串味。

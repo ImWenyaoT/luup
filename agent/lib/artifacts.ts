@@ -33,7 +33,7 @@ import {
   readVerdictEvidence,
   reworkBudget,
 } from "../../lib/rework.ts";
-import { CritiqueSchema, ProposalSchema, VerdictSchema } from "#lib/contracts.ts";
+import { CritiqueSchema, ProposalSchema, ReviewSchema, VerdictSchema } from "#lib/contracts.ts";
 import { resolveRunDir } from "./runContext.ts";
 
 export class ArtifactPathError extends Error {
@@ -60,9 +60,10 @@ const isVerdictArtifact = (rel: string): boolean => rel.startsWith(`${VERDICTS_D
 const SCHEMA_GUARDS: Array<{
   test: (rel: string) => boolean;
   name: string;
-  schema: typeof ProposalSchema | typeof VerdictSchema | typeof CritiqueSchema;
+  schema: typeof ProposalSchema | typeof VerdictSchema | typeof CritiqueSchema | typeof ReviewSchema;
 }> = [
   { test: (rel) => rel === NODE_BY_KEY.proposal.artifact, name: "ProposalSchema", schema: ProposalSchema },
+  { test: (rel) => rel === "review.json", name: "ReviewSchema", schema: ReviewSchema },
   { test: (rel) => rel === NODE_BY_KEY.critique.artifact, name: "CritiqueSchema", schema: CritiqueSchema },
   { test: isVerdictArtifact, name: "VerdictSchema", schema: VerdictSchema },
 ];

@@ -4,11 +4,11 @@ import type { ZodType } from "zod";
 /**
  * 一个 DAG 节点的装配声明：master 的派工工具照它生成（agent/agent.ts）。
  *
- * `name` 就是派工工具名（eve 时代的约定原样保留：literature / hypothesis /
- * critique / proposal），instructions.md 的 handoff 协议表因此一字不用改。
+ * `name` 就是派工工具名（eve 时代的约定原样保留：目录名 = 工具名），
+ * instructions.md 的流程描述因此不用改。
  */
 export type SubagentNode = {
-  name: "literature" | "hypothesis" | "critique" | "proposal";
+  name: "scientist" | "reviewer";
   /** 派工工具的 description —— master 决定何时派工的依据。 */
   description: string;
   /**

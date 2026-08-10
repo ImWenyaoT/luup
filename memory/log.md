@@ -30,6 +30,9 @@
 ## [2026-08-09] note | q61 | -
 - - 胜出方案：Eccentricity Distribution of Double Neutron Stars as a Statistical Probe of Common-Envelope versus Consecutive Supernova Formation Channels - 评估对象 run：20260808-062829 关键断言（原文摘录，只记事实）： - 「CE-dominated populations to exhibit tighter eccentricity distributions centered at lower values due to ci…
 
+## [2026-08-10] run | q61 | FAILED
+- /Users/edward/Documents/luup/runs/20260810-013424 未产出 proposal.json，也没有 FAILED.md（流水线中途死亡）。 问题：来源：《Science》125 前沿科学问题（Science-125 题库）第 61 题，Astronomy。 问题：How are pulsars formed? 任务：围绕该问题识别当前研究的具体知识缺口，生成可验证的科学假设，并给出完整研究计划（10 标准字段）。
+
 ## [2026-08-10] note | q- | -
 - ## Run 20260810-032527 — Q61: How are pulsars formed? **Verdict**: PASS (verify_references ok:true) **Run directory**: /home/ail510/tian_wenyao/projects/luup/runs/20260810-032527 **胜出假设**: H3 (修订版) — 电子俘获超新星（EC-SN）产生的中子星 natal kick 幅度系统性低于铁核坍缩超新星；通过银河轨道积分反推宽距双脉冲星诞生速度，其 kick 分布峰值和色散应显著低于孤立年轻脉冲星群体。 *…
 

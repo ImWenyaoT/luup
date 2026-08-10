@@ -27,11 +27,11 @@ import { ProposalSchema, type Proposal } from "#lib/contracts.ts";
 import { resolveQuestionId } from "#lib/runContext.ts";
 import { type Held, acquire, parentHoldsLock } from "../lib/lock.ts";
 import { NODES } from "../lib/nodes.ts";
+import { finalizeRun, verifyOffline } from "../lib/postflight.ts";
 import { science125Text } from "../lib/questionText.ts";
 import { findQuestion } from "../lib/science125.ts";
 import { REPO_ROOT, RUNS_DIR } from "../lib/paths.ts";
 import { utcStamp } from "../lib/runId.ts";
-import { reachedProposal, readRunEvidence, runOutcome } from "../lib/runOutcome.ts";
 import { rebuildRunsIndex } from "../lib/runsIndex.ts";
 
 const DEFAULT_QUESTION_ID = 61; // 默认演示题：Science-125 #61（How are pulsars formed?）
@@ -184,8 +184,8 @@ function buildPrompt(question: string, runDir: string, questionId: number | null
   return [
     /* ---- 稳定段：125 次 run 逐字相同，与 instructions 一起构成可复用前缀 ---- */
     "运行一次完整的科研假设流水线。",
-    "按 instructions 里的 DAG 与循环控制硬规格执行：literature → hypothesis → critique → proposal，",
-    "逐节点认证并落盘 verdicts/，最后必须跑 verify_references 并拿到 ok:true 才算成功；",
+    "按 instructions 里的最小流程执行：scientist → reviewer → 最多一次 scientist 返修 → verify，",
+    "只落 evidence.md、proposal.json、review.json；最后必须跑 verify_references 并拿到 ok:true 才算成功；",
     "否则写 FAILED.md 如实报失败。",
     "",
     /* ---- 易变段：每 run 都不同，一律后置 ---- */
@@ -412,17 +412,25 @@ if (existsSync(verdictsDir)) {
 const papersDir = join(runDir, "memory", "papers");
 if (existsSync(papersDir)) console.log(`  ✔ memory/papers/  (${readdirSync(papersDir).length} 篇)`);
 
-console.log(`\n[luup] 确定性验收：node scripts/verify-proposal.ts ${runDir}`);
+console.log(`\n[luup] 自动执行确定性验收：node scripts/verify-proposal.ts ${runDir}`);
+
+/*
+ * 先落一个 provisional exitCode，再进入可能持续较久的离线验收。这样即使进程在
+ * verification-report.md 写成 ALL PASS 后、最终 meta 回写前崩溃，盘上也已有明确的
+ * 成功收尾凭据；若验收中途崩溃则没有 ALL PASS，仍不可交付、batch 会重跑。
+ * finishedAt 只在 postflight 真正结束后填写，墙钟时间不提前冒充完成。
+ */
+meta.exitCode = code === 0 ? 0 : 1;
+writeMeta();
 
 /**
- * 「跑完了没有」不在这里手写：此刻 meta.exitCode 还没回写，run 目录就是最完整的证据，
- * 交给同一个 owner 判（lib/runOutcome.ts）。reachedProposal = proposal 正文已渲染
- * 且没有被 FAILED.md / 退出码否掉 —— master 写了 FAILED.md 却留着早轮 proposal 的
- * run 不再冒充成功（收编前 `rendered` 只看 proposal.json，会给出 exit 0）。
- * 验收过没过是另一件事（deliverable），由 scripts/verify-proposal.ts 单独判。
+ * 「跑完了没有」与「验收过没过」都交给 postflight（lib/postflight.ts）：它先按
+ * runOutcome 判断是否走到 proposal 正文，再自动运行独立验收。只有报告 ALL PASS 的
+ * run 才退出 0；master 写了 FAILED.md、离线验收失败或验收器自身异常都不会冒充成功。
+ * CLI、web 与 batch 都经本文件进入这道闸门，不再有「只有 batch 验收」的分叉。
  */
-const outcome = runOutcome(readRunEvidence(runDir));
-const exitCode = code === 0 && reachedProposal(outcome) ? 0 : 1;
+const postflight = await finalizeRun({ runDir, pipelineExitCode: code, verify: verifyOffline });
+const exitCode = postflight.exitCode;
 meta.finishedAt = new Date().toISOString();
 meta.exitCode = exitCode;
 writeMeta();

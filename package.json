@@ -19,6 +19,8 @@
     "selftest:memory": "node scripts/selftest-memory.ts",
     "selftest:metrics": "node scripts/selftest-metrics.ts",
     "selftest:outcome": "node scripts/selftest-outcome.ts",
+    "selftest:postflight": "node scripts/selftest-postflight.ts",
+    "selftest:topology": "node scripts/selftest-agent-topology.ts",
     "selftest:rescue": "node scripts/selftest-rescue.ts",
     "run:batch": "node scripts/run-batch.ts",
     "eval:smoke": "node scripts/eval-smoke.ts",

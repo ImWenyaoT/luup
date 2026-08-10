@@ -35,7 +35,7 @@ import {
   priceTableFromEnv,
   readAllRunMetrics,
 } from "../lib/metrics.ts";
-import { EVAL_DIR, RUNS_STATS_FILE } from "../lib/paths.ts";
+import { EVAL_DIR, RUNS_DIR, RUNS_STATS_FILE } from "../lib/paths.ts";
 import { REWORK_CAPS, REWORK_NODES } from "../lib/rework.ts";
 import { selectVersion } from "../lib/versionSelect.ts";
 
@@ -44,12 +44,10 @@ const DASH = "—";
 /**
  * M9 在本报告里的**统一称谓**（master 裁决 2026-08-09）。分数与 veto 一律以「诊断」出现，
  * 不以「成绩」「不合格」出现 —— 措辞就是权限声明，一处写成「未通过」，读的人就会拿它当 gate 用。
- * 校准数字硬编在这里而不是现算：它来自一次真实的 M10 跑（见各 run 的 calibration.md），
- * 重跑校准后要顺手改这两个常量，别让报告替一个没做过的实验背书。
+ * 校准授权由 versionSelect 从各 run 的 calibration.md 原文复算；这里不缓存数字，
+ * 避免重跑校准后报告仍沿用旧结论。
  */
-const CALIBRATION_DETECTED = 0;
-const CALIBRATION_JUDGEABLE = 4;
-const M9_CAPTION = `诊断分（同族 judge，M10 校准检出 ${CALIBRATION_DETECTED}/${CALIBRATION_JUDGEABLE}，结构性降权；不进 gate）`;
+const M9_CAPTION = "诊断分（仅在 M10 校准达策略阈值后参与择优；不进 gate）";
 
 const readTextOrNull = (path: string): string | null => {
   try {
@@ -69,6 +67,9 @@ const table = (header: string[], rows: string[][]): string[] => [
 ];
 
 const runs = readAllRunMetrics();
+const calibrationReports = runs
+  .map((r) => readTextOrNull(join(RUNS_DIR, r.id, "calibration.md")))
+  .filter((x): x is string => x !== null);
 const price = priceTableFromEnv();
 const out: string[] = [];
 
@@ -325,6 +326,8 @@ if (runs.length === 0) {
     out.push("还没有任何 run 跑过 `pnpm score`。择优因此只能落到 refs / token 层。");
     out.push("");
   } else {
+    out.push("M9 排序权限按每个同题候选组独立复算，实际是否启用以版本择优表的理由为准。");
+    out.push("");
     out.push(
       ...table(
         ["run", "题号", "加权分", "百分制", "⚠ M9 诊断", "rubric"],
@@ -347,9 +350,8 @@ if (runs.length === 0) {
     out.push(
       "> **这一栏永远不进 gate、不进技术报告的「成绩」栏，veto 也不例外。** judge 与被测 agent 同族" +
         "（criteria D1 锁死百炼 Qwen），同族自评偏置无法用换族 judge 消解；" +
-        `本仓库的 M10 实测更直接：**检出 ${CALIBRATION_DETECTED}/${CALIBRATION_JUDGEABLE}**，` +
-        "同一份 proposal 三次采样得分 20/21/22，而变异体效应量落在 −2…+1 —— judge 的自噪声带比它要测的差异还宽。" +
-        "据此 master 于 2026-08-09 裁决：M9 总分只做 tie-break，**veto 从 gate 降为 advisory**（只记录不出局）。",
+        "M9 只有在同 rubric 的 calibration.md 达到可判样本 ≥4、检出率 ≥75%、逆序 0 时才参与择优；" +
+        "否则排序自动回退 refs → token。veto 始终只是 advisory（只记录不出局）。",
     );
     out.push("");
     out.push("> ⚠ 列是**诊断线索**，不是不合格判定：它指出正文里哪些具体断言挂不到出处，供重跑时消费（题页 memory 已带原文）。");
@@ -366,6 +368,7 @@ if (runs.length === 0) {
     out.push("");
   } else {
     const rows: string[][] = [];
+    const m9EligibleQuestions = new Set<number>();
     for (const [questionId, list] of multi) {
       const choice = selectVersion(
         list.map((r) => ({
@@ -374,20 +377,25 @@ if (runs.length === 0) {
           // 分数从 score.json 搬进来（没跑过 pnpm score 就是 null，择优落到 refs / token 层）
           veto: r.score?.veto ?? false,
           score: r.score?.weighted ?? null,
+          rubricVersion: r.score?.rubricVersion ?? null,
+          judgeModel: r.score?.judgeModel ?? null,
           refs: r.literature.refs,
           tokens: r.usageMissing ? null : r.usage.all.total,
         })),
+        { calibrationReports },
       );
+      if (choice.m9Eligible) m9EligibleQuestions.add(questionId);
       rows.push([
         `Q${questionId}`,
         list.map((r) => r.id).join(" → "),
         choice.winner?.runId ?? DASH,
+        choice.m9Eligible ? "已授权" : "未授权",
         choice.reason,
         choice.advisories.length === 0 ? DASH : choice.advisories.map((a) => a.runId).join("、"),
         choice.eliminated.length === 0 ? DASH : choice.eliminated.map((e) => `${e.runId}：${e.reason}`).join("；"),
       ]);
     }
-    out.push(...table(["题号", "候选（时间序）", "胜出", "理由", "⚠ M9 诊断", "出局"], rows));
+    out.push(...table(["题号", "候选（时间序）", "胜出", "M9 排序", "理由", "⚠ M9 诊断", "出局"], rows));
     out.push("");
     const noWinner = rows.filter((r) => r[2] === DASH).map((r) => r[0]);
     if (noWinner.length > 0) {
@@ -397,7 +405,7 @@ if (runs.length === 0) {
       );
       out.push("");
     }
-    const advised = rows.filter((r) => r[4] !== DASH);
+    const advised = rows.filter((r) => r[5] !== DASH);
     if (advised.length > 0) {
       out.push(
         "> ⚠ 列里的版本（含胜者）被 M9 报了虚构类断言 veto。**这不改变胜负** —— veto 是 advisory，" +
@@ -408,18 +416,19 @@ if (runs.length === 0) {
       out.push("");
     }
     const mixed = multi.filter(([, list]) => list.some((r) => r.score !== null) && list.some((r) => r.score === null));
-    if (mixed.length > 0) {
+    const eligibleMixed = mixed.filter(([questionId]) => m9EligibleQuestions.has(questionId));
+    if (eligibleMixed.length > 0) {
       out.push(
-        `> 告警：${mixed.map(([q]) => `Q${q}`).join(", ")} 的候选里既有评过分的也有没评过的。` +
+        `> 告警：${eligibleMixed.map(([q]) => `Q${q}`).join(", ")} 的候选里既有评过分的也有没评过的。` +
           "未评分的版本 score 为 null，在 tie-break 里一律排到已评分版本之后 —— " +
           "于是「谁赢」有可能只是「谁被评过」。择优前请把同题的候选全部跑一遍 `pnpm score`。",
       );
       out.push("");
     }
     out.push(
-      "> 择优是纯函数（`lib/versionSelect.ts`），字典序：**交付 gate（只认确定性判据）** → M9 总分（tie-break）" +
-        " → refs 数 → token 成本升序 → run id。没跑过 `pnpm score` 的版本 score 为 null，" +
-        "排在所有已评分版本之后 ——「没测过」不是「测过且很好」。",
+      "> 择优是纯函数（`lib/versionSelect.ts`）：**交付 gate（只认确定性判据）** → " +
+        "校准合格时 M9 总分 → refs 数 → token 成本升序 → run id；校准不合格时跳过 M9。没跑过 `pnpm score` 的版本 score 为 null，" +
+        "仅在 M9 获授权时排在已评分版本之后；未授权时已评分与否都不影响排序。",
     );
     out.push("");
     out.push("> 落败版本不删：负结果是记忆的一部分，下次重跑要知道哪一版为什么没被选。");
