@@ -1,12 +1,17 @@
-# 依赖与构建产物（Next 官方模板对齐）
-node_modules
-.next/
+# 依赖、缓存与构建产物
+/node_modules/
+/.cache/
+/.pnpm-store/
+/.next/
+/.output/
+/.eve/
 out/
 *.tsbuildinfo
 next-env.d.ts
 
 # 环境与平台
 .env*
+!.env.example
 .vercel
 .DS_Store
 *.pem
@@ -16,6 +21,11 @@ npm-debug.log*
 # E2E 中间产物；docs/report/screenshots/ 是交付物，照常入库
 .playwright/
 playwright-report/
+/.mypy_cache/
+/.pytest_cache/
+/.ruff_cache/
+__pycache__/
+*.py[cod]
 
 # 运行期瞬态与派生缓存。边界纪律（architecture.md「存储裁决」）：
 # runs/ 与 memory/ 是 source of truth，永不 ignore；

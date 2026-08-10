@@ -1,0 +1,29 @@
+{
+  "name": "luup-frontend",
+  "private": true,
+  "version": "0.0.0",
+  "packageManager": "pnpm@11.21.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "generate:client": "cd ../backend && UV_CACHE_DIR=.cache/uv uv run python -m scripts.export_openapi && cd ../frontend && openapi-ts -i ../backend/openapi.json -o src/client -c @hey-api/client-fetch",
+    "check:client": "pnpm generate:client && git diff --exit-code -- ../backend/openapi.json src/client",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@hey-api/openapi-ts": "^0.99.0",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "@vitejs/plugin-react-swc": "4.3.1",
+    "typescript": "6.0.3",
+    "vite": "8.0.16"
+  }
+}

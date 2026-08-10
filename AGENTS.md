@@ -1,33 +1,33 @@
 # luup Agent App
 
-This project is built on the OpenAI Agents SDK (`@openai/agents`), driving Qwen (Bailian) through its OpenAI-compatible Responses endpoint. Before writing agent code, consult the SDK docs at <https://openai.github.io/openai-agents-js/> (a source clone lives at `../oss/openai-agents-js` for exact signatures). Model wiring facts live in `lib/agents/model.ts` — read them before touching anything model-related.
+Luup 使用 Python OpenAI Agents SDK，通过百炼的 OpenAI-compatible Responses 端点驱动 Qwen。
+Agent 代码位于 `backend/app/harness/`；模型接线唯一事实源是
+`backend/app/harness/model.py`。修改模型或 Agent 前先查
+<https://openai.github.io/openai-agents-python/>，不得回退到默认 OpenAI 客户端。
 
-## Project docs
+## 仓库布局
 
-- Acceptance criteria (the verification anchor): `docs/design/criteria.md`
-- Architecture (master-verify loop, DAG, no-RAG literature layer): `docs/design/architecture.md`
-- Competition spec: `docs/specs/`
+- `backend/`：FastAPI、Python Harness、领域契约、工具、离线评估和测试。
+- `frontend/`：Vite/React 交付面；HTTP 契约由 `backend/openapi.json` 生成。
+- `runs/`：运行中 append-only、终态后不可变的证据与工件；属于事实数据，不是缓存。
+- `memory/`：跨 run 的战役记忆，属于事实数据。
+- `docs/`：产品契约、架构、判据、赛题与报告材料。
 
-## Agent skills
+## 验证
 
-### Issue tracker
+```sh
+cd backend
+UV_CACHE_DIR=.cache/uv uv run pytest -q
+UV_CACHE_DIR=.cache/uv uv run ruff check app tests scripts
+UV_CACHE_DIR=.cache/uv uv run ty check app scripts
+UV_CACHE_DIR=.cache/uv uv run mypy app scripts
 
-Issues are tracked in GitHub Issues for `ImWenyaoT/luup`. See `docs/agents/issue-tracker.md`.
+cd ../frontend
+pnpm generate:client
+pnpm build
+```
 
-### Triage labels
+验收锚点：`docs/design/criteria.md`；架构：`docs/design/architecture.md`；迁移记录：
+`docs/design/fastapi-template-migration.md`。
 
-The default five-role triage label vocabulary is used. See `docs/agents/triage-labels.md`.
-
-### Domain docs
-
-This repository uses a single-context domain documentation layout. See `docs/agents/domain.md`.
-
-<!-- BEGIN:nextjs-agent-rules -->
-
-# This is NOT the Next.js you know
-
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
-
-This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
-
-<!-- END:nextjs-agent-rules -->
+Issue 与领域文档见 `docs/agents/`。

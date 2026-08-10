@@ -1,19 +1,16 @@
-# luup 领域词汇（domain glossary）
-
-架构词汇（module/interface/depth/seam/adapter/leverage/locality）见 codebase-design skill；本文件只记 luup 自己的领域语言。架构审查与重构必须使用这些词，不得漂移。
+# luup 领域词汇
 
 | 术语 | 含义 | 代码锚点 |
 |------|------|---------|
-| **run** | 一次完整流水线执行：question → L→H→C→W → master 认证 → 验收。工件全部落在 `runs/<ts>/` | scripts/run.ts |
-| **run outcome** | 一次 run 的终态判定：phase（进行到哪）+ terminal（是否终结）+ deliverable（是否可交付 = 通过独立验收）+ 起止时间。全系统唯一 owner，纯函数，入参是一份 RunEvidence（锁不在其中：「谁在跑」由调用方显式带入） | lib/runOutcome.ts |
-| **工件（artifact）** | 节点产出的落盘文件（evidence.md / hypotheses.md / critique.json / proposal.json …）。注册表 NODES 是其单一事实源：节点↔工件↔tab↔清单 | lib/nodes.ts NODES |
-| **认证（verdict）** | master 对节点产物的逐项判定（pass/reject + checks + rework）。写出端契约与读入端视图是两个类型（VerdictView 分裂中） | lib/agents/contracts.ts |
-| **判据（criterion）** | 验收锚点 criteria.md 中可核验的检查项（A 契约 / B 引用真实性 / C 闭环 / D 合规 / E 复现 / G 交付） | docs/design/criteria.md |
-| **独立验收（offline verification）** | 零 LLM 的确定性重放：schema + 引用逐条反查 arXiv（B1–B4）。与环内 verify_references 共享判据、独立数据通路 | scripts/verify-proposal.ts |
-| **战役（campaign）** | 跨 run 的 Science-125 全量作业。战役记忆 = repo 根 memory/（library / 题页 / log），run 证据链 = runs/<ts>/memory/（B1 语义，永不复用） | lib/agents/campaignMemory.ts |
-| **续跑（resume）** | 批量跑跳过「已交付」题：meta.questionId 命中 + exitCode 0 + 报告 ALL PASS 双条件 | scripts/run-batch.ts |
-| **handoff 工件** | 节点间显式传递的文件（subagent 不共享上下文，message 里只放需要的一切） | lib/agents/master.md |
-| **负结果（negative result）** | 被拒假设及理由。run 内在 rejected.md，跨 run 在题页——防止重蹈死路 | memory/questions/ |
-| **单写者假设** | campaignMemory 无锁 read-modify-write 的前提。owner 是 `runs/.active.json` 单并发锁，web 与 CLI 都是它的 adapter（CLI 撞锁退 2，不排队） | lib/lock.ts |
-| **活跃 run（activeId）** | 此刻持锁的 run id，`running` 态的唯一来源。是进程外事实，不在 run 目录里，因此一律作为显式入参往下传（deriveStatus 不自己读锁，派生缓存显式传 null） | lib/lock.ts activeRunId |
-| **派工（dispatch）** | master 经同名工具（scientist/reviewer）把 message 交给节点 agent 的一次独立 run()；typed 回传区分 completed / max_turns / error | lib/agents/master.ts dispatchTool |
+| **run** | 一次 `question → Scientist → Reviewer → 最多一次定向返修 → Verify` 的执行；全部事实落在 `runs/<id>/` | `backend/app/harness/orchestrator.py` |
+| **Harness** | 普通 Python 确定性调度器；拥有工具、预算、状态、证据和验证，不是另一个 LLM Agent | `backend/app/harness/` |
+| **Scientist** | 检索 run-local 证据并提交结构化研究计划；单次最多两个新检索意图 | `backend/app/harness/specialists.py` |
+| **Reviewer** | 必须独立检索到 Scientist 未见的新信息，再给出 `pass` 或具体返修项 | `backend/app/tools/runtime.py` |
+| **工件（artifact）** | Agent 输出、工具事件、trace、proposal、review、verification 与失败证据 | `backend/app/harness/artifacts.py` |
+| **handoff** | Scientist 输出、Reviewer 输入输出和返修请求的显式文件传递；角色不共享隐藏上下文 | `trace.jsonl`、`tool-events.jsonl` |
+| **独立验收** | 零 LLM 的确定性契约与引用真实性检查；失败必须 fail-closed | `backend/app/tools/verifier.py` |
+| **run outcome** | 对外只有 `working → passed | failed`；内部 phase 不扩大 HTTP 契约 | `backend/app/services/runs.py` |
+| **单写者假设** | `runs/.active.json` 的跨进程锁保证同时最多一个可变 run | `backend/app/services/launch.py` |
+| **战役记忆** | 根 `memory/`；只提供线索，引用仍必须在本 run 重新经 arXiv 核验并落盘 | `backend/app/tools/memory.py` |
+| **离线评估** | 从既有工件复算 gate、版本选择、M9/M10 授权与 McNemar 配对比较，不调用模型 | `backend/app/evaluation.py` |
+| **HTTP adapter** | FastAPI 暴露运行接口；Vite 只消费 HTTP，不直接读取 Python 模块 | `backend/app/main.py` |

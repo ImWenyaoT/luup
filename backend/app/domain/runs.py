@@ -1,0 +1,74 @@
+"""run id 与文件路径的单一边界。"""
+
+from __future__ import annotations
+
+import os
+import re
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any
+
+RUN_ID_RE = re.compile(r"^([0-9]{4})([0-9]{2})([0-9]{2})-([0-9]{2})([0-9]{2})([0-9]{2})$")
+
+
+class BoundaryError(ValueError):
+    def __init__(self, attempted: str) -> None:
+        super().__init__(f"path escapes sandbox: {attempted}")
+        self.attempted = attempted
+
+
+def is_run_id(value: Any) -> bool:
+    return isinstance(value, str) and RUN_ID_RE.fullmatch(value) is not None
+
+
+def utc_stamp(point: datetime | None = None) -> str:
+    value = point or datetime.now(UTC)
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    value = value.astimezone(UTC)
+    return value.strftime("%Y%m%d-%H%M%S")
+
+
+def stamp_to_ms(value: Any) -> int | None:
+    """按 JavaScript `Date.UTC` 的月/日溢出规则解析 run id。"""
+    if not isinstance(value, str):
+        return None
+    match = RUN_ID_RE.fullmatch(value)
+    if not match:
+        return None
+    year, month, day, hour, minute, second = (int(part) for part in match.groups())
+    # Date.UTC 的 0..99 年会映射到 1900..1999。
+    if 0 <= year <= 99:
+        year += 1900
+    year += (month - 1) // 12
+    month = (month - 1) % 12 + 1
+    try:
+        instant = datetime(year, month, 1, tzinfo=UTC) + timedelta(
+            days=day - 1, hours=hour, minutes=minute, seconds=second
+        )
+    except (OverflowError, ValueError):
+        return None
+    return int(instant.timestamp() * 1000)
+
+
+def repo_root() -> Path:
+    override = os.getenv("LUUP_REPO_ROOT")
+    return Path(override).resolve() if override else Path(__file__).resolve().parents[3]
+
+
+def runs_dir(root: Path | None = None) -> Path:
+    return (root or repo_root()) / "runs"
+
+
+def safe_join(base: Path, *parts: str) -> Path:
+    resolved_base = base.resolve()
+    target = resolved_base.joinpath(*parts).resolve()
+    if target != resolved_base and resolved_base not in target.parents:
+        raise BoundaryError("/".join(parts))
+    return target
+
+
+def run_dir(identifier: str, base_runs_dir: Path | None = None) -> Path:
+    if not is_run_id(identifier):
+        raise BoundaryError(identifier)
+    return safe_join(base_runs_dir or runs_dir(), identifier)

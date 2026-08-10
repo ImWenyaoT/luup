@@ -1,0 +1,22 @@
+{
+  "verdict": "revise",
+  "findings": [
+    {
+      "issue": "The proposal relies on the Crab pulsar as a canonical ECSN example (implied by ref 1802.05274), but recent high-precision astrometry suggests its kick velocity is ~160 km/s, which contradicts the <50 km/s threshold proposed for ECSNe. This specific counter-example undermines the claim that all or most ECSNe produce such low kicks.",
+      "checkedWith": "arxiv_search: 'electron-capture supernovae Crab pulsar proper motion kick velocity low mass progenitor'"
+    },
+    {
+      "issue": "The proposal assumes a clean bimodal distribution (<50 km/s for ECS vs >200 km/s for CCS). However, evidence from population synthesis (e.g., arXiv:1805.11100) and observational constraints (arXiv:2107.04251) indicates that the 'low-kick' channel may have a broader distribution or overlap with the lower tail of standard CCSN kicks, making a hard 50 km/s cutoff physically unjustified and statistically fragile.",
+      "checkedWith": "arxiv_search: 'electron-capture supernovae neutron star kick velocity < 50 km/s observational evidence'"
+    },
+    {
+      "issue": "The proposal fails to account for selection biases in young pulsar samples. Young pulsars are often found in dense environments or associated with bright SNRs where proper motion measurements are difficult. The 'missing' low-velocity pulsars might be an observational artifact rather than a physical signature.",
+      "checkedWith": "arxiv_search: 'electron-capture supernovae natal kick velocity distribution young pulsars bimodal'"
+    }
+  ],
+  "requiredChanges": [
+    "Remove the rigid <50 km/s cutoff for ECSNe; adopt a probabilistic kick distribution model that allows for overlap with low-kick CCSNe, citing the broader range of possible ECS kicks.",
+    "Address the Crab pulsar counter-example explicitly. If the Crab is an ECSN candidate with a higher kick, explain how the model accommodates this outlier or revise the classification criteria.",
+    "Include a detailed analysis of selection biases in Gaia/VLBI data for young pulsars, specifically quantifying how detection limits might skew the observed velocity distribution toward higher values."
+  ]
+}
