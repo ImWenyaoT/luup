@@ -14,7 +14,14 @@ from agents import ModelSettings, OpenAIResponsesModel, set_tracing_disabled
 from openai import AsyncOpenAI
 
 QWEN_DEFAULT_MODEL_ID = "qwen3.7-plus"
-QWEN_CONTEXT_WINDOW_TOKENS = 131_072
+
+QWEN_THINKING_ENABLED = False
+"""The single truth for Bailian's `enable_thinking`.
+
+It reaches the model through `qwen_model_settings` and reaches usage.jsonl through
+`SpecialistResult.thinking`. Two independent literals is how the accounting once
+claimed thinking was on while every request sent it off.
+"""
 
 
 @dataclass(frozen=True)

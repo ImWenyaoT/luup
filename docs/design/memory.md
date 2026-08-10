@@ -1,70 +1,62 @@
 # memory 设计（run-scoped + campaign-scoped 两层）
 
-v2（2026-08-08）：吸收 karpathy llm-wiki（gist 442a6bf）与 hermes 实践研究后定稿。
-无 RAG 红线不变：全部是文件 + 确定性索引 + agent 主动模糊搜索，零 embedding。karpathy 原版给规模留了 qmd（BM25/vector）后门——**我们不留**，这是有意比原版更严。
+v3（2026-08-11）：栈迁 Python 后按已落地的代码重写。无 RAG 红线不变：文件 + 确定性字符匹配，零 embedding。
+agent 现场契约见 `memory/SCHEMA.md`；代码是 `backend/app/agent/campaign.py`（写）与
+`backend/app/agent/tools/memory.py`（读）。
 
-## 第一层：run-scoped（现状，永久保留）
+## 第一层：run-scoped（永久保留）
 
-`runs/<ts>/memory/`：papers/（本次实检文献卡）、index.md、rejected.md。
+`runs/<ts>/memory/`：`papers/`（本次实检文献卡）+ `index.md`（代码派生，含第一作者列）。
 存在理由 = criteria B1 的证据链语义：引用必须来自**本次运行**实检。这层是 provenance，不是知识库。
 
-## 第二层：campaign-scoped 长期记忆（跨 run，服务 125 题战役）
+## 第二层：campaign-scoped（跨 run，服务 125 题战役）
 
-repo 根 `memory/`：
+repo 根 `memory/`：`log.md`（时序）、`questions/q<id>.md`（每题战役页）、`lessons.md`（运营教训）、
+`library/`（TS 栈遗留的历史文献库，现只读）。职责分开：`questions` 管「这题试过什么」，`log` 管「发生过什么」。
 
-```
-memory/
-  SCHEMA.md            # 本目录的行为契约（llm-wiki 惯例：约定放在 memory 内部给 agent 读，
-                       # 含 non-goals：永不引入 embedding/vector 检索；硬约束仍在代码层）
-  index.md             # 内容目录（L0：每页一行；确定性代码派生，禁手写）
-  log.md               # 时序日志（append-only，固定前缀 `## [date] <action> | q<id> | <verdict>`，
-                       # run 收尾由代码兜底写；grep 可解析——index 管"有什么"，log 管"发生过什么"）
-  library/
-    papers/<id>.md     # 全局文献卡 L2（工具写入，含 fetchedAt；arXiv 元数据不可变，永不过期）
-    index.md           # L0/L1 全局索引：每篇一行 + 按学科分组（确定性代码派生，禁手写）
-  questions/q<id>.md   # 每题战役页（llm-wiki 的"query 好答案回填成页"）：状态、成功 run 指针、
-                       # 跨 run 负结果（被拒假设+理由）、有效检索词、领域文献覆盖评估
-  lessons.md           # 运营级教训（哪些学科 arXiv 覆盖差、检索策略经验）
-```
+## 写入：agent 不参与
 
-index.md 与 log.md 职责严格分开（llm-wiki 规则）；agent 的读取姿势 = 先 index 后钻页（"先读 index 再钻页面"就是无 RAG 的替代，gist 原文："avoids the need for embedding-based RAG infrastructure"）。
+TS 栈的 `memory_note` 工具与 `campaignMemory.ts` 已删除且未重建，模型没有写本目录的通路。
+现在只有一条路径：run 收尾 `campaign.record_run` 确定性追加，零 LLM、append-only、原子替换。
 
-## 写入纪律（书 ch3：知识更新走 PR；agent 是 Proposer，代码是 Reviewer）
+- `log.md`：`## [date] run | q<id> | SUCCESS|FAILED` + 一行 run 目录与摘要。
+- `questions/q<id>.md`：一行 verdict + 胜出标题（或失败分类）+ 引用 id 列表；无题号的 run 只写 log。
+- 事实来源是本 run 自己的 `proposal.json` 与 `RunOutcome`，不经模型转述，因此没有「声称写了但没写」的空间。
 
-- `library/` **agent 不可直写**：arxiv_save 落 run 卡后，由确定性代码同步 upsert 全局卡并重建 index——与 run 内 index 同一条纪律（索引是派生物，不靠模型自觉）。
-- `questions/` 由 master 经新工具 `memory_note` 追加（append-only、结构化字段）；run 结束时驱动脚本把 verdict/FAILED 摘要自动归档——写入有两条独立路径（agent 主动 + 代码兜底），漏写不致命。
-- **落盘校验**（hermes 血教训：模型批量写文件半数失败却声称全写）：`memory_note` 返回结构化 `{written[], failed[]}`，写后读回验证；「声称写了」永远不等于「写了」。
-- raw evidence（runs/）/ knowledge（memory/）/ serving index（index.md）三层分离。
+## 读取：分桶配额，不灌上下文
 
-## 读取（agent 主动 search，不是灌上下文）
+`memory_search` 按桶扫描，先到先得填满 `limit`：`lessons.md` + `questions/**` 保底优先，
+`library/index.md` 次之，其余 `*.md` 兜底，`library/papers/**` 排除出检索面
+——122 篇文献卡正文会把唯一一条「这条路走死过」的题页命中挤出结果。
 
-- 新工具 `memory_search`：对 library/index.md + questions/ 做 grep 式模糊搜索，返回 L0 行 + 命中路径；agent 要细节再按路径读 L2（分层加载，不撑爆上下文）。
-- master 派工注入：literature 节点带上本题 q<id>.md 摘要 + "先 memory_search 后 arxiv_search"；hypothesis 重派时带跨 run 负结果（防止跨 run 端上同一条死路——4 家 harness 共同缺失的 gap）。
-- 跨题复用：Q54（宇宙线）攒下的文献可被 Q61（脉冲星）经 search 命中——125 题战役里 library 随跑随厚。
+派工注入：有题号时 Harness 开局读本题页末 3 条，作为 `priorAttempts` 进 Scientist 首条 message（trace 可证）。
+这是防止跨 run 反复端上同一条死路的唯一凭据，且不依赖模型自觉调用工具。
+
+## 消融臂
+
+`--no-memory` 传 `None` 给 `LuupTools`，`memory_search` 走 `enabled:false` 分支，读写双向全关，
+`meta.json` 记 `memoryArm: "on"|"off"`。记忆是加速层不是依赖，这条开关就是它的证明。
 
 ## B1 语义不放松
 
-library 命中的文献**仍必须**经 arxiv_save 落到本 run 的 papers/ 才能被引用。工具内部可拿 library 当缓存加速，但落 run 卡前必须重验 id 存在（arXiv API HEAD/查询）。防虚构四道防线一道不减。
+`library/` 命中只是线索。任何要进 proposal references 的 arXiv id，仍必须经 `arxiv_save` 落到本 run 的
+`papers/`。防虚构四道防线一道不减。
 
-## compaction（v3 增补，裁决自 TencentDB-Agent-Memory 研究——llm-wiki 的第二个工程实现）
+## 未实现（有意留白）
 
-前提纠正：`questions/` 有硬上界 125、文件名稳定，**不会膨胀**；真正无界的是 log.md 行数与单个题页字数，分开治：
+- **compaction**：`log.<YYYY-MM>.md` 分片与 `q<id>.archive.md` 归档随 TS 栈删除，未重建。当前量级
+  （题页上界 125、每 run 一行）不需要。将来若做，两条约束照抄：只搬不改、不经 LLM 摘要。
+- `memory/index.md`、`library/index.md` 的自动重建：同上，现无代码派生。
+- mermaid 假设谱系图：v2 设计里的构想，未实现，不阻塞任何判据。
 
-- **log.md：只分片，永不压缩**。超行数阈值（代码判定）→ 滚动为 `log.<year-month>.md`，主 log 留最近段。时序审计线一字不改。
-- **题页：大页追加 + 归档**。超字数预算（代码判定，非模型自觉）→ LLM 只准产**增量摘要片段**，旧正文一字节不动；被归并的旧条目移入 `q<id>.archive.md`（降层不删除）；run 指针（provenance）是**不可压缩字段**。触发 100% 代码算，LLM 只产文本 + 写后读回。
-- **不可压缩清单**：run 目录指针、被拒假设的原始陈述与理由（负结果一旦被摘要就会失去"防重蹈"的比对精度）。
+## 验收标准
 
-## mermaid 结构化索引（v3 增补）
-
-- **用**：题页内的**假设谱系图**——派生/分支/被拒/跨 run 复用是真图结构。约束三条一起抄：硬字符预算（≤4000）、节点格式强制可正则解析（`H1[假设短语]:::rejected` 式）、每节点挂证据指针（run 目录或 verdict 路径）。被拒假设用 `:::rejected` 样式保留在图上——认知墓碑，不删。
-- **不用**：index/学科地图——学科分类是树不是图，改成 mermaid 会同时损失 grep 可检索、确定性派生、diff 可读三样，纯花架子。
+①同题二跑，第二跑的 trace 首条 message 里出现第一跑的记录；②`memory_search` 命中里题页优先于文献索引；
+③删掉整个 `memory/` 或跑 `--no-memory` 后流水线照常跑通；④本目录任何一行都不是模型写的。
 
 ## 外部佐证（记录在案）
 
-- 一个 DB 厂商的记忆产品，知识正文**不入库**（"正文留磁盘"）；其上 SQLite 的唯一动因是千页×多租户下全文索引 20GB OOM——luup 量级不具备。与我们的存储裁决（不引入 DB）互为印证；且 DB 会直接废掉下方验收标准④。
-- 它整体拥抱 embedding，但**同源于 llm-wiki 的 Wiki 层全程无 embedding**（检索= FTS + wikilink 图遍历）——无 RAG 红线的又一外部佐证。
-
-## 实施状态
-
-- 设计定稿：2026-08-08。实施排在 withEve 迁移验收之后（避免并发改 agent/）。
-- 验收标准：①同题二跑命中 library 缓存且 B1 仍过；②跨 run 负结果在重跑时出现在 hypothesis 派工 message 里（trace 可证）；③memory_search 在 literature trace 里先于 arxiv_search 出现；④删除 memory/ 后一切照常（长期记忆是加速层，不是依赖）。
+- karpathy llm-wiki（gist 442a6bf）：先 index 再钻页，"avoids the need for embedding-based RAG infrastructure"。
+  原版给规模留了 qmd（BM25/vector）后门，我们不留——有意比原版更严。
+- 某 DB 厂商的记忆产品知识正文不入库（"正文留磁盘"），其 SQLite 动因是千页×多租户下全文索引 OOM，
+  luup 量级不具备；且引入 DB 会直接废掉验收标准③。

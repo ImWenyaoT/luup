@@ -4,11 +4,22 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 RUN_ID_RE = re.compile(r"^([0-9]{4})([0-9]{2})([0-9]{2})-([0-9]{2})([0-9]{2})([0-9]{2})$")
+
+FailureClass = Literal[
+    "reviewer_no_new_evidence",
+    "verifier_refs",
+    "revision_no_change",
+    "contract_violation",
+    "infra_timeout",
+    "infra_error",
+]
+"""M4 需要区分环境性失败与质量性失败，所以终态工件必须自报分类，而不是让读者猜文案。"""
 
 
 class BoundaryError(ValueError):
@@ -66,6 +77,13 @@ def safe_join(base: Path, *parts: str) -> Path:
     if target != resolved_base and resolved_base not in target.parents:
         raise BoundaryError("/".join(parts))
     return target
+
+
+def render_failed(failures: Sequence[str], classification: str | None) -> str:
+    """FAILED.md 的唯一渲染点：Harness 与 HTTP 启动器都从这里出同一种形状。"""
+    detail = "\n".join(f"- {item}" for item in failures) or "- 未知失败"
+    label = f"分类：{classification}\n\n" if classification else ""
+    return f"# Luup run failed\n\n{label}{detail}\n"
 
 
 def run_dir(identifier: str, base_runs_dir: Path | None = None) -> Path:

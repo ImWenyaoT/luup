@@ -8,6 +8,7 @@ import subprocess
 import sys
 import uuid
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -15,21 +16,40 @@ from tempfile import NamedTemporaryFile
 from threading import Thread
 from typing import Protocol
 
-from app.domain.runs import utc_stamp
+from app.domain.runs import render_failed, utc_stamp
 from app.domain.science125 import Science125Question
 
 
 class ChildProcess(Protocol):
     pid: int
 
-    def wait(self) -> int: ...
+    def wait(self, timeout: float | None = None) -> int: ...
+
+    def kill(self) -> None: ...
 
 
 ProcessFactory = Callable[..., ChildProcess]
 
+RUN_TIMEOUT_SECONDS = 40 * 60
+"""A pipeline that has not settled in 40 minutes is hung, not slow.
+
+One arXiv socket that never closes used to hold `runs/.active.json` forever, which
+blocks every later run. The parent kills the child and settles the run itself.
+"""
+
+KILL_GRACE_SECONDS = 10.0
+
 
 def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def _read_mapping(path: Path) -> dict[str, object]:
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return {}
+    return raw if isinstance(raw, dict) else {}
 
 
 def _replace_text(path: Path, content: str) -> None:
@@ -188,14 +208,24 @@ class LaunchReceipt:
 
 
 class RunLauncher:
-    def __init__(self, runs_root: Path, process_factory: ProcessFactory = subprocess.Popen) -> None:
+    def __init__(
+        self,
+        runs_root: Path,
+        process_factory: ProcessFactory = subprocess.Popen,
+        timeout_seconds: float = RUN_TIMEOUT_SECONDS,
+    ) -> None:
         self._runs_root = runs_root
         self._lock = FileRunLock(runs_root)
         self._process_factory = process_factory
+        self._timeout_seconds = timeout_seconds
 
     @property
     def active_run_id(self) -> str | None:
         return self._lock.active_run_id()
+
+    @property
+    def timeout_seconds(self) -> float:
+        return self._timeout_seconds
 
     def start(self, text: str, question_id: int | None) -> LaunchReceipt:
         lock = self._lock.acquire()
@@ -253,31 +283,52 @@ class RunLauncher:
 
     def _wait(self, child: ChildProcess, lock: HeldRunLock, run_dir: Path, question_id: int | None) -> None:
         try:
-            code = child.wait()
+            code = child.wait(timeout=self._timeout_seconds)
             self._complete(run_dir, question_id, code, None if code == 0 else f"app.cli 以 exit {code} 结束")
+        except subprocess.TimeoutExpired:
+            self._kill(child)
+            self._complete(
+                run_dir,
+                question_id,
+                -1,
+                f"子进程超过 {self._timeout_seconds:g}s 仍未终态，已被父进程 kill",
+                classification="infra_timeout",
+            )
         except Exception as exc:
-            self._complete(run_dir, question_id, -1, f"等待子进程失败：{exc}")
+            self._complete(run_dir, question_id, -1, f"等待子进程失败：{exc}", classification="infra_error")
         finally:
             lock.release()
 
     @staticmethod
-    def _complete(run_dir: Path, question_id: int | None, exit_code: int, failure: str | None) -> None:
+    def _kill(child: ChildProcess) -> None:
+        with suppress(Exception):
+            child.kill()
+        with suppress(Exception):
+            child.wait(timeout=KILL_GRACE_SECONDS)
+
+    @staticmethod
+    def _complete(
+        run_dir: Path,
+        question_id: int | None,
+        exit_code: int,
+        failure: str | None,
+        classification: str | None = None,
+    ) -> None:
         finished = _now()
-        _replace_text(
-            run_dir / "exit.json",
-            json.dumps({"exitCode": exit_code, "endedAt": finished}, ensure_ascii=False, indent=2) + "\n",
-        )
-        try:
-            raw = json.loads((run_dir / "meta.json").read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-            raw = {}
-        meta = raw if isinstance(raw, dict) else {}
+        # `app.cli` classifies its own pipeline failures; the parent only fills the gap.
+        previous = _read_mapping(run_dir / "exit.json").get("classification")
+        label = classification or (previous if isinstance(previous, str) else None)
+        exit_fact: dict[str, object] = {"exitCode": exit_code, "endedAt": finished}
+        if label is not None:
+            exit_fact["classification"] = label
+        _replace_text(run_dir / "exit.json", json.dumps(exit_fact, ensure_ascii=False, indent=2) + "\n")
+        meta = _read_mapping(run_dir / "meta.json")
         if question_id is not None:
             meta["questionId"] = question_id
         meta.update({"finishedAt": finished, "exitCode": exit_code})
         _replace_text(run_dir / "meta.json", json.dumps(meta, ensure_ascii=False, indent=2) + "\n")
         if failure is not None and not (run_dir / "FAILED.md").exists():
-            _replace_text(run_dir / "FAILED.md", f"# Luup run failed\n\n- {failure}\n")
+            _replace_text(run_dir / "FAILED.md", render_failed((failure,), label))
 
 
 def science125_text(question: Science125Question) -> str:

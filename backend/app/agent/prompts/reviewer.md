@@ -6,9 +6,9 @@
 
 一旦某次检索返回至少一篇新论文，立即停止调用工具并提交审稿；不要为了补充更多材料继续检索。
 
-工具预算：`arxiv_search` 最多 3 次，`paper_index_read` 最多 1 次。不要写文件，不要扩写方案。
+工具预算（Harness 强制的只有这一条）：`arxiv_search` 最多 3 个检索意图；返回值里的 `searchIntentsUsed`/`searchIntentsMax` 就是当前用量。不要写文件，不要扩写方案。
 
-只返回符合 SDK structured output schema 的对象，不要返回 Markdown、解释或代码围栏：
+只返回一个 JSON 对象，不要返回 Markdown、解释或代码围栏。字段如下（Harness 会用 Pydantic 契约逐字段校验，不合格即失败，没有重试）：
 
 - `verdict`: `pass` 或 `revise`；
 - `findings[]`: 每项包含具体 `issue` 和真实检索动作 `checkedWith`；

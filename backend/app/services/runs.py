@@ -281,7 +281,6 @@ class RunService:
             "updatedAt": _iso(int(datetime.now(UTC).timestamp() * 1000)),
             "nodes": nodes,
             "verdicts": verdicts,
-            "logTail": self._tail(_read_text(scan, "console.log"), 40),
         }
 
     def _outcome(self, scan: Scan) -> Outcome:
@@ -472,25 +471,24 @@ class RunService:
 
     @staticmethod
     def _papers(text: str | None) -> list[dict[str, str]]:
+        """Committed runs carry a 4-column index; runs after the 第一作者 column carry 5."""
         if not text:
             return []
         papers: list[dict[str, str]] = []
-        for cells in _table_rows(text, 4):
-            if cells[0] == "arXiv id":
-                continue
-            papers.append(
-                {
-                    "arxivId": cells[0],
-                    "year": cells[1],
-                    "title": cells[2],
-                    "oneline": cells[3],
-                    "file": f"memory/papers/{cells[0].replace('/', '__')}.md",
-                }
-            )
+        for width in (5, 4):
+            for cells in _table_rows(text, width):
+                if cells[0] == "arXiv id":
+                    continue
+                title, oneline = (cells[3], cells[4]) if width == 5 else (cells[2], cells[3])
+                papers.append(
+                    {
+                        "arxivId": cells[0],
+                        "year": cells[1],
+                        "title": title,
+                        "oneline": oneline,
+                        "file": f"memory/papers/{cells[0].replace('/', '__')}.md",
+                    }
+                )
+            if papers:
+                break
         return papers
-
-    @staticmethod
-    def _tail(text: str | None, count: int) -> list[str]:
-        if not text:
-            return []
-        return text.rstrip().splitlines()[-count:]

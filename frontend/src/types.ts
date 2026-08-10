@@ -70,7 +70,6 @@ export type RunStatusView = {
   updatedAt: string
   nodes: SpineNode[]
   verdicts: Verdict[]
-  logTail: string[]
 }
 export type RunDetail = RunStatusView & {
   questionText: string

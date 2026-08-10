@@ -22,6 +22,29 @@ def test_a_repository_without_campaign_memory_reports_disabled_instead_of_failin
     assert result == {"enabled": False, "hitCount": 0, "hits": []}
 
 
+def test_the_memory_off_arm_takes_the_same_disabled_branch(tmp_path: Path) -> None:
+    """`--no-memory` passes None rather than hiding a directory that exists on disk."""
+    (tmp_path / "lessons.md").write_text("stellar mechanism was useful\n", encoding="utf-8")
+
+    assert search_memory(None, "stellar mechanism") == {"enabled": False, "hitCount": 0, "hits": []}
+
+
+def test_campaign_pages_win_the_quota_and_paper_cards_are_off_the_search_surface(tmp_path: Path) -> None:
+    """122 library paper cards used to bury the one q<id> line that carried a dead end."""
+    (tmp_path / "questions").mkdir()
+    (tmp_path / "library" / "papers").mkdir(parents=True)
+    (tmp_path / "library" / "index.md").write_text("| 2401.1 | stellar index row |\n", encoding="utf-8")
+    (tmp_path / "library" / "papers" / "2401.1.md").write_text("stellar paper card body\n", encoding="utf-8")
+    (tmp_path / "questions" / "q61.md").write_text("stellar dead end from an earlier run\n", encoding="utf-8")
+    (tmp_path / "lessons.md").write_text("stellar coverage is thin in this domain\n", encoding="utf-8")
+
+    everything = search_memory(tmp_path, "stellar")
+    capped = search_memory(tmp_path, "stellar", limit=2)
+
+    assert paths_of(everything) == ["lessons.md", "questions/q61.md", "library/index.md"]
+    assert paths_of(capped) == ["lessons.md", "questions/q61.md"]
+
+
 @pytest.mark.parametrize("query", ["", "   ", "a", "a b c", "!!!"])
 def test_a_query_without_a_two_character_token_is_rejected(tmp_path: Path, query: str) -> None:
     """A one-character query would match nearly every line and drown the model in noise."""

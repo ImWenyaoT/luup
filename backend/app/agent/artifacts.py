@@ -11,6 +11,7 @@ from tempfile import NamedTemporaryFile
 from typing import Any
 
 from app.domain.contracts import Proposal, Review, ScientistOutput
+from app.domain.runs import render_failed
 
 
 class RunArtifacts:
@@ -47,7 +48,7 @@ class RunArtifacts:
             "usage": dict(usage),
         }
         with (self.run_dir / "usage.jsonl").open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+            handle.write(json.dumps(row, ensure_ascii=False, default=_repr_fallback) + "\n")
 
     def append_trace(self, *, agent: str, phase: str, payload: Mapping[str, Any]) -> None:
         self.run_dir.mkdir(parents=True, exist_ok=True)
@@ -60,9 +61,8 @@ class RunArtifacts:
         with (self.run_dir / "trace.jsonl").open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
 
-    def write_failed(self, failures: Sequence[str]) -> None:
-        detail = "\n".join(f"- {item}" for item in failures) or "- 未知失败"
-        self._replace_text("FAILED.md", f"# Luup run failed\n\n{detail}\n")
+    def write_failed(self, failures: Sequence[str], classification: str | None = None) -> None:
+        self._replace_text("FAILED.md", render_failed(failures, classification))
 
     def _replace_text(self, relative: str, content: str) -> None:
         target = self.run_dir / relative
@@ -187,3 +187,8 @@ class RunArtifacts:
 
 def _cell(value: str) -> str:
     return value.replace("|", "\\|").replace("\n", " ")
+
+
+def _repr_fallback(value: object) -> str:
+    """Accounting never aborts a finished run: an unexpected object degrades to its repr."""
+    return str(value)

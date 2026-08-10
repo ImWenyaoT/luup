@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 from pathlib import Path
 from threading import Event
 from time import monotonic
@@ -10,25 +11,33 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
-from app.services.launch import FileRunLock, RunInProgress, RunLauncher
+from app.services.launch import RUN_TIMEOUT_SECONDS, FileRunLock, RunInProgress, RunLauncher
 from app.services.runs import RunService
 
 
 class FakeChild:
     pid = os.getpid()
 
-    def __init__(self, exit_code: int = 0) -> None:
+    def __init__(self, exit_code: int = 0, *, hangs: bool = False) -> None:
         self.exit_code = exit_code
+        self.hangs = hangs
+        self.killed = False
         self.release = Event()
 
-    def wait(self) -> int:
+    def wait(self, timeout: float | None = None) -> int:
+        if self.hangs and not self.killed:
+            raise subprocess.TimeoutExpired(cmd="app.cli", timeout=timeout or 0)
         self.release.wait(timeout=2)
         return self.exit_code
 
+    def kill(self) -> None:
+        self.killed = True
+        self.release.set()
 
-def client_for(tmp_path: Path, factory) -> tuple[TestClient, RunLauncher]:
+
+def client_for(tmp_path: Path, factory, **launcher_kwargs) -> tuple[TestClient, RunLauncher]:
     service = RunService(tmp_path)
-    launcher = RunLauncher(tmp_path, process_factory=factory)
+    launcher = RunLauncher(tmp_path, process_factory=factory, **launcher_kwargs)
     return TestClient(create_app(service, launcher)), launcher
 
 
@@ -69,6 +78,49 @@ def test_child_failure_leaves_exit_meta_and_failed_evidence(tmp_path: Path) -> N
     assert meta["exitCode"] == 3
     assert "finishedAt" in meta
     assert (run_dir / "FAILED.md").exists()
+
+
+def test_a_hung_child_is_killed_at_the_timeout_and_the_lock_is_released(tmp_path: Path) -> None:
+    """A network hang used to hold the serialization lock forever; the parent now settles the run."""
+    child = FakeChild(hangs=True)
+    client, _ = client_for(tmp_path, lambda *args, **kwargs: child, timeout_seconds=0.01)
+
+    response = client.post("/api/runs", json={"science125Id": 1})
+    run_dir = Path(response.json()["runDir"])
+
+    assert _wait_for(lambda: (run_dir / "exit.json").exists())
+    assert child.killed is True
+    exit_fact = json.loads((run_dir / "exit.json").read_text(encoding="utf-8"))
+    assert exit_fact["exitCode"] == -1
+    assert exit_fact["classification"] == "infra_timeout"
+    failed = (run_dir / "FAILED.md").read_text(encoding="utf-8")
+    assert "infra_timeout" in failed
+    assert _wait_for(lambda: not (tmp_path / ".active.json").exists())
+    assert client.post("/api/runs", json={"science125Id": 2}).status_code != 409
+
+
+def test_the_default_child_timeout_is_forty_minutes(tmp_path: Path) -> None:
+    """The timeout is a configurable constant, not a literal buried in the wait loop."""
+    assert RUN_TIMEOUT_SECONDS == 40 * 60
+    assert RunLauncher(tmp_path).timeout_seconds == RUN_TIMEOUT_SECONDS
+
+
+def test_a_child_written_classification_survives_the_parent_settling_the_run(tmp_path: Path) -> None:
+    """`app.cli` owns the pipeline failure class; the launcher must not overwrite it with its own."""
+    child = FakeChild(exit_code=1)
+    client, _ = client_for(tmp_path, lambda *args, **kwargs: child)
+
+    response = client.post("/api/runs", json={"science125Id": 1})
+    run_dir = Path(response.json()["runDir"])
+    (run_dir / "exit.json").write_text(
+        json.dumps({"exitCode": 1, "endedAt": "2026-08-10T00:00:00.000Z", "classification": "verifier_refs"}),
+        encoding="utf-8",
+    )
+    child.release.set()
+
+    assert _wait_for(lambda: json.loads((run_dir / "exit.json").read_text(encoding="utf-8")).get("endedAt") is not None)
+    assert _wait_for(lambda: not (tmp_path / ".active.json").exists())
+    assert json.loads((run_dir / "exit.json").read_text(encoding="utf-8"))["classification"] == "verifier_refs"
 
 
 def test_spawn_failure_releases_lock_and_returns_500(tmp_path: Path) -> None:

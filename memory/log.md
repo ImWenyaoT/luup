@@ -3,13 +3,13 @@
 
     ## [YYYY-MM-DD] <action> | q<id> | <verdict>
 
-    action  ∈ {run, note, library-sync}
+    action  = run（历史条目另有 note / library-sync，来自已删除的 TS 栈）
     q<id>   Science-125 题号；无题号写 q-
-    verdict ∈ {SUCCESS, FAILED, PAUSED, -}
+    verdict ∈ {SUCCESS, FAILED}（历史条目另有 ALL PASS / PAUSED）
 
 首行之下是可选的 `- ` 明细行。前缀固定 ⇒ `grep "^## \[" memory/log.md | tail -20`
-就是确定性检索，零解析成本。本文件由代码追加（scripts/run.ts 收尾 + memory_note），
-请勿手改、勿重排、勿删除历史条目。
+就是确定性检索，零解析成本。本文件由 backend/app/agent/campaign.py 在 run 收尾时追加，
+模型没有写它的通路；请勿手改、勿重排、勿删除历史条目。
 -->
 
 ## [2026-08-08] run | q61 | ALL PASS
