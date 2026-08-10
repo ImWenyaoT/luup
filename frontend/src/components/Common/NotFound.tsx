@@ -4,24 +4,18 @@ import { Button } from "@/components/ui/button"
 const NotFound = () => {
   return (
     <div
-      className="flex min-h-screen items-center justify-center flex-col p-4"
+      className="mx-auto flex min-h-screen w-full max-w-[1360px] flex-col justify-center gap-4 px-6"
       data-testid="not-found"
     >
-      <div className="flex items-center z-10">
-        <div className="flex flex-col ml-4 items-center justify-center p-4">
-          <span className="text-6xl md:text-8xl font-bold leading-none mb-4">
-            404
-          </span>
-        </div>
-      </div>
-
-      <p className="text-lg text-muted-foreground mb-4 text-center z-10">
-        页面不存在。
+      <p className="font-mono text-sm text-muted-foreground">404</p>
+      <h1 className="text-2xl font-medium tracking-tight">页面不存在</h1>
+      <p className="max-w-[68ch] text-sm text-muted-foreground">
+        这个地址没有对应的路由。仪表台、运行历史与 run 详情是仅有的三个页面。
       </p>
-      <div className="z-10">
-        <Link to="/">
-          <Button className="mt-4">回仪表台</Button>
-        </Link>
+      <div>
+        <Button asChild>
+          <Link to="/">回仪表台</Link>
+        </Button>
       </div>
     </div>
   )

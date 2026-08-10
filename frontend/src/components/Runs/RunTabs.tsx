@@ -1,11 +1,13 @@
 import { useQuery } from "@tanstack/react-query"
+import { CheckIcon, ExternalLinkIcon, XIcon } from "lucide-react"
 import { useState } from "react"
-import { ErrorBox, Loading } from "@/components/Common/States"
+import { EmptyState, ErrorBox, Loading } from "@/components/Common/States"
 import { Pill } from "@/components/Runs/StatusBadge"
 import { Input } from "@/components/ui/input"
 import {
   Table,
   TableBody,
+  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
@@ -48,25 +50,45 @@ export function TabContent({
   const file = artifactForTab(tab, artifacts)
   if (tab === "proposal" && run.proposalRejected)
     return (
-      <>
-        <div className="flex items-center gap-3 border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+      <div className="flex flex-col gap-3">
+        <p className="text-sm text-destructive">
           proposal.json 未通过 10 字段契约；以下为被打回的原文。
-        </div>
-        <ArtifactText text={run.proposalRejected} />
-      </>
+        </p>
+        <ArtifactText text={run.proposalRejected} file="proposal.json" />
+      </div>
     )
   return file ? (
     <Artifact id={run.id} file={file} />
   ) : (
-    <Loading label={`尚未产出 ${tab} 工件`} />
+    <EmptyState
+      title={`尚未产出 ${tab} 工件`}
+      description="该节点在这次运行里没有落盘对应文件。"
+    />
   )
 }
 
-function ArtifactText({ text }: { text: string }) {
+/**
+ * 工件正文按内容分工排版：markdown 是给人读的散文，走 sans 并把行长压在 68 字符内；
+ * JSON 是代码，走 mono 且不限行长。
+ */
+function ArtifactText({ text, file }: { text: string; file?: string }) {
+  const code = !!file?.endsWith(".json")
   return (
-    <pre className="m-0 max-h-[900px] overflow-auto whitespace-pre-wrap border bg-muted/50 p-3 font-sans leading-relaxed">
-      {text}
-    </pre>
+    <div className="flex flex-col gap-2">
+      {file ? (
+        <div className="font-mono text-xs text-muted-foreground">{file}</div>
+      ) : null}
+      <pre
+        className={cn(
+          "m-0 max-h-[820px] overflow-auto whitespace-pre-wrap",
+          code
+            ? "font-mono text-xs leading-relaxed"
+            : "max-w-[68ch] font-sans text-sm leading-[1.75]",
+        )}
+      >
+        {text}
+      </pre>
+    </div>
   )
 }
 
@@ -83,12 +105,14 @@ function Artifact({
     ...artifactQueryOptions(id, file),
     enabled: fallback === undefined,
   })
-  if (fallback !== undefined) return <ArtifactText text={fallback} />
+  if (fallback !== undefined)
+    return <ArtifactText text={fallback} file={file} />
   if (artifact.error) return <ErrorBox error={artifact.error} />
   if (!artifact.data) return <Loading label={`读取 ${file}…`} />
   return (
     <ArtifactText
       text={file.endsWith(".json") ? prettyJson(artifact.data) : artifact.data}
+      file={file}
     />
   )
 }
@@ -101,40 +125,53 @@ function prettyJson(value: string) {
   }
 }
 
+/** 判定图标与文字同时出现：✓/✗ 是形状线索，颜色只是强化。 */
+function Mark({ pass }: { pass: boolean }) {
+  return pass ? (
+    <CheckIcon
+      className="mt-0.5 size-3.5 shrink-0 text-primary"
+      aria-label="通过"
+    />
+  ) : (
+    <XIcon
+      className="mt-0.5 size-3.5 shrink-0 text-destructive"
+      aria-label="未通过"
+    />
+  )
+}
+
 function Verdicts({ items }: { items: RunDetail["verdicts"] }) {
   return (
-    <ol className="grid gap-2">
+    <ol className="flex flex-col gap-6">
       {items.map((item) => (
-        <li key={item.file} className="border">
-          <header className="flex items-center gap-2 border-b bg-muted/50 px-2 py-1">
-            {item.node}-r{item.round}{" "}
+        <li key={item.file} className="flex flex-col gap-2">
+          <div className="flex items-center gap-2 border-b pb-2">
+            <span className="font-mono text-[13px] font-medium">
+              {item.node}-r{item.round}
+            </span>
             <Pill tone={item.verdict === "pass" ? "good" : "bad"}>
               {item.verdict}
             </Pill>
-            <small className="ml-auto text-[11px] text-muted-foreground">
+            <span className="ml-auto font-mono text-xs text-muted-foreground">
               verdicts/{item.file}
-            </small>
-          </header>
-          {item.checks.map((check, index) => (
-            <p
-              key={index}
-              className="m-0 grid grid-cols-[18px_1fr] gap-2 border-b px-2 py-1 text-xs md:grid-cols-[18px_176px_1fr]"
-            >
-              <b
-                className={
-                  check.pass === false ? "text-destructive" : "text-primary"
-                }
+            </span>
+          </div>
+          <dl className="flex flex-col gap-2">
+            {item.checks.map((check, index) => (
+              <div
+                key={index}
+                className="grid grid-cols-[16px_200px_minmax(0,1fr)] gap-x-3 text-[13px]"
               >
-                {check.pass === false ? "✗" : "✓"}
-              </b>
-              <span className="col-start-2">{check.criterion}</span>
-              <span className="col-start-2 md:col-start-3">{check.reason}</span>
-            </p>
-          ))}
+                <Mark pass={check.pass !== false} />
+                <dt className="font-medium">{check.criterion}</dt>
+                <dd className="text-muted-foreground">{check.reason}</dd>
+              </div>
+            ))}
+          </dl>
           {item.rework ? (
-            <footer className="px-2 py-1 text-xs text-destructive">
+            <p className="text-[13px] text-destructive">
               返工指令：{item.rework}
-            </footer>
+            </p>
           ) : null}
         </li>
       ))}
@@ -143,65 +180,57 @@ function Verdicts({ items }: { items: RunDetail["verdicts"] }) {
 }
 
 function Verification({ report }: { report: VerifyReport | null }) {
-  if (!report) return <Loading label="尚未独立验收" />
+  if (!report) return <EmptyState title="尚未独立验收" />
   const groups = [...new Set(report.checks.map((check) => check.group))]
+  const passed = report.checks.filter((check) => check.pass).length
   return (
-    <div className="grid gap-2">
-      <div
-        className={cn(
-          "border px-3 py-2",
-          report.pass
-            ? "bg-primary/10 text-primary"
-            : "bg-destructive/10 text-destructive",
-        )}
-      >
-        结果: {report.result}
-        <span className="ml-5 text-muted-foreground">
-          {report.checks.filter((check) => check.pass).length}/
-          {report.checks.length} 项通过
-        </span>
-      </div>
-      {groups.map((group) => (
-        <details
-          key={group}
-          className="border"
-          open={
-            report.pass ||
-            report.checks.some((check) => check.group === group && !check.pass)
-          }
+    <div className="flex flex-col gap-6">
+      <p className="flex items-baseline gap-3 text-[15px]">
+        <span
+          className={cn(
+            "font-medium",
+            report.pass ? "text-primary" : "text-destructive",
+          )}
         >
-          <summary className="cursor-pointer bg-muted/50 px-2 py-1 text-xs text-muted-foreground">
-            {group}{" "}
-            <span className="float-right">
-              {
-                report.checks.filter(
-                  (check) => check.group === group && check.pass,
-                ).length
-              }
-              /{report.checks.filter((check) => check.group === group).length}
-            </span>
-          </summary>
-          {report.checks
-            .filter((check) => check.group === group)
-            .map((check) => (
-              <p
-                key={check.id}
-                className={cn(
-                  "m-0 grid grid-cols-[18px_1fr] gap-2 border-t px-2 py-1 text-xs md:grid-cols-[18px_160px_1fr]",
-                  !check.pass && "bg-destructive/10 text-destructive",
-                )}
-              >
-                <b className={check.pass ? "text-primary" : "text-destructive"}>
-                  {check.pass ? "✓" : "✗"}
-                </b>
-                <code className="col-start-2">{check.id}</code>
-                <span className="col-start-2 md:col-start-3">
-                  {check.detail}
-                </span>
-              </p>
-            ))}
-        </details>
-      ))}
+          结果: {report.result}
+        </span>
+        <span className="text-sm tabular-nums text-muted-foreground">
+          {passed}/{report.checks.length} 项通过
+        </span>
+      </p>
+      {groups.map((group) => {
+        const checks = report.checks.filter((check) => check.group === group)
+        return (
+          <section key={group} className="flex flex-col gap-2">
+            <div className="flex items-baseline justify-between gap-3 border-b pb-2">
+              <h4 className="text-[13px] font-medium">{group}</h4>
+              <span className="text-xs tabular-nums text-muted-foreground">
+                {checks.filter((check) => check.pass).length}/{checks.length}
+              </span>
+            </div>
+            <dl className="flex flex-col gap-2">
+              {checks.map((check) => (
+                <div
+                  key={check.id}
+                  className="grid grid-cols-[16px_180px_minmax(0,1fr)] gap-x-3 text-[13px]"
+                >
+                  <Mark pass={check.pass} />
+                  <dt className="font-mono text-xs leading-5">{check.id}</dt>
+                  <dd
+                    className={cn(
+                      !check.pass
+                        ? "text-destructive"
+                        : "text-muted-foreground",
+                    )}
+                  >
+                    {check.detail}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        )
+      })}
     </div>
   )
 }
@@ -214,36 +243,49 @@ function Papers({ items, runId }: { items: Paper[]; runId: string }) {
       .includes(query.toLowerCase()),
   )
   return (
-    <div className="grid gap-3">
+    <div className="flex flex-col gap-3">
       <Input
         aria-label="过滤论文"
         value={query}
         placeholder="过滤 arXiv id / 标题 / 摘要"
+        className="max-w-96"
         onChange={(event) => setQuery(event.target.value)}
       />
       <Table>
+        <TableCaption className="sr-only">本次运行读取的论文</TableCaption>
         <TableHeader>
-          <TableRow>
-            <TableHead>arXiv id</TableHead>
-            <TableHead>年份</TableHead>
-            <TableHead>标题 / 一句话</TableHead>
+          <TableRow className="hover:bg-transparent">
+            <TableHead className="h-9 px-3 w-[132px] text-xs font-medium normal-case tracking-normal">
+              arXiv id
+            </TableHead>
+            <TableHead className="h-9 w-[72px] px-3 text-right text-xs font-medium normal-case tracking-normal">
+              年份
+            </TableHead>
+            <TableHead className="h-9 px-3 text-xs font-medium normal-case tracking-normal">
+              标题 / 一句话
+            </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {rows.map((paper) => (
             <TableRow key={paper.arxivId}>
-              <TableCell className="align-top">
+              <TableCell className="px-3 py-2.5 align-top">
                 <a
-                  className="hover:text-primary"
+                  className="inline-flex items-center gap-1 font-mono text-[13px] underline-offset-4 hover:underline"
                   href={`/api/runs/${runId}?artifact=${encodeURIComponent(paper.file)}`}
                 >
                   {paper.arxivId}
+                  <ExternalLinkIcon className="size-3 text-muted-foreground" />
                 </a>
               </TableCell>
-              <TableCell className="align-top">{paper.year}</TableCell>
-              <TableCell className="max-w-xl whitespace-normal align-top font-sans leading-relaxed">
-                <b>{paper.title}</b>
-                <small className="block">{paper.oneline}</small>
+              <TableCell className="px-3 py-2.5 text-right align-top tabular-nums text-muted-foreground">
+                {paper.year}
+              </TableCell>
+              <TableCell className="max-w-[68ch] whitespace-normal px-3 py-2.5 align-top">
+                <div className="font-medium">{paper.title}</div>
+                <div className="mt-0.5 text-[13px] text-muted-foreground">
+                  {paper.oneline}
+                </div>
               </TableCell>
             </TableRow>
           ))}

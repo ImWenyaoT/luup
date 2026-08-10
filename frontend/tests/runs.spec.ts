@@ -43,7 +43,8 @@ test("状态过滤只留下同状态的行", async ({ page }) => {
   expect(expected).toBeLessThan(total)
 
   await failedFilter.click()
-  await expect(failedFilter).toHaveAttribute("aria-pressed", "true")
+  // 过滤器是互斥单选，用 ToggleGroup 渲染：选中态在 radio 的 aria-checked 上。
+  await expect(failedFilter).toHaveAttribute("aria-checked", "true")
   await expect(rows).toHaveCount(expected)
   await expect(page.getByTestId("runs-shown-count")).toHaveText(
     `${expected} 行`,
@@ -54,7 +55,7 @@ test("状态过滤只留下同状态的行", async ({ page }) => {
 
   const allFilter = page.getByTestId("runs-filter").filter({ hasText: "全部" })
   await allFilter.click()
-  await expect(allFilter).toHaveAttribute("aria-pressed", "true")
+  await expect(allFilter).toHaveAttribute("aria-checked", "true")
   await expect(rows).toHaveCount(total)
 })
 

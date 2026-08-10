@@ -4,10 +4,11 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  /* 半径统一收紧：4px 一档为主，不做大圆角卡片。 */
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 4px;
+  --radius-xl: 6px;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -28,57 +29,64 @@
   --color-ring: var(--ring);
 }
 
-/* 仪表体：默认 mono，中文散文段落显式切 font-sans。 */
+/*
+ * 字体分工（Geist 规则）：sans 承担正文、标题、标签、控件、表格、计数与时长；
+ * mono 只给 run id、命令、路径、时间戳这类运行期标识符。
+ */
 @theme {
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
   --font-mono:
     ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-  --font-sans:
-    system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 
+/*
+ * 单色优先：结构全部走中性灰阶，teal 只在「有含义的状态 / 动作 / 数据区分」出现，
+ * 红只留给失败。任何着色都另有文字或形状线索，不靠颜色单独承载信息。
+ */
 :root {
-  --radius: 0.625rem;
+  --radius: 0.25rem;
   --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --foreground: oklch(0.205 0 0);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.205 0 0);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.5982 0.10687 182.4689);
-  --primary-foreground: oklch(0.985 0 0);
+  --popover-foreground: oklch(0.205 0 0);
+  --primary: oklch(0.455 0.078 181);
+  --primary-foreground: oklch(0.99 0 0);
   --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --grid-line: rgb(0 0 0 / 3.5%);
+  --secondary-foreground: oklch(0.269 0 0);
+  --muted: oklch(0.968 0 0);
+  --muted-foreground: oklch(0.478 0 0);
+  --accent: oklch(0.945 0 0);
+  --accent-foreground: oklch(0.269 0 0);
+  --destructive: oklch(0.522 0.208 27.325);
+  --border: oklch(0.916 0 0);
+  --input: oklch(0.916 0 0);
+  --ring: oklch(0.62 0 0);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.65 0.10687 182.4689);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
+  /* card 与 background 同值：页面是一块连续画布，surface 只由边框在需要时挣得。 */
+  --background: oklch(0.178 0 0);
+  --foreground: oklch(0.955 0 0);
+  --card: oklch(0.178 0 0);
+  --card-foreground: oklch(0.955 0 0);
+  --popover: oklch(0.225 0 0);
+  --popover-foreground: oklch(0.955 0 0);
+  --primary: oklch(0.715 0.098 181);
+  --primary-foreground: oklch(0.17 0.022 181);
+  --secondary: oklch(0.255 0 0);
+  --secondary-foreground: oklch(0.955 0 0);
+  --muted: oklch(0.252 0 0);
+  --muted-foreground: oklch(0.715 0 0);
+  --accent: oklch(0.285 0 0);
+  --accent-foreground: oklch(0.955 0 0);
+  --destructive: oklch(0.68 0.18 24);
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 16%);
   --ring: oklch(0.556 0 0);
-  --grid-line: rgb(255 255 255 / 4.5%);
 }
 
 @layer base {
@@ -86,22 +94,18 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground font-mono text-sm;
-    /* 细网格底：24px 步距，跟随 --grid-line 切明暗。 */
-    background-image:
-      repeating-linear-gradient(
-        to right,
-        var(--grid-line) 0 1px,
-        transparent 1px 24px
-      ),
-      repeating-linear-gradient(
-        to bottom,
-        var(--grid-line) 0 1px,
-        transparent 1px 24px
-      );
+    @apply bg-background text-foreground font-sans text-sm antialiased;
   }
   button,
   [role="button"] {
     cursor: pointer;
+  }
+  ::selection {
+    background-color: color-mix(in oklch, var(--primary) 20%, transparent);
+  }
+  /* 滚动条降噪，不引入任何装饰性表面。 */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
   }
 }

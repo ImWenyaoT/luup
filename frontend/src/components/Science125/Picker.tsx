@@ -1,11 +1,23 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { Link, useNavigate } from "@tanstack/react-router"
-import { useState } from "react"
+import { CheckIcon } from "lucide-react"
+import { useId, useState } from "react"
 import { api } from "@/api"
 import { Button } from "@/components/ui/button"
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Spinner } from "@/components/ui/spinner"
+import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 import { runsQueryOptions } from "@/queries"
 import type { Science125 } from "@/types"
+
+/**
+ * 选中态：底色 + 字重 + 勾号三重编码，不靠颜色单独承载。
+ * 行高 36px（py-2 + 20px 行高），hover / active / focus-visible 三态齐全。
+ */
+const ROW =
+  "flex w-full gap-3 px-3 py-2 text-left transition-colors hover:bg-accent/60 active:bg-accent focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
 
 export function Picker({
   science,
@@ -16,6 +28,7 @@ export function Picker({
 }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const freeId = useId()
   const [domain, setDomain] = useState(science.domains[0]?.domain ?? "")
   const [picked, setPicked] = useState<number | null>(null)
   const [free, setFree] = useState("")
@@ -39,57 +52,76 @@ export function Picker({
     : null
 
   return (
-    <div className="grid gap-3" data-testid="science125-picker">
-      <div className="grid gap-px border bg-border md:grid-cols-[minmax(144px,224px)_1fr]">
-        <nav
-          aria-label="学科"
-          className="max-h-[152px] overflow-auto bg-card md:max-h-72"
-        >
-          {science.domains.map((item) => (
-            <button
-              type="button"
-              key={item.domain}
-              data-testid="science125-domain"
-              aria-pressed={item.domain === domain}
-              onClick={() => setDomain(item.domain)}
-              className={cn(
-                "flex w-full justify-between gap-2 px-2 py-1.5 text-left text-xs hover:bg-muted",
-                item.domain === domain && "bg-primary/10 text-primary",
-              )}
-            >
-              <span>{item.domain}</span>
-              <small>{item.count}</small>
-            </button>
-          ))}
-        </nav>
-        <ul aria-label="题目" className="max-h-72 overflow-auto bg-card">
-          {group?.questions.map((question) => (
-            <li key={question.id}>
-              <button
-                type="button"
-                data-testid="science125-question"
-                aria-pressed={picked === question.id}
-                onClick={() => {
-                  setPicked(picked === question.id ? null : question.id)
-                  setFree("")
-                }}
-                className={cn(
-                  "flex w-full items-baseline gap-2 px-2 py-1.5 text-left text-xs hover:bg-muted",
-                  picked === question.id && "bg-primary/10 text-primary",
-                )}
-              >
-                <small>#{question.id}</small>
-                <span className="font-sans text-[13px] leading-snug">
-                  {question.question}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
+    <div className="flex flex-col gap-5" data-testid="science125-picker">
+      <div className="grid grid-cols-[minmax(180px,220px)_minmax(0,1fr)] overflow-hidden rounded-sm border">
+        <ScrollArea type="always" className="h-64 border-r">
+          <nav aria-label="学科" className="flex flex-col py-1">
+            {science.domains.map((item) => {
+              const on = item.domain === domain
+              return (
+                <button
+                  type="button"
+                  key={item.domain}
+                  data-testid="science125-domain"
+                  aria-pressed={on}
+                  onClick={() => setDomain(item.domain)}
+                  className={cn(
+                    ROW,
+                    "items-center justify-between text-[13px]",
+                    on && "bg-accent font-medium",
+                  )}
+                >
+                  <span className="min-w-0 flex-1">{item.domain}</span>
+                  <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                    {item.count}
+                  </span>
+                </button>
+              )
+            })}
+          </nav>
+        </ScrollArea>
+        <ScrollArea type="always" className="h-64">
+          <ul aria-label="题目" className="flex flex-col py-1">
+            {group?.questions.map((question) => {
+              const on = picked === question.id
+              return (
+                <li key={question.id}>
+                  <button
+                    type="button"
+                    data-testid="science125-question"
+                    aria-pressed={on}
+                    onClick={() => {
+                      setPicked(on ? null : question.id)
+                      setFree("")
+                    }}
+                    className={cn(ROW, "items-start", on && "bg-accent")}
+                  >
+                    <span className="w-7 shrink-0 pt-px text-right font-mono text-xs text-muted-foreground">
+                      {question.id}
+                    </span>
+                    <span
+                      className={cn(
+                        "min-w-0 flex-1 text-[13px] leading-snug",
+                        on && "font-medium",
+                      )}
+                    >
+                      {question.question}
+                    </span>
+                    {on ? (
+                      <CheckIcon className="mt-px size-3.5 shrink-0 text-primary" />
+                    ) : null}
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </ScrollArea>
       </div>
-      <label className="text-[11px] uppercase tracking-wider text-muted-foreground">
-        自由输入（与选题互斥 · ≤2000 字）
-        <textarea
+
+      <Field>
+        <FieldLabel htmlFor={freeId}>自由输入</FieldLabel>
+        <Textarea
+          id={freeId}
           value={free}
           maxLength={2000}
           rows={3}
@@ -98,40 +130,50 @@ export function Picker({
             setFree(event.target.value)
             if (event.target.value) setPicked(null)
           }}
-          className="mt-1 block w-full rounded-md border border-input bg-transparent p-2 font-sans text-[13px] leading-relaxed shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
         />
-      </label>
-      <div className="flex flex-wrap items-center gap-3">
+        <FieldDescription>与上方选题互斥，最多 2000 字。</FieldDescription>
+      </Field>
+
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <Button
           type="button"
-          size="sm"
-          variant="outline"
-          className="border-primary bg-primary/10 text-primary disabled:border-border disabled:bg-transparent disabled:text-muted-foreground"
+          // 主动作唯一：只有真正可触发时才拿到实心主色，其余状态退回中性描边。
+          variant={ready && !active && !start.isPending ? "default" : "outline"}
           disabled={start.isPending || !!active || !ready}
           onClick={() => start.mutate()}
         >
-          {start.isPending ? "触发中…" : "触发 pipeline"}
+          {start.isPending ? (
+            <>
+              <Spinner data-icon="inline-start" />
+              触发中…
+            </>
+          ) : (
+            "触发 pipeline"
+          )}
         </Button>
-        <small className="text-[11px] text-muted-foreground">
+        <span className="text-[13px] text-muted-foreground">
           {picked
             ? `已选 #${picked}`
             : free.trim().length >= 8
               ? `自由输入 ${free.trim().length} 字`
               : "未选题"}
-        </small>
-        <small className="text-[11px] text-muted-foreground">
+          {" · "}
           单次通常运行 10–20 分钟，并产生真实 API 费用
-        </small>
+        </span>
         {active ? (
           <Link
             to="/runs/$runId"
             params={{ runId: active }}
-            className="text-[11px] text-muted-foreground hover:text-primary"
+            className="text-[13px] text-primary underline-offset-4 hover:underline"
           >
             已有运行中 · {active}
           </Link>
         ) : null}
-        {error ? <b className="text-destructive">{error}</b> : null}
+        {error ? (
+          <span className="text-[13px] font-medium text-destructive">
+            {error}
+          </span>
+        ) : null}
       </div>
     </div>
   )
