@@ -55,6 +55,7 @@ UV_CACHE_DIR=.cache/uv uv run python -m app.cli --question "<科学问题>"
 cd backend
 UV_CACHE_DIR=.cache/uv uv run pytest -q
 UV_CACHE_DIR=.cache/uv uv run ruff check app tests scripts
+UV_CACHE_DIR=.cache/uv uv run ty check app scripts
 UV_CACHE_DIR=.cache/uv uv run mypy app scripts
 UV_CACHE_DIR=.cache/uv uv run python -m app.evaluation --runs-root ../runs
 
@@ -82,4 +83,5 @@ pnpm build
 - 当前架构：`docs/design/architecture.md`
 - 验收标准：`docs/design/criteria.md`
 - 迁移设计与完成记录：`docs/design/fastapi-template-migration.md`
+- Vercel/FastAPI 部署兼容性：`docs/design/vercel-fastapi-readiness.md`
 - 赛题原文：`docs/specs/`

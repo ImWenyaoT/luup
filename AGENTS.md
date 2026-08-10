@@ -19,6 +19,7 @@ Agent 代码位于 `backend/app/harness/`；模型接线唯一事实源是
 cd backend
 UV_CACHE_DIR=.cache/uv uv run pytest -q
 UV_CACHE_DIR=.cache/uv uv run ruff check app tests scripts
+UV_CACHE_DIR=.cache/uv uv run ty check app scripts
 UV_CACHE_DIR=.cache/uv uv run mypy app scripts
 
 cd ../frontend
