@@ -8,8 +8,8 @@ from typing import Any
 from app.domain.contracts import Proposal
 from app.domain.references import ReferenceCheck, verify_offline_references, verify_resolved_titles
 
-from .arxiv import ArxivClient
-from .papers import RunPaperStore
+from ..tools.arxiv import ArxivClient
+from ..tools.papers import RunPaperStore
 
 
 class FileReferenceVerifier:

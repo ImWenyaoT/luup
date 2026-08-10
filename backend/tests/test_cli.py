@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from app.agent.harness.orchestrator import RunOutcome
 from app.cli import run_cli
-from app.harness.orchestrator import RunOutcome
 from app.services.runs import RunService
 
 

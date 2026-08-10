@@ -2,6 +2,5 @@
 
 from .arxiv import ArxivClient, ArxivPaper
 from .runtime import LuupTools
-from .verifier import FileReferenceVerifier
 
-__all__ = ["ArxivClient", "ArxivPaper", "FileReferenceVerifier", "LuupTools"]
+__all__ = ["ArxivClient", "ArxivPaper", "LuupTools"]
