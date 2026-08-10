@@ -33,7 +33,7 @@ Vite UI → FastAPI adapter → Python CLI / Harness
 FastAPI 只做输入防护、单写锁、子进程启动和只读工件投影。它不拥有第二套业务状态；
 `runs/` 才是事实源。公开状态固定为 `working → passed | failed`。
 
-代码：`backend/app/main.py`、`backend/app/services/`。
+代码：`backend/app/main.py`、`backend/app/api/`、`backend/app/services/`。
 
 ### Web adapter
 
