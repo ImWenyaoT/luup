@@ -1,3 +1,4 @@
+import { CheckIcon, CopyIcon } from "lucide-react"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 
@@ -11,28 +12,37 @@ export function ApiExamples({ sample }: { sample: string }) {
     `curl -s '${base}/api/runs/${sample}?artifact=proposal.md'`,
   ]
   return (
-    <ul data-testid="api-examples">
+    <ul data-testid="api-examples" className="flex max-w-[880px] flex-col">
       {commands.map((command, index) => (
         <li
           key={command}
-          className="relative my-1 overflow-auto border bg-muted/50 px-2 pb-2 pt-6"
+          className="group flex items-start gap-3 border-b py-2 last:border-b-0"
         >
+          <span
+            aria-hidden
+            className="mt-px shrink-0 select-none font-mono text-xs text-muted-foreground"
+          >
+            $
+          </span>
+          <code className="min-w-0 flex-1 font-mono text-xs leading-5 break-all">
+            {command}
+          </code>
           <Button
             type="button"
-            variant="outline"
-            size="sm"
-            className="absolute right-1.5 top-1 h-5 px-1.5 text-[11px] font-normal text-muted-foreground"
+            variant="ghost"
+            size="icon-sm"
+            className="shrink-0 text-muted-foreground"
             onClick={() => {
               void navigator.clipboard?.writeText(command)
               setCopied(index)
               window.setTimeout(() => setCopied(null), 1200)
             }}
           >
-            {copied === index ? "已复制" : "复制"}
+            {copied === index ? <CheckIcon /> : <CopyIcon />}
+            <span className="sr-only">
+              {copied === index ? "已复制" : "复制命令"}
+            </span>
           </Button>
-          <code className="text-[11.5px] max-md:whitespace-pre-wrap">
-            {command}
-          </code>
         </li>
       ))}
     </ul>

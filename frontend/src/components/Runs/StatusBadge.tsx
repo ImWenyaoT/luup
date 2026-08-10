@@ -12,27 +12,30 @@ export function tone(status: RunStatus): Tone {
 }
 
 const TONE_CLASS: Record<Tone, string> = {
-  good: "border-primary/60 bg-primary/10 text-primary",
-  bad: "border-destructive/60 bg-destructive/10 text-destructive",
-  muted: "text-muted-foreground",
+  good: "border-primary/35 text-primary",
+  bad: "border-destructive/35 text-destructive",
+  muted: "border-border text-muted-foreground",
 }
 
 export function Pill({
   children,
   tone = "muted",
   testId,
+  className,
 }: {
   children: ReactNode
   tone?: Tone
   testId?: string
+  className?: string
 }) {
   return (
     <Badge
       variant="outline"
       data-testid={testId}
       className={cn(
-        "rounded-sm px-1.5 py-0 text-[11px] font-normal",
+        "h-5 rounded-sm px-1.5 text-xs font-normal",
         TONE_CLASS[tone],
+        className,
       )}
     >
       {children}
@@ -40,6 +43,10 @@ export function Pill({
   )
 }
 
+/**
+ * 状态灯与状态词永远成对出现：灯用 bg-current 跟随文字色，
+ * 所以颜色只是冗余强化，文字才是判据。
+ */
 export function StatusPill({
   status,
   testId,
@@ -49,6 +56,13 @@ export function StatusPill({
 }) {
   return (
     <Pill tone={tone(status)} testId={testId}>
+      <i
+        aria-hidden
+        className={cn(
+          "size-1.5 shrink-0 rounded-[1px] bg-current",
+          status === "working" && "animate-pulse motion-reduce:animate-none",
+        )}
+      />
       {statusLabel[status]}
     </Pill>
   )
