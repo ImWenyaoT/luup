@@ -1,10 +1,10 @@
 /**
  * **返工预算 —— 「这个节点还能不能再来一轮」的全系统唯一 owner。**
  *
- * 收编前，`agent/instructions.md` 的三条硬规格（每节点 ≤3 轮 / 同节点连续 3 次 reject
+ * 收编前，`lib/agents/master.md` 的三条硬规格（每节点 ≤3 轮 / 同节点连续 3 次 reject
  * 熔断 / 格式重试 ≤1 次且不占语义轮）**只存在于提示词里**：由 master 自己数轮次、自己
  * 判熔断。eval#1 的事故就是它数错了 —— 模型的算术不是防线。这个文件把判定下沉成代码，
- * 执行点在 `agent/lib/artifacts.ts` 的 `verdicts/` 写入路径：第 4 轮直接**拒写**。
+ * 执行点在 `lib/agents/artifacts.ts` 的 `verdicts/` 写入路径：第 4 轮直接**拒写**。
  * fail-closed：模型数错也过不去。
  *
  * ## 计数器就是 verdicts/ 目录，没有第二份状态
@@ -57,7 +57,7 @@ export type ReworkNode = Exclude<NodeKey, "verify">;
 export const REWORK_NODES = NODES.filter((n) => n.key !== "verify").map((n) => n.key) as ReworkNode[];
 
 /**
- * 硬上限。数值与 `agent/instructions.md`「循环控制」一致，但**判定在这里**，
+ * 硬上限。数值与 `lib/agents/master.md`「循环控制」一致，但**判定在这里**，
  * 提示词只负责告诉模型撞上之后该干什么。
  */
 export const REWORK_CAPS = {
@@ -76,7 +76,7 @@ export type ReworkCap = "node.maxRounds" | "node.circuitBreaker";
 /* 解析：verdicts/ 目录的文件名与内容（phase.ts 复用同一份）                */
 /* ------------------------------------------------------------------ */
 
-/** schema 打回草稿：`<name>.json.rejected.json`（`agent/lib/artifacts.ts` 拒写时留的证据）。 */
+/** schema 打回草稿：`<name>.json.rejected.json`（`lib/agents/artifacts.ts` 拒写时留的证据）。 */
 export const isRejectedDraft = (name: string): boolean => name.endsWith(".rejected.json");
 
 /** 已落盘的 verdict 文件（打回草稿不算）。 */

@@ -10,7 +10,7 @@
  *  3. 每个节点的 instructions / 工具集 / 轮数熔断与声明一致（instructions.md 是
  *     always-on system prompt，装载失败在这里暴露，而不是 20 分钟 run 的中途）。
  */
-import { MASTER_MAX_TURNS, MASTER_TIMEOUT_MS, SUBAGENT_NODES, buildMasterAgent } from "#agent.ts";
+import { MASTER_MAX_TURNS, MASTER_TIMEOUT_MS, SUBAGENT_NODES, buildMasterAgent } from "#lib/agents/master.ts";
 import { check, eq, report } from "./selftestHarness.ts";
 
 console.log("[1] master 装配");

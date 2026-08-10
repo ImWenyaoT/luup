@@ -7,13 +7,13 @@
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { listPapers, readCard, paperPath } from "#lib/paperStore.ts";
+import { listPapers, readCard, paperPath } from "#lib/agents/paperStore.ts";
 import {
   archiveRunOutcome,
   describeLayout,
   memoryEnabled,
   upsertLibraryPaper,
-} from "#lib/campaignMemory.ts";
+} from "#lib/agents/campaignMemory.ts";
 import { RUNS_DIR } from "../lib/paths.ts";
 import { readRunEvidence, runOutcome } from "../lib/runOutcome.ts";
 

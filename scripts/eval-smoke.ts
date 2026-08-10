@@ -9,7 +9,7 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { run } from "@openai/agents";
-import { buildMasterAgent } from "#agent.ts";
+import { buildMasterAgent } from "#lib/agents/master.ts";
 import { EVAL_DIR, REPO_ROOT } from "../lib/paths.ts";
 
 try {

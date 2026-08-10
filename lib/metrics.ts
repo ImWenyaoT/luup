@@ -23,7 +23,7 @@
  */
 import { readFileSync, readdirSync } from "node:fs";
 import { basename, join } from "node:path";
-import { arxivIdFromFilename } from "#lib/paperStore.ts";
+import { arxivIdFromFilename } from "#lib/agents/paperStore.ts";
 import { RUNS_DIR } from "./paths.ts";
 import { parseQuestion } from "./questionText.ts";
 import { isRunId } from "./runId.ts";
@@ -43,7 +43,7 @@ import { type RunPhase, readRunEvidence, runOutcome } from "./runOutcome.ts";
 
 /**
  * 一次调用或一组调用的 token 计数。字段名对齐 `usage.jsonl` 里百炼返回的原始口径
- * （`agent/lib/model.ts` 的 teeUsage 原样落盘），不做二次命名。
+ * （`lib/agents/model.ts` 的 teeUsage 原样落盘），不做二次命名。
  *
  * `cached` 是 input 的**子集**（`input_tokens_details.cached_tokens`），不参与求和 ——
  * 把它加进 total 会把同一段前缀数两遍。
@@ -60,7 +60,7 @@ export type TokenTotals = {
 };
 
 /**
- * thinking 档：`enable_thinking` 是 luup 唯一能真正关掉推理的开关（见 agent/lib/model.ts），
+ * thinking 档：`enable_thinking` 是 luup 唯一能真正关掉推理的开关（见 lib/agents/model.ts），
  * 而它带来的 token 放大约 7 倍 —— 成本必须按档拆开看，混在一起的 token/题没有决策价值。
  * `unknown` 是老 usage.jsonl（没有 thinking 字段）的去处：缺失不冒充 false。
  */

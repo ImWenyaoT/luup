@@ -37,12 +37,12 @@ export type VerifyReport = { result: string; pass: boolean; checks: VerifyCheck[
 export type Paper = { arxivId: string; year: string; title: string; oneline: string; file: string };
 
 /**
- * 交付物契约不在这里定义 —— 它由 `agent/lib/contracts.ts` 的 zod schema 单点约束，
+ * 交付物契约不在这里定义 —— 它由 `lib/agents/contracts.ts` 的 zod schema 单点约束，
  * 前端只是它的读者。手抄一份等于给自己造一个不会报错的分叉：上一版这里就多出过一个
  * schema 里根本没有的 `risks?: string`，页面照着它渲染，永远渲染不出东西。
  * 纯类型转出（编译期擦除），前端不会因此把 zod 打进 bundle。
  */
-import type { Proposal, Reference } from "#lib/contracts.ts";
+import type { Proposal, Reference } from "#lib/agents/contracts.ts";
 export type { Proposal, Reference };
 
 export type RunSummary = {

@@ -17,7 +17,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ArxivPaper } from "#lib/arxiv.ts";
+import type { ArxivPaper } from "#lib/agents/arxiv.ts";
 import {
   COMPACTION_DEFAULTS,
   MEMORY_DIR_ENV,
@@ -29,16 +29,16 @@ import {
   memoryEnabled,
   searchMemory,
   writeNote,
-} from "#lib/campaignMemory.ts";
-import { listPapers, readIndex, savePaper } from "#lib/paperStore.ts";
-import { RUN_DIR_ENV } from "#lib/runContext.ts";
+} from "#lib/agents/campaignMemory.ts";
+import { listPapers, readIndex, savePaper } from "#lib/agents/paperStore.ts";
+import { RUN_DIR_ENV } from "#lib/agents/runContext.ts";
 import { parseTableRows } from "../lib/mdTable.ts";
 import { check, report } from "./selftestHarness.ts";
 // 与 selftest-literature 同款：直调工具模块导出的裸 execute，不经 SDK 的 RunContext。
-import { executeMemoryNote } from "#tools/memory_note.ts";
-import { executeMemorySearch } from "#lib/tools/memory_search.ts";
+import { executeMemoryNote } from "#lib/agents/tools/memory_note.ts";
+import { executeMemorySearch } from "#lib/agents/tools/memory_search.ts";
 
-/** 手造论文：零网络、零费用，字段与 agent/lib/arxiv.ts 的 ArxivPaper 一致。 */
+/** 手造论文：零网络、零费用，字段与 lib/agents/arxiv.ts 的 ArxivPaper 一致。 */
 function fakePaper(over: Partial<ArxivPaper> & { arxivId: string }): ArxivPaper {
   return {
     version: "v1",

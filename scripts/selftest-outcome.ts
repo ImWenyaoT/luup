@@ -29,7 +29,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, w
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { writeArtifact } from "#lib/artifacts.ts";
+import { writeArtifact } from "#lib/agents/artifacts.ts";
 import { RUNS_DIR } from "../lib/paths.ts";
 import { check, eq, report } from "./selftestHarness.ts";
 import { deriveStatus, evidenceFromScan, scanDir, scanRun } from "../lib/phase.ts";

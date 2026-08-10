@@ -19,7 +19,7 @@ master agent 以判据清单驱动 goal-driven loop，监督一组互不信任�
 
 > **2026-08-10 拓扑收敛**：实现已按 [product-contract.md](product-contract.md) 收敛为
 > `scientist → reviewer → 至多一次返修 → verify`（工件 evidence.md / proposal.json /
-> review.json；见 agent/instructions.md）。下方 4 节点 DAG、角色表与「循环控制」是
+> review.json；见 lib/agents/master.md）。下方 4 节点 DAG、角色表与「循环控制」是
 > Ultra 期记录，保留作设计依据与消融对照，不描述现行为。
 
 ```
@@ -74,7 +74,7 @@ runs/<ts>/memory/
 ## 循环控制（吸收 4-harness 实测模式）
 
 - 每节点最大重做轮数 N=3；全局 master 认证轮 ≤3。
-- **预算是代码，不是提示词**（`lib/rework.ts`，openclaw child-admission 模式）：轮数 / 熔断 / 格式重试的判定是纯函数，执行点在 `artifact_write` 写 `verdicts/` 的路径上——第 4 轮直接拒写，返回带 `governingCap`（哪条上限在管事）与 `remaining`（余额）。计数器就是 `verdicts/` 目录本身，无额外状态、崩溃后照样算得出。收编前这三条只写在 `agent/instructions.md` 里由 master 自己数，eval#1 的事故正是它数错了。
+- **预算是代码，不是提示词**（`lib/rework.ts`，openclaw child-admission 模式）：轮数 / 熔断 / 格式重试的判定是纯函数，执行点在 `artifact_write` 写 `verdicts/` 的路径上——第 4 轮直接拒写，返回带 `governingCap`（哪条上限在管事）与 `remaining`（余额）。计数器就是 `verdicts/` 目录本身，无额外状态、崩溃后照样算得出。收编前这三条只写在 master instructions 里由 master 自己数，eval#1 的事故正是它数错了。
 - **熔断器**（codex guardian 模式）：同节点连续 3 次 reject → 不做第 4 次重试，升级处理（换策略重派或整体 FAILED），防无限打回。拒写即熔断。
 - **fail-closed 认证**：verdict 必须是合法结构化 JSON；解析失败/超时一律按 reject 处理，不宽松解析放行。
 - **两套重试分开计数**（hermes 模式）：schema 格式错误重试 ≤1 次（打回消息只带校验错误原文，不重贴 schema）；语义 reject 走节点轮数预算。
@@ -121,7 +121,7 @@ runs/<ts>/memory/
 ## 模型接线（2026-08-10 迁至 @openai/agents，端点事实不变）
 
 - 全部走百炼 Qwen responses API（一手实测：/responses 可用、function tool 可用——strict zod schema 亦实收、response_format 无效 → 结构化输出走 artifact_write 的 Zod 校验 + 格式重试；qwen3.7-plus 默认开 reasoning，token 放大 ~7x，仅 H/C/M 保留思考，L/W 限制）。
-- `@openai/agents` 0.14.3 绑定（`agent/lib/model.ts` 是唯一接线点）：
+- `@openai/agents` 0.14.3 绑定（`lib/agents/model.ts` 是唯一接线点）：
   - 每个 Agent 显式传 `new OpenAIResponsesModel(qwenClient(thinking), modelId)` —— Model 实例绕过 SDK 全局解析，OPENAI_API_KEY 相关默认永不触发；`setTracingDisabled(true)` 在模块初始化时关掉 tracing exporter。
   - `enable_thinking`（百炼私有 body 字段）与 usage.jsonl 记账都在 client 的 fetch 兼容包装里 —— 与 eve 时代同一手法，单点管理 wire facts。
   - 架构映射：master = 带 5 个工具的薄调度 Agent（scientist / reviewer 两个派工工具 + artifact_write / artifact_read / verify_references）；节点 = 独立 Agent，经**同名派工工具**内的独立 `run()` 触发，除 message 外什么都不继承——显式 handoff 原则由机制成立。scientist/reviewer 的结构化返回由派工工具做 JSON 提取/规范化（ScientistOutputSchema / ReviewSchema），验收权单点在 artifact_write（fail-closed）。

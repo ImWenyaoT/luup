@@ -45,7 +45,6 @@
     "e2e/**/*.ts",
     "playwright.config.ts",
     "lib/**/*.ts",
-    "agent/**/*.ts",
     "scripts/**/*.ts",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts"

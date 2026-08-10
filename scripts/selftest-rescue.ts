@@ -5,7 +5,7 @@
  *
  * 覆盖两件事，正好是救援通道的两个接缝：
  *
- *  1. **`LUUP_MODEL_ID` 覆盖生效**（`agent/lib/model.ts`）。这是救援轮唯一的传导机制 ——
+ *  1. **`LUUP_MODEL_ID` 覆盖生效**（`lib/agents/model.ts`）。这是救援轮唯一的传导机制 ——
  *     run-batch 只往子进程塞一个环境变量，四个 agent 节点能不能真的换档全靠它。
  *     反向断言同样重要：**显式传入的 modelId 必须压过环境变量**，否则一次救援轮会顺手
  *     把 judge（`scripts/judgeClient.ts` 自己定档）也换掉，救援轮的分就跟主批不可比了。
@@ -20,7 +20,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { QWEN_DEFAULT_MODEL_ID, resolveQwenModelId } from "#lib/model.ts";
+import { QWEN_DEFAULT_MODEL_ID, resolveQwenModelId } from "#lib/agents/model.ts";
 import { REPO_ROOT, RUNS_DIR } from "../lib/paths.ts";
 import { deliveredQuestionId, readRunEvidence } from "../lib/runOutcome.ts";
 import { check, eq, report } from "./selftestHarness.ts";

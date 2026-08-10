@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "type": "module",
   "imports": {
-    "#*": "./agent/*"
+    "#lib/*": "./lib/*"
   },
   "scripts": {
     "dev": "next dev",

@@ -3,7 +3,7 @@
  *
  * 两件事必须在 import `#lib/model.ts` 的 client **被使用之前**做完：
  *
- *  1. **加载 .env**。`agent/lib/model.ts` 的 client 是懒构造的（首次调用才读
+ *  1. **加载 .env**。`lib/agents/model.ts` 的 client 是懒构造的（首次调用才读
  *     `QWEN_BASE_URL` / `QWEN_API_KEY`），但独立脚本没有任何外层代劳加载 .env，
  *     必须自己来。
  *  2. **把 `LUUP_RUN_DIR` 指到 `runs/.eval/`**。teeUsage 会把每次调用的 usage 落到
@@ -39,11 +39,11 @@ mkdirSync(EVAL_DIR, { recursive: true });
 // 评估层的用量单独记账，绝不混进被评估 run 的 usage.jsonl
 process.env.LUUP_RUN_DIR = EVAL_DIR;
 
-const { qwenClient } = await import("#lib/model.ts");
+const { qwenClient } = await import("#lib/agents/model.ts");
 
 /**
  * judge 档位。**写死成字面量，不继承 `QWEN_DEFAULT_MODEL_ID`** —— 这是刻意的：
- * `qwenModel` 的默认档现在可被 `LUUP_MODEL_ID` 覆盖（救援通道，见 agent/lib/model.ts），
+ * `qwenModel` 的默认档现在可被 `LUUP_MODEL_ID` 覆盖（救援通道，见 lib/agents/model.ts），
  * 若 judge 隐式吃默认档，一次救援批跑就会顺手把判分器也换档，救援轮的分与主批不再可比。
  * 显式传档 + 字面量 = 判分器档位由这一行独占声明，环境变量碰不到。
  *

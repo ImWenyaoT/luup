@@ -19,12 +19,12 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { run } from "@openai/agents";
-import { MASTER_MAX_TURNS, MASTER_TIMEOUT_MS, buildMasterAgent } from "#agent.ts";
-import { archiveRunOutcome } from "#lib/campaignMemory.ts";
-import { ProposalSchema, type Proposal } from "#lib/contracts.ts";
-// 题号的解析只有一份实现（agent/lib/runContext.ts）：驱动写进 meta.json 的那个数字，
+import { MASTER_MAX_TURNS, MASTER_TIMEOUT_MS, buildMasterAgent } from "#lib/agents/master.ts";
+import { archiveRunOutcome } from "#lib/agents/campaignMemory.ts";
+import { ProposalSchema, type Proposal } from "#lib/agents/contracts.ts";
+// 题号的解析只有一份实现（lib/agents/runContext.ts）：驱动写进 meta.json 的那个数字，
 // 与 app runtime 里 memory_note 定位题页用的那个数字，必须是同一个判定。
-import { resolveQuestionId } from "#lib/runContext.ts";
+import { resolveQuestionId } from "#lib/agents/runContext.ts";
 import { type Held, acquire, parentHoldsLock } from "../lib/lock.ts";
 import { NODES } from "../lib/nodes.ts";
 import { finalizeRun, verifyOffline } from "../lib/postflight.ts";
@@ -189,7 +189,7 @@ function buildPrompt(question: string, runDir: string, questionId: number | null
     "否则写 FAILED.md 如实报失败。",
     "",
     /* ---- 易变段：每 run 都不同，一律后置 ---- */
-    // 题号只是知会：memory_note 的定位键取自 LUUP_QUESTION_ID（agent/lib/runContext.ts），不经模型。
+    // 题号只是知会：memory_note 的定位键取自 LUUP_QUESTION_ID（lib/agents/runContext.ts），不经模型。
     questionId === null
       ? "本次运行没有 Science-125 题号（直接手跑）：memory_note 只能用 target=\"lessons\"。"
       : `Science-125 题号：Q${questionId}（memory_note 写题页时由运行环境自动定位，你不必也不能传题号）。`,
@@ -310,7 +310,7 @@ const writeMeta = () => writeFileSync(metaPath, `${JSON.stringify(meta, null, 2)
 writeMeta();
 
 // 题号从 meta 回灌运行环境：memory_note 写题页与 arxiv_save 的反查索引都经
-// resolveQuestionId() 读 LUUP_QUESTION_ID（agent/lib/runContext.ts 头注：meta 写的
+// resolveQuestionId() 读 LUUP_QUESTION_ID（lib/agents/runContext.ts 头注：meta 写的
 // 数字与工具定位用的数字必须是同一个判定）。默认题路径（defaultId）外层没人设
 // 这个变量，不回灌的话 master 收尾的 memory_note(target="question") 必然 failed。
 if (meta.questionId !== null) process.env.LUUP_QUESTION_ID = String(meta.questionId);

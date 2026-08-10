@@ -48,7 +48,7 @@ const dryRun = flags.includes("--dry-run");
  * 为什么放在批尾：串行批跑一题 ~20 分钟，即时重试会把一道难题的失败代价乘二并推迟后面
  * 所有题；批尾重跑则先拿到整批的覆盖面，再花钱救零头。
  *
- * 档位经 `LUUP_MODEL_ID` 注入子进程，由 `agent/lib/model.ts` 的 qwenModel 覆盖默认档，
+ * 档位经 `LUUP_MODEL_ID` 注入子进程，由 `lib/agents/model.ts` 的 qwenModel 覆盖默认档，
  * 整条流水线（四个 agent 节点）随之升档。救援轮的 run **照常走全部 gate 与独立验收** ——
  * 它产出的是一次普通 run，不带任何豁免；判分器不受影响（judge 自己定档）。
  */

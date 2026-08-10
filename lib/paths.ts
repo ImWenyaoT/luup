@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { isRunId } from "./runId.ts";
 
 /**
- * 仓库根的**唯一**定义点（web、scripts/**、agent/ 全都从这里取，不再各自
+ * 仓库根的**唯一**定义点（web、scripts/**、lib/agents/ 全都从这里取，不再各自
  * `resolve(import.meta.dirname, "..")` 手抄）。三级判定，按可信度排序：
  *
  *  1. `LUUP_REPO_ROOT`：显式换根（selftest 拿临时仓库做破坏性断言时用）。
@@ -12,14 +12,14 @@ import { isRunId } from "./runId.ts";
  *     `import.meta.url` 就是源文件路径，因此**与 cwd 无关** —— 脚本从任何目录
  *     启动都指向同一个仓库根。
  *  3. `process.cwd()`。打包器（next build）会把本文件重写进 `.next/`，
- *     届时 ② 指向产物目录而不是仓库；用「上一级有没有 agent/instructions.md」
+ *     届时 ② 指向产物目录而不是仓库；用「上一级有没有 lib/agents/master.md」
  *     来判别这件事，而不是猜运行环境。next dev/build/start 的 cwd 都是仓库根，
  *     退到 ③ 是对的。
  */
 function detectRepoRoot(): string {
   try {
     const fromModule = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-    if (existsSync(join(fromModule, "agent", "instructions.md"))) return fromModule;
+    if (existsSync(join(fromModule, "lib", "agents", "master.md"))) return fromModule;
   } catch {
     /* import.meta.url 不可用的打包形态：退到 cwd */
   }
@@ -40,7 +40,7 @@ export const RUNS_STATS_FILE = join(RUNS_DIR, "stats.md");
 /**
  * 评估层自己的 run 目录。**点开头 → 过不了 `isRunId`**，因此不会被 listRunIds /
  * readAllRunMetrics 当成一次真实 run —— 这正是它叫 `.eval` 的原因：
- * judge 调用的 token 用量（`agent/lib/model.ts` 的 teeUsage 按 `LUUP_RUN_DIR` 落盘）
+ * judge 调用的 token 用量（`lib/agents/model.ts` 的 teeUsage 按 `LUUP_RUN_DIR` 落盘）
  * 必须与被评估 run 的成本账分开，否则 M6 会把评估开销算进流水线开销。
  */
 export const EVAL_DIR = join(RUNS_DIR, ".eval");

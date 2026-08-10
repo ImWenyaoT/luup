@@ -1,0 +1,42 @@
+{
+  "verdict": "revise",
+  "findings": [
+    {
+      "issue": "Critical prior art missing: 2406.11428 (Song et al. 2024)",
+      "description": "The proposal describes using COMPAS/COSMIC for binary population synthesis with radio+gamma-ray selection effects and natal kicks—this is exactly what Song, Stevenson, Chattopadhyay et al. (2024) did in 'Binary population synthesis of the Galactic canonical pulsar population' (arXiv:2406.11428). The proposal's methods section explicitly mentions 'using a population synthesis code (e.g., COSMIC or COMPAS)' and 'A survey-simulation module that applies radio and gamma-ray selection effects,' which duplicates this published work.",
+      "checkedWith": "arxiv_search(\"ti:'pulsar' AND ti:'population'\") found 2406.11428",
+      "impact": "The proposal must acknowledge this work and clearly articulate what is novel beyond it."
+    },
+    {
+      "issue": "ECSN low-kick claim overstated as 'clean diagnostic'",
+      "description": "The proposal states 'wide binary pulsars (a clean ECSN diagnostic)' but the evidence (2205.03989) only shows that ECSNe can produce low kicks—it doesn't prove low kicks are unique to ECSN. Other mechanisms (asymmetric fallback, specific progenitor structures, gravitational tug-boat effects per 1611.07562) could also produce v < 100 km/s pulsars.",
+      "checkedWith": "arxiv_search(\"ti:'electron-capture' supernova kick\") and evidence review",
+      "impact": "The v < 100 km/s metric cannot uniquely identify ECSN without additional discriminants (e.g., companion mass, orbital eccentricity)."
+    },
+    {
+      "issue": "AIC channel underdeveloped despite evidence",
+      "description": "The proposal mentions 'accretion-induced collapse of white dwarfs' only as a possible additional pathway in the results section, but doesn't include it in the three-channel model. Evidence from 2201.03827 (Wang et al. 2022) shows AIC can produce MSPs with long orbital periods—a distinct signature that should be modeled if the goal is a complete multi-channel framework.",
+      "checkedWith": "arxiv_search(\"ti:'pulsar' AND (kick OR formation) AND channel\") found 2201.03827",
+      "impact": "Omitting AIC while claiming 'no single channel reproduces the full observed population' is inconsistent—if AIC contributes significantly, the three-channel model is incomplete."
+    },
+    {
+      "issue": "Arbitrary KL divergence threshold",
+      "description": "The proposal requires 'KL < 0.1 on P–B' but provides no justification for this threshold. KL divergence is sensitive to binning and sample size; without calibration against known populations or Bayesian model comparison, this threshold is arbitrary.",
+      "checkedWith": "Evidence review—no cited work establishes this threshold",
+      "impact": "The falsifiability criterion is not robust."
+    },
+    {
+      "issue": "Expected results not evidence-based",
+      "description": "The proposal predicts '60–70% iron-core collapse, 10–20% electron-capture supernovae, and 15–25% binary recycling' but these numbers are not derived from the cited evidence. The evidence supports the existence of these channels but doesn't quantify their relative contributions.",
+      "checkedWith": "Evidence list review",
+      "impact": "Presenting specific percentages without justification undermines scientific rigor."
+    }
+  ],
+  "requiredChanges": [
+    "Acknowledge and differentiate from 2406.11428 (Song et al. 2024): Explicitly state what is novel beyond this work (e.g., explicit ECSN channel modeling, use of Pejcha & Thompson landscape instead of default COMPAS, joint three-channel fitting).",
+    "Soften ECSN diagnostic claim: Replace 'clean ECSN diagnostic' with 'ECSN discriminant' and add additional observables (companion mass distribution, eccentricity) to break degeneracies with other low-kick mechanisms.",
+    "Include AIC as a fourth channel or justify exclusion: Either add AIC to the multi-channel model with its distinct predictions (low kicks, specific companion masses), or provide quantitative argument for why its contribution is negligible (<5%).",
+    "Replace or justify KL threshold: Use Bayesian model comparison (e.g., Bayes factors) or calibrate KL threshold against injection-recovery tests. Alternatively, use multiple complementary metrics without arbitrary thresholds.",
+    "Remove specific percentage predictions: Replace '60–70%, 10–20%, 15–25%' with 'we will measure the relative contributions' or provide literature-based priors with citations."
+  ]
+}

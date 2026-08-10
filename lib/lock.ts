@@ -5,7 +5,7 @@ import { LOCK_FILE, RUNS_DIR } from "./paths.ts";
  * **单并发锁：runs/.active.json —— 「谁在跑」的全系统唯一事实源。**
  *
  * 为什么必须单并发：百炼端点并发过载阈值低（实测），且 campaignMemory 是无锁的
- * read-modify-write（agent/lib/campaignMemory.ts 约束 4），两个 pipeline 同时写
+ * read-modify-write（lib/agents/campaignMemory.ts 约束 4），两个 pipeline 同时写
  * library 会丢反向索引条目。
  *
  * ## 两个 adapter，一把锁

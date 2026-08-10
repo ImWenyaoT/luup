@@ -1,0 +1,10 @@
+{
+  "status": "completed",
+  "finalOutput": "FAILED.md 已写入。根据流程，verify_references 返回 `ok: false`，任务失败。\n\n**最终状态：failed**\n\n**失败原因：**\n- verify_references 未通过，共 10 项失败\n- B2 标题重合度失败 4 项：1703.06895, 2407.03985, 1309.6635, 1709.07889\n- B4 作者/年份不符 6 项：2205.03989, 1703.06895, 1710.11143, 1309.6635, 1709.07889, 1709.07636\n\n**Run 目录：** /home/ail510/tian_wenyao/projects/luup/runs/20260810-045543",
+  "usage": {
+    "requests": 20,
+    "inputTokens": 698712,
+    "outputTokens": 29669,
+    "totalTokens": 728381
+  }
+}

@@ -1,5 +1,5 @@
 import { readdirSync } from "node:fs";
-import { paperFilename } from "#lib/paperStore.ts";
+import { paperFilename } from "#lib/agents/paperStore.ts";
 import { parseTableRows } from "./mdTable.ts";
 import { RUNS_DIR } from "./paths.ts";
 import {

@@ -39,7 +39,7 @@ pnpm verify runs/<ts>              # 独立验收（schema + 引用逐条反查 
 ## 评估体系（criteria H）
 
 四条纪律：**gate 全确定性，judge 只产诊断分**；**rubric 永不进 agent prompt**（防 Goodhart，由
-`pnpm selftest:metrics` 逐字扫 `agent/` 全树把关）；指标只从已有工件派生（零新增采集）；
+`pnpm selftest:metrics` 逐字扫 `lib/agents/` 全树把关）；指标只从已有工件派生（零新增采集）；
 每个指标必须能翻盘一个真实决定。
 
 ```sh
@@ -62,7 +62,7 @@ master 2026-08-09 裁决：择优字典序 = **交付 gate（只认确定性判�
 
 ## 交付面（Next.js 单项目）
 
-agent 与 web 是**同一个项目**：仓库根既是流水线代码根（`agent/`、`scripts/`），也是 Next
+agent 与 web 是**同一个项目**：仓库根既是流水线代码根（`lib/agents/`、`scripts/`），也是 Next
 项目根（`app/`、`components/`、`lib/`）。流水线经 `POST /api/runs` 起 `scripts/run.ts`
 子进程，web 只读 `runs/` 文件——两侧只有进程边界，没有模块耦合。
 
@@ -109,5 +109,5 @@ pnpm eval:full  # 全链路：真跑一题 + 契约/离线验收 gates（≈20 �
 ## 文档
 
 - 架构与判据：`docs/design/architecture.md`、`docs/design/criteria.md`
-- 节点 instructions：`docs/design/prompts.md`（agent/ 下为接线后的实体）
+- 节点 instructions：`docs/design/prompts.md`（lib/agents/ 下为接线后的实体）
 - 赛题原文：`docs/specs/`

@@ -17,8 +17,8 @@
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { MEMORY_DIR_ENV } from "#lib/campaignMemory.ts";
-import { arxivIdPattern } from "#lib/contracts.ts";
+import { MEMORY_DIR_ENV } from "#lib/agents/campaignMemory.ts";
+import { arxivIdPattern } from "#lib/agents/contracts.ts";
 import {
   arxivIdFromFilename,
   listPapers,
@@ -27,14 +27,14 @@ import {
   paperPath,
   parseIndexRows,
   readIndex,
-} from "#lib/paperStore.ts";
-import { RUN_DIR_ENV } from "#lib/runContext.ts";
+} from "#lib/agents/paperStore.ts";
+import { RUN_DIR_ENV } from "#lib/agents/runContext.ts";
 import { check, report } from "./selftestHarness.ts";
 // 工具模块同时导出「SDK tool（模型面）」与「裸 execute（测试面）」：
 // 自测直调后者，不经 @openai/agents 的 RunContext。
-import { executeArxivSave } from "#lib/tools/arxiv_save.ts";
-import { executeArxivSearch } from "#lib/tools/arxiv_search.ts";
-import { executePaperIndexRead } from "#lib/tools/paper_index_read.ts";
+import { executeArxivSave } from "#lib/agents/tools/arxiv_save.ts";
+import { executeArxivSearch } from "#lib/agents/tools/arxiv_search.ts";
+import { executePaperIndexRead } from "#lib/agents/tools/paper_index_read.ts";
 
 /* ---------------------------------------------------------------- */
 
@@ -44,7 +44,7 @@ const runDir = keepDir
   : mkdtempSync(join(tmpdir(), "luup-selftest-"));
 process.env[RUN_DIR_ENV] = runDir;
 /*
- * savePaper 会把每篇卡同步进 campaign library（agent/lib/campaignMemory.ts）。
+ * savePaper 会把每篇卡同步进 campaign library（lib/agents/campaignMemory.ts）。
  * 自测的论文不该混进 125 题战役的长期记忆里 —— 把 campaign 目录改指到临时沙箱，
  * 仓库根的 memory/ 一个字节都不会被改到。
  */

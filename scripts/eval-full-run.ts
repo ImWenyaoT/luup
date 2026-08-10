@@ -14,7 +14,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { ProposalSchema } from "#lib/contracts.ts";
+import { ProposalSchema } from "#lib/agents/contracts.ts";
 import { REPO_ROOT } from "../lib/paths.ts";
 import { check, report } from "./selftestHarness.ts";
 

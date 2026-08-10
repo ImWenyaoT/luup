@@ -22,13 +22,13 @@
 import { readFileSync, readdirSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
-import { ProposalSchema, ReferenceSchema, type Reference } from "#lib/contracts.ts";
-import { arxivIdFromFilename } from "#lib/paperStore.ts";
+import { ProposalSchema, ReferenceSchema, type Reference } from "#lib/agents/contracts.ts";
+import { arxivIdFromFilename } from "#lib/agents/paperStore.ts";
 import {
   TITLE_OVERLAP_THRESHOLD,
   surnameOf,
   titleOverlap,
-} from "#lib/verifyRefs.ts";
+} from "#lib/agents/verifyRefs.ts";
 import { escapeCell } from "../lib/mdTable.ts";
 import { resultLine } from "../lib/runOutcome.ts";
 
@@ -74,7 +74,7 @@ for (const r of refs) {
 // B3
 push("B3.count", refs.length >= 5, `references = ${refs.length}（要求 ≥5）`);
 
-// B2+B4: 逐条反查 arXiv（标题 + 真实作者列表）——独立于 agent/lib/arxiv.ts 的自有通路
+// B2+B4: 逐条反查 arXiv（标题 + 真实作者列表）——独立于 lib/agents/arxiv.ts 的自有通路
 const fetchEntry = async (
   id: string,
 ): Promise<{ title: string; authors: string[] } | null> => {

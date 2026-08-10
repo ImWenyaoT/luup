@@ -17,7 +17,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Proposal } from "#lib/contracts.ts";
+import type { Proposal } from "#lib/agents/contracts.ts";
 import {
   DEFAULT_PRICE_TABLE,
   aggregateUsage,
@@ -59,8 +59,8 @@ import { check, eq, report } from "./selftestHarness.ts";
 console.log("\n[M4/M5] 交付率与 Pass^2（数据源：仓库现有 runs/）");
 
 const all = readAllRunMetrics();
-// 仓库现有 11 个 run 目录（20260808-054611 … 20260810-032527）；batch-*.md 与 index.json 不是 run
-eq("扫到 11 个 run", all.length, 11);
+// 仓库现有 14 个 run 目录（20260808-054611 … 20260810-052412）；batch-*.md 与 index.json 不是 run
+eq("扫到 14 个 run", all.length, 14);
 check("run id 全部合法且倒序无关（升序排列）", all.every((r, i) => i === 0 || all[i - 1].id < r.id));
 
 const byId = new Map(all.map((r) => [r.id, r]));
@@ -74,11 +74,11 @@ eq("093646 如实报失败", m("20260808-093646").phase, "failed");
 eq("100004 报告 ALL PASS 但无 proposal.md → unsettled", m("20260808-100004").phase, "unsettled");
 check("100004 不可交付", !m("20260808-100004").deliverable);
 
-// M4：deliverable 的是 062829 / 065103 / 071315 / 134046 / 20260810-032527 → 5/11
+// M4：deliverable 的是 062829 / 065103 / 071315 / 134046 / 20260810-032527 / 20260810-052412 → 6/14
 const dr = deliveryRate(all);
-eq("M4 分子 = 5", dr.delivered, 5);
-eq("M4 分母 = 11", dr.total, 11);
-eq("M4 交付率 = 5/11", Number(dr.rate!.toFixed(4)), 0.4545);
+eq("M4 分子 = 6", dr.delivered, 6);
+eq("M4 分母 = 14", dr.total, 14);
+eq("M4 交付率 = 6/14", Number(dr.rate!.toFixed(4)), 0.4286);
 
 // 耗时可信度：meta.json 两端都有才算实测；mtime 兜底会被一次 git checkout 刷成假数
 check("134046 有 meta 起止时间", m("20260808-134046").metaTimed);
@@ -90,15 +90,15 @@ eq("062829 回填耗时为 0", m("20260808-062829").durationSec, 0);
 // M5：题号来自 meta.json（054611/055459/093646/100004/20260810-014001 无题号，不进配对）
 const groups = groupByQuestion(all);
 eq("有题号的题数 = 3（q54 / q61 / q125）", groups.size, 3);
-eq("q61 有 4 个 run", groups.get(61)!.length, 4);
+eq("q61 有 7 个 run", groups.get(61)!.length, 7);
 eq("q61 按时间序：062829 在前", groups.get(61)![0].id, "20260808-062829");
-eq("q61 按时间序：20260810-032527 在后", groups.get(61)![3].id, "20260810-032527");
+eq("q61 按时间序：20260810-052412 在后", groups.get(61)![6].id, "20260810-052412");
 
 const p2 = passSquared(all);
-// q61 四个 run → 3 个相邻对：(062829,134046)=✓✓、(134046,013424)=✓✗、(013424,032527)=✗✓
-eq("M5 相邻对总数 = 3（q61 有 4 个 run）", p2.total, 3);
+// q61 七个 run → 6 个相邻对；只有 (062829,134046)=✓✓ 通过
+eq("M5 相邻对总数 = 6（q61 有 7 个 run）", p2.total, 6);
 eq("M5 通过的相邻对 = 1", p2.passed, 1);
-eq("M5 Pass^2 = 1/3", Number(p2.rate!.toFixed(4)), 0.3333);
+eq("M5 Pass^2 = 1/6", Number(p2.rate!.toFixed(4)), 0.1667);
 eq("M5 那一对是 q61", p2.pairs[0].questionId, 61);
 
 // 单 run 的题不产生相邻对（Pass^2 的分母是「对」不是「题」）
@@ -206,13 +206,13 @@ eq("没有 refs 时命中率为 null", literatureMetrics({ paperIds: ["a"], refI
 
 // 跨 run 复用：按 run id 升序，只数「更早的 run 里出现过」的
 const reuse = libraryReuse(all);
-eq("累计保存 133 次", reuse.totalSaves, 133);
-eq("去重后 96 篇", reuse.distinct, 96);
+eq("累计保存 212 次", reuse.totalSaves, 212);
+eq("去重后 132 篇", reuse.distinct, 132);
 eq("055459 复用 10 篇", reuse.perRun.find((x) => x.id === "20260808-055459")!.reusedFromEarlier, 10);
 eq("093646 复用 8 篇", reuse.perRun.find((x) => x.id === "20260808-093646")!.reusedFromEarlier, 8);
 eq("首个 run 复用 0 篇", reuse.perRun[0].reusedFromEarlier, 0);
-// (133-96)/133 = 0.27819…
-eq("复用率 = 37/133", Number(reuse.reuseRate!.toFixed(4)), 0.2782);
+// (212-132)/212 = 0.37735…
+eq("复用率 = 80/212", Number(reuse.reuseRate!.toFixed(4)), 0.3774);
 
 console.log("\n[M11] 配对比较（McNemar 精确二项）");
 
@@ -288,7 +288,7 @@ console.log("\n[M9] 红线：rubric 文本不得出现在 agent 可见面（防 
 /**
  * criteria H 的硬约束：judge 的评分标准一旦被被测系统看见，它优化的就是标准而不是质量。
  * 这条红线靠人自觉守不住 —— 有人往 instructions 里贴一句「注意假设要可证伪、要写清阈值」
- * 就破了，而且不会有任何报错。所以在这里逐字扫 agent/ 全树。
+ * 就破了，而且不会有任何报错。所以在这里逐字扫 lib/agents/ 全树（agent 可见面）。
  */
 const agentFiles: string[] = [];
 const walkAgent = (dir: string) => {
@@ -298,8 +298,8 @@ const walkAgent = (dir: string) => {
     else if (ent.isFile() && /\.(ts|md|json)$/.test(ent.name)) agentFiles.push(p);
   }
 };
-walkAgent(join(REPO_ROOT, "agent"));
-check(`扫到 agent/ 下 ${agentFiles.length} 个文件`, agentFiles.length > 0);
+walkAgent(join(REPO_ROOT, "lib", "agents"));
+check(`扫到 lib/agents/ 下 ${agentFiles.length} 个文件`, agentFiles.length > 0);
 
 const agentText = agentFiles.map((f) => readFileSync(f, "utf8")).join("\n");
 const leaked = (needle: string) => agentFiles.filter((f) => readFileSync(f, "utf8").includes(needle));
@@ -611,9 +611,10 @@ eq("落败版本不删，全部进 ranked", tie.ranked.length, 2);
 const stable = selectVersion([cand("a", { score: 10, refs: 7, tokens: 100 }), cand("z", { score: 10, refs: 7, tokens: 100 })]);
 eq("输入顺序反过来结论不变", stable.winner!.runId, "a");
 
-/* 与真实数据接：q61 四个 run —— 三个可交付版本（062829 / 134046 / 20260810-032527）
-   都跑过 M9、**都报了 veto**；另有一个 FAILED run（20260810-013424，不可交付）。
-   veto 降为 advisory 之后不出局；唯一的出局理由只能是 deliverable=false。 */
+/* 与真实数据接：q61 七个 run —— 四个可交付版本都跑过 M9（062829 / 134046 /
+   20260810-032527 报了 veto，20260810-052412 无 veto），另有三个 FAILED run
+   （013424 / 042825 / 045543，不可交付）。veto 降为 advisory 之后不出局；
+   唯一的出局理由只能是 deliverable=false。 */
 const q61 = groups.get(61)!;
 const realCands = q61.map((r) => ({
   runId: r.id,
@@ -625,8 +626,8 @@ const realCands = q61.map((r) => ({
   refs: r.literature.refs,
   tokens: r.usageMissing ? null : r.usage.all.total,
 }));
-eq("q61 三个可交付版本都跑过 M9", realCands.filter((c) => c.score !== null).length, 3);
-eq("q61 三个评过分的版本都报了 veto", realCands.filter((c) => c.veto).length, 3);
+eq("q61 四个可交付版本都跑过 M9", realCands.filter((c) => c.score !== null).length, 4);
+eq("q61 报 veto 的版本 = 3（052412 无 veto）", realCands.filter((c) => c.veto).length, 3);
 const actualCalibrations = q61
   .map((r) => {
     try {
@@ -638,17 +639,17 @@ const actualCalibrations = q61
   .filter((x): x is string => x !== null);
 check("q61 有真实 calibration.md 证据", actualCalibrations.length > 0);
 const realChoice = selectVersion(realCands, { calibrationReports: actualCalibrations });
-eq("q61 的真实校准未授权 M9，胜者落到 token 层", realChoice.winner!.runId, "20260808-134046");
-eq("q61 择优理由披露 M9 未达阈值", realChoice.reason, "M9 未达校准阈值，refs 持平，token 成本更低");
-check("胜者自己带着 veto 标志，但那只是诊断", realChoice.winner!.veto);
+eq("q61 的真实校准未授权 M9，胜者由 refs 层分出（052412 有 10 篇）", realChoice.winner!.runId, "20260810-052412");
+eq("q61 择优理由披露 M9 未达阈值", realChoice.reason, "M9 未达校准阈值，refs 更多");
+check("胜者没有 veto（052412 是首个无 veto 版本），veto 只是诊断", !realChoice.winner!.veto);
 eq("三版的 veto 都进 advisories", realChoice.advisories.length, 3);
-eq("唯一出局者是 FAILED run（因不可交付，绝不因 veto）", realChoice.eliminated.length, 1);
-eq("出局的是 20260810-013424", realChoice.eliminated[0]?.runId, "20260810-013424");
+eq("出局者 = 三个 FAILED run（因不可交付，绝不因 veto）", realChoice.eliminated.length, 3);
+check("出局名单不含任何可交付版本", realChoice.eliminated.every((e) => ["20260810-013424", "20260810-042825", "20260810-045543"].includes(e.runId)));
 
 // 只看 Tier1（不接 M9）时胜者相同，但分出胜负的层次不同 —— 两条路都要留住
 const tier1Only = selectVersion(realCands.map((c) => ({ ...c, score: null, veto: false })));
-eq("只看 Tier1 时 q61 落到 token 层", tier1Only.reason, "M9 未达校准阈值，refs 持平，token 成本更低");
-eq("只看 Tier1 时胜者仍是 134046", tier1Only.winner!.runId, "20260808-134046");
+eq("只看 Tier1 时 q61 同样由 refs 层分出", tier1Only.reason, "M9 未达校准阈值，refs 更多");
+eq("只看 Tier1 时胜者同为 052412", tier1Only.winner!.runId, "20260810-052412");
 
 check("RUNS_DIR 指向本仓库 runs/", RUNS_DIR.endsWith("/runs"));
 

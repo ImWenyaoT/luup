@@ -1,0 +1,10 @@
+{
+  "status": "completed",
+  "finalOutput": "verify_references 返回 `ok: true`，所有检查项均通过。流程成功完成。\n\n**passed**\n\n- 方案标题：Disentangling Pulsar Formation Channels: A Four-Channel Hierarchical Bayesian Mixture Model for Core-Collapse, Electron-Capture, Accretion-Induced Collapse, and Globular-Cluster Dynamical Origins of Galactic Neutron Stars\n- 引用数：10\n- Run 目录：/home/ail510/tian_wenyao/projects/luup/runs/20260810-052412",
+  "usage": {
+    "requests": 18,
+    "inputTokens": 566397,
+    "outputTokens": 27822,
+    "totalTokens": 594219
+  }
+}

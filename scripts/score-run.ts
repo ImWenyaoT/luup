@@ -21,7 +21,7 @@
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
-import { writeNote } from "#lib/campaignMemory.ts";
+import { writeNote } from "#lib/agents/campaignMemory.ts";
 import { REPO_ROOT } from "../lib/paths.ts";
 import { readJsonFile, readRunEvidence, runOutcome } from "../lib/runOutcome.ts";
 import {
