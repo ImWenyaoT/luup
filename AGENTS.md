@@ -23,8 +23,9 @@ UV_CACHE_DIR=.cache/uv uv run ty check app scripts
 UV_CACHE_DIR=.cache/uv uv run mypy app scripts
 
 cd ../frontend
-pnpm generate:client
-pnpm build
+pnpm check:client   # 导出 openapi + 重新生成 client，diff 非空即失败
+pnpm lint           # biome，会自动写回格式
+pnpm build          # tsc --noEmit + vite，产物进 backend/app/frontend（不入库）
 ```
 
 验收锚点：`docs/design/criteria.md`；架构：`docs/design/architecture.md`；迁移记录：
