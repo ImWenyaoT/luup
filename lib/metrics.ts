@@ -7,7 +7,7 @@
  *    没有 API key 的机器上复算 —— 否则它就不是「评估系统」，而是被评估系统的一部分。
  * 2. **零新增采集。** 数据源只有既有工件：`runOutcome`（终态）、`verdicts/`（返工）、
  *    `usage.jsonl`（成本）、`meta.json` / `question.md`（题号）、`memory/papers/`（文献）。
- *    新增采集面 = 新增一份会与真相分叉的第二事实源（docs/design/backlog.md 已按同一
+ *    新增采集面 = 新增一份会与真相分叉的第二事实源（docs/archive/legacy-typescript/backlog.md 已按同一
  *    理由否掉统一 trace）。
  * 3. **判定不重写。** 「这个 run 算不算交付」只有一个 owner（`lib/runOutcome.ts`），
  *    「这个节点跑了几轮、熔没熔断」只有一个 owner（`lib/rework.ts`）。本文件只做聚合，

@@ -88,7 +88,7 @@ export function Picker({ data, activeRunId }: { data: Science125 | null; activeR
           </ul>
         </div>
       ) : (
-        <EmptyState title="题库不可读" hint="lib/science125.json 解析失败 · 自由输入仍可用" />
+        <EmptyState title="题库不可读" hint="Science-125 题库解析失败 · 自由输入仍可用" />
       )}
 
       <Field label="自由输入（与选题互斥 · ≤2000 字）">

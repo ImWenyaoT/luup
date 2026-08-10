@@ -32,7 +32,7 @@
 ## C. 多智能体闭环（对应评分：技术深度 30）
 
 - C1 最终交付由确定性 verifier 判定；Reviewer 必须通过独立检索或工具验证引入新信息，不能只重读同一文本。
-- C2 使用 Eve 主从式 multi-agent；不设 subagent 数量门槛。每个独立角色必须以信息增量或消融收益证明存在价值。
+- C2 使用 OpenAI Agents SDK 的 Scientist / Reviewer 两 specialist，由普通 Python Harness 主从式调度；不设 subagent 数量门槛。每个独立角色必须以信息增量或消融收益证明存在价值。
 - C3 上下文不完全共享：subagent 之间通过显式 handoff 工件（文件/结构化摘要）传递，trace 可证。
 - C4 循环有预算与终止条件（最大轮数 + 失败即如实报告失败，不硬编）。
 - C5 文献检索不引入 vector DB 或 embedding 基础设施；跨 run memory 只有在消融证明收益后才进入最小架构。
@@ -44,10 +44,10 @@
 
 ## E. 可复现性（对应评分：应用潜力 30 之代码可复现 10）
 
-- E0 问题源 = 官网维度 A 指定的《Science》125 前沿科学问题：lib/science125.json（权威来源抓取，恰 125 条）；pipeline 按题号取题，也接受自由问题输入。
+- E0 问题源 = 官网维度 A 指定的《Science》125 前沿科学问题：`backend/app/data/science125.json`（权威来源抓取，恰 125 条）；pipeline 按题号取题，也接受自由问题输入。
 - E1 单命令跑通 E2E：输入一个科学问题（默认取自 Science-125）→ 落盘完整《科学假设与研究计划》(JSON + Markdown) 于 runs/<ts>/。
 - E1b 批量能力：批量 runner 可按题号列表串行跑多题（MVP 验证 ≥2 题抽样；全量 125 题为提交期动作，非 MVP 门槛，预算由用户拍板）。
-- E2 `pnpm typecheck` 通过。
+- E2 迁移期旧栈 `pnpm typecheck`、Python 后端 pytest/Ruff/mypy、Vite 前端 typecheck/build 均通过；删除旧栈后只保留 Python + Vite 检查。
 - E3 run trace（各 agent 输入输出、master verdict、token 用量）落盘可查。
 
 ## G. 交付面

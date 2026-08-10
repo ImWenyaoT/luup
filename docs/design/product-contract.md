@@ -24,15 +24,15 @@
 
 1. **Scientist**：检索证据，提出假设并写成可验证的研究计划。
 2. **Reviewer**：通过独立检索或确定性工具引入新信息，指出证据、推导和验证设计的缺口。
-3. **Harness**：由 Eve 与少量 Luup 代码共同负责调度、预算、持久化和最终验收；Agent 的自我宣称不能决定通过。
+3. **Harness**：由普通 Python 控制流与 OpenAI Agents SDK 共同负责调度、预算、持久化和最终验收；Agent 的自我宣称不能决定通过。
 
-Eve 的 root 是薄管理者，不新增第四种认知角色。Scientist 是否需要再拆出 Literature Agent，必须由同预算消融实验证明；在此之前默认不拆。
+Harness 是确定性薄管理者，不是第三个 LLM Agent。Scientist 是否需要再拆出 Literature Agent，必须由同预算消融实验证明；在此之前默认不拆。
 
 ```text
 question → Scientist → verify → Reviewer → 最多一次返修 → final verify
 ```
 
-上下文默认不共享完整轨迹。只传问题、证据 ID、方案和具体失败项；Eve 已有的 session、usage 和执行状态不在 Luup 重建。
+上下文默认不共享完整轨迹。只传问题、证据、方案和具体失败项；Harness 只落可复算的 handoff trace、usage 和工件，不引入通用 workflow runtime。
 
 对用户只暴露三种状态：`working → passed | failed`。内部恢复所需事实继续从工件推导，不扩展成第二套业务状态机。
 
@@ -43,7 +43,7 @@ question → Scientist → verify → Reviewer → 最多一次返修 → final 
 - Qwen/Bailian 单一模型接线与调用凭证；
 - Science-125 题库、批量运行与断点续跑；
 - Proposal Schema、真实引用 B1–B4 和离线交付验证；
-- Eve 主从拓扑、独立上下文及可恢复执行；
+- OpenAI Agents SDK 两 specialist、独立上下文及文件工件恢复；
 - 基本桌面前端与测试 API，维护“选题/触发运行/查看结果”的核心路径。
 
 ### 先实验再决定
@@ -60,11 +60,11 @@ question → Scientist → verify → Reviewer → 最多一次返修 → final 
 - 删除每条 DAG 边都由 LLM master 重复认证的要求，能由 Schema 或 verifier 判断的交给代码；
 - 将多节点、每节点三轮返工收敛为一次 Reviewer 返修；
 - 前端/API 保留为团队主动选择的交付面，但不得反向增加 Agent 复杂度；不做移动端、无障碍、部署和实时通信专项；
-- 不新增消息总线、统一 trace、向量库、仿真环境或更多生命周期状态。
+- 不新增消息总线、通用 tracing 平台、向量库、仿真环境或更多生命周期状态；只保留 E3 要求的最小 JSONL handoff trace。
 
 ## 下一项实验
 
-先做 Agent 边界消融，不重写框架：在冻结题目和相同总步骤/token 预算下比较：
+先做 Agent 边界消融，不新增框架：在冻结题目和相同总步骤/token 预算下比较：
 
 - A：Scientist 自行检索、生成计划；
 - B：独立 Researcher 检索后向 Scientist 移交证据包。

@@ -1,4 +1,4 @@
-import bank from "./science125.json" with { type: "json" };
+import bank from "../backend/app/data/science125.json" with { type: "json" };
 import type { Science125 } from "./types.ts";
 
 type Raw = {
@@ -8,7 +8,7 @@ type Raw = {
 };
 
 /**
- * 题库数据（lib/science125.json）住在本模块旁边，构建期静态打包，无运行时 fs 读。
+ * 迁移期 oracle 与 Python 实现共享 backend/app/data/science125.json，无第二份题库。
  * 按 domain 分组保持文件里的首次出现顺序（题号本身就是按学科聚簇的）。
  */
 export function readScience125(): Science125 | null {

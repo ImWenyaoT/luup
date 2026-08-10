@@ -50,7 +50,7 @@ function readQuestion(arg: string | undefined): { question: string; source: stri
     }
     return { question: raw, source: "(argv)" };
   }
-  // 默认题从题库+模板派生（lib/science125.json 是唯一事实源，没有第二份默认题文件）
+  // 默认题从共享 Science-125 题库+模板派生，没有第二份默认题文件。
   const q = findQuestion(DEFAULT_QUESTION_ID);
   if (!q) throw new Error(`题库里没有第 ${DEFAULT_QUESTION_ID} 题`);
   return { question: science125Text(q), source: `science125 #${DEFAULT_QUESTION_ID}`, defaultId: DEFAULT_QUESTION_ID };

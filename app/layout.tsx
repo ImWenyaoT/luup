@@ -31,7 +31,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               ))}
             </nav>
             <span className="ml-auto hidden text-[11px] text-faint sm:block">
-              数据源：仓库 runs/ + lib/science125.json · 工件读取只读
+              数据源：仓库 runs/ + Science-125 题库 · 工件读取只读
             </span>
           </header>
           <main className="pt-4">{children}</main>
