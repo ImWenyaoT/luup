@@ -59,8 +59,8 @@ import { check, eq, report } from "./selftestHarness.ts";
 console.log("\n[M4/M5] 交付率与 Pass^2（数据源：仓库现有 runs/）");
 
 const all = readAllRunMetrics();
-// 仓库现有 14 个 run 目录（20260808-054611 … 20260810-052412）；batch-*.md 与 index.json 不是 run
-eq("扫到 14 个 run", all.length, 14);
+// 仓库现有 13 个 run 目录（20260808-054611 … 20260810-052412）；batch-*.md 与 index.json 不是 run
+eq("扫到 13 个 run", all.length, 13);
 check("run id 全部合法且倒序无关（升序排列）", all.every((r, i) => i === 0 || all[i - 1].id < r.id));
 
 const byId = new Map(all.map((r) => [r.id, r]));
@@ -74,11 +74,11 @@ eq("093646 如实报失败", m("20260808-093646").phase, "failed");
 eq("100004 报告 ALL PASS 但无 proposal.md → unsettled", m("20260808-100004").phase, "unsettled");
 check("100004 不可交付", !m("20260808-100004").deliverable);
 
-// M4：deliverable 的是 062829 / 065103 / 071315 / 134046 / 20260810-032527 / 20260810-052412 → 6/14
+// M4：deliverable 的是 062829 / 065103 / 071315 / 134046 / 20260810-032527 / 20260810-052412 → 6/13
 const dr = deliveryRate(all);
 eq("M4 分子 = 6", dr.delivered, 6);
-eq("M4 分母 = 14", dr.total, 14);
-eq("M4 交付率 = 6/14", Number(dr.rate!.toFixed(4)), 0.4286);
+eq("M4 分母 = 13", dr.total, 13);
+eq("M4 交付率 = 6/13", Number(dr.rate!.toFixed(4)), 0.4615);
 
 // 耗时可信度：meta.json 两端都有才算实测；mtime 兜底会被一次 git checkout 刷成假数
 check("134046 有 meta 起止时间", m("20260808-134046").metaTimed);
@@ -87,7 +87,7 @@ check("055459 没有 meta.json → 耗时不可信", !m("20260808-055459").metaT
 check("062829 是回填的 meta（起止同值 → 0 秒，不是真实墙钟）", m("20260808-062829").metaTimed);
 eq("062829 回填耗时为 0", m("20260808-062829").durationSec, 0);
 
-// M5：题号来自 meta.json（054611/055459/093646/100004/20260810-014001 无题号，不进配对）
+// M5：题号来自 meta.json（054611/055459/093646/100004 无题号，不进配对）
 const groups = groupByQuestion(all);
 eq("有题号的题数 = 3（q54 / q61 / q125）", groups.size, 3);
 eq("q61 有 7 个 run", groups.get(61)!.length, 7);

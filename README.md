@@ -109,5 +109,5 @@ pnpm eval:full  # 全链路：真跑一题 + 契约/离线验收 gates（≈20 �
 ## 文档
 
 - 架构与判据：`docs/design/architecture.md`、`docs/design/criteria.md`
-- 节点 instructions：`docs/design/prompts.md`（lib/agents/ 下为接线后的实体）
+- 节点 instructions：`lib/agents/{master,scientist,reviewer}.md`（与装配代码同址，即接线实体）
 - 赛题原文：`docs/specs/`
