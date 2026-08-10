@@ -1,38 +1,12 @@
-# 依赖、缓存与构建产物
-/node_modules/
-/.cache/
-/.pnpm-store/
-/.next/
-/.output/
-/.eve/
-out/
-*.tsbuildinfo
-next-env.d.ts
-
 # 环境与平台
 .env*
 !.env.example
-.vercel
 .DS_Store
-*.pem
-npm-debug.log*
-.pnpm-debug.log*
-
-# E2E 中间产物；docs/report/screenshots/ 是交付物，照常入库
-.playwright/
-playwright-report/
-/.mypy_cache/
-/.pytest_cache/
-/.ruff_cache/
-__pycache__/
-*.py[cod]
-
-# 运行期瞬态与派生缓存。边界纪律（architecture.md「存储裁决」）：
-# runs/ 与 memory/ 是 source of truth，永不 ignore；
-# 「删掉重算即可」的派生物才 ignore —— 判词见 lib/paths.ts 各常量注释。
-runs/.active.json
-runs/index.json
-runs/stats.md
 
 # 会话工具状态
 .claude/
+
+# 运行期瞬态。边界纪律（architecture.md「存储裁决」）：
+# runs/ 与 memory/ 是 source of truth，永不 ignore；
+# 只有「删掉重算即可」的瞬态才 ignore——现栈仅剩跨进程锁（backend/app/services/launch.py）。
+runs/.active.json
