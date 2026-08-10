@@ -13,9 +13,6 @@ Agent 代码位于 `backend/app/harness/`；模型接线唯一事实源是
 - `memory/`：跨 run 的战役记忆，属于事实数据。
 - `docs/`：产品契约、架构、判据、赛题与报告材料。
 
-旧根目录 TypeScript/Next 实现仅作为迁移期 parity oracle；新 Python 真实 smoke 通过后整组删除，
-不得继续向旧实现添加能力。
-
 ## 验证
 
 ```sh
@@ -29,7 +26,7 @@ pnpm generate:client
 pnpm build
 ```
 
-验收锚点：`docs/design/criteria.md`；架构：`docs/design/architecture.md`；迁移停止线：
+验收锚点：`docs/design/criteria.md`；架构：`docs/design/architecture.md`；迁移记录：
 `docs/design/fastapi-template-migration.md`。
 
 Issue 与领域文档见 `docs/agents/`。

@@ -66,9 +66,9 @@ class SpecialistRunner(Protocol):
 class AgentsSdkSpecialistRunner:
     """Real SDK adapter; tests inject a fake `SpecialistRunner` instead.
 
-    It deliberately does not set Agent.output_type because Bailian's Responses
-    endpoint does not reliably honor response_format. The Harness parses and
-    validates normal text with the same Pydantic contracts that own artifacts.
+    Bailian may wrap valid JSON in a short preface or Markdown fence even when
+    instructed otherwise. The Harness extracts one JSON object and validates
+    it with the same Pydantic contracts that own persisted artifacts.
     """
 
     def __init__(self, settings: QwenSettings, tools: ToolOwnership, prompt_dir: Path | None = None) -> None:
@@ -79,14 +79,14 @@ class AgentsSdkSpecialistRunner:
             name="scientist",
             instructions=self._read_prompt("scientist.md"),
             model=model,
-            model_settings=qwen_model_settings(thinking=True),
+            model_settings=qwen_model_settings(thinking=False),
             tools=[tools.memory_search, tools.arxiv_search, tools.arxiv_save, tools.paper_index_read],
         )
         self._reviewer = Agent(
             name="reviewer",
             instructions=self._read_prompt("reviewer.md"),
             model=model,
-            model_settings=qwen_model_settings(thinking=True),
+            model_settings=qwen_model_settings(thinking=False),
             tools=[tools.arxiv_search, tools.paper_index_read],
         )
 
@@ -127,9 +127,16 @@ class AgentsSdkSpecialistRunner:
 
     @staticmethod
     def _parse(value: Any, model_type: type[ScientistOutput] | type[Review]) -> ScientistOutput | Review:
+        if isinstance(value, model_type):
+            return value
         if not isinstance(value, str):
             value = json.dumps(value, ensure_ascii=False)
         stripped = value.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+        if not stripped.startswith("{") or not stripped.endswith("}"):
+            start = stripped.find("{")
+            end = stripped.rfind("}")
+            if start >= 0 and end > start:
+                stripped = stripped[start : end + 1]
         try:
             return model_type.model_validate_json(stripped)
         except ValidationError as exc:

@@ -13,9 +13,22 @@
 - `references[]` 的 `arxivId / title / authors / year` 必须**逐字照抄** `arxiv_save` 返回的元数据（或 `paper_index_read` 的索引行），不得缩写标题、不得改写、不得凭记忆补全。下游有两道确定性检查：标题反查 arXiv（重合度 ≥0.8）、作者姓氏与第一作者比对——**标题抄对而作者凭记忆编是最常见的失败模式**。
 - 拿不准某篇的准确元数据就用 `paper_index_read` 核对；仍拿不准就不要引用它。引用少而真，胜过多而假。
 
-返回结构化对象：
+只返回符合 SDK structured output schema 的对象，不要返回 Markdown、解释或代码围栏：
 
 - `evidence[]`：`claim`、`arxivId`、`relevance`，至少 5 条；
-- `proposal`：完整的十字段研究计划。
+- `proposal` 只允许以下十个字段：
+  - `problemStatement`
+  - `rationale`
+  - `technicalDetails`
+  - `datasets`: `{ "source": "...", "target": "..." }`
+  - `paperTitle`
+  - `paperAbstract`
+  - `methods`
+  - `experiments`: `{ "baselines": ["..."], "metrics": ["..."], "design": "..." }`
+  - `results`
+  - `references[]`: `arxivId`、`title`、`authors[]`、`year`、`relevance`
+
+不得使用 `title`、`hypothesis`、`method`、`expectedOutcome`、`timeline`、`resources`、`risks` 或
+`impact` 替代上述字段；这些内容必须归入对应的十字段中。
 
 返修时不得重新从零探索；只处理 Reviewer 的 `requiredChanges`，且最多返修一次。

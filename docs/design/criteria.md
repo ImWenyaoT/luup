@@ -1,7 +1,7 @@
 # luup MVP 验收判据
 
 赛题：XH-202619 赛道一·方向一·A《科学假设生成与研究计划设计》。
-本文件是 master 认证循环的唯一验收锚点。每项判据必须可核验（机器检查或 trace 证据），全部通过才算 MVP。
+本文件是 Harness 与维护者的唯一验收锚点。每项判据必须可核验（机器检查或 trace 证据），全部通过才算 MVP。
 
 官方要求与内部设计的边界见 [product-contract.md](product-contract.md)。官方事实不得由现有实现反推。
 
@@ -47,8 +47,8 @@
 - E0 问题源 = 官网维度 A 指定的《Science》125 前沿科学问题：`backend/app/data/science125.json`（权威来源抓取，恰 125 条）；pipeline 按题号取题，也接受自由问题输入。
 - E1 单命令跑通 E2E：输入一个科学问题（默认取自 Science-125）→ 落盘完整《科学假设与研究计划》(JSON + Markdown) 于 runs/<ts>/。
 - E1b 批量能力：批量 runner 可按题号列表串行跑多题（MVP 验证 ≥2 题抽样；全量 125 题为提交期动作，非 MVP 门槛，预算由用户拍板）。
-- E2 迁移期旧栈 `pnpm typecheck`、Python 后端 pytest/Ruff/mypy、Vite 前端 typecheck/build 均通过；删除旧栈后只保留 Python + Vite 检查。
-- E3 run trace（各 agent 输入输出、master verdict、token 用量）落盘可查。
+- E2 Python 后端 pytest/Ruff/mypy、OpenAPI client 生成检查、Vite 前端 typecheck/build 均通过。
+- E3 run trace（各 agent 输入输出、Reviewer 结论、verifier 结果、token 用量）落盘可查。
 
 ## G. 交付面
 
@@ -91,4 +91,4 @@
 
 ## 终审流程
 
-master（本会话）逐项核对 A–E：机器可验项跑脚本，judge 项亲自读产物。任何一项不过 → 定位责任层 → 打回对应实现 → 重跑。全过后才允许宣布 MVP 达成。
+维护者逐项核对 A–E：机器可验项跑脚本，judge 项亲自读产物。任何一项不过 → 定位责任层 → 打回对应实现 → 重跑。全过后才允许宣布 MVP 达成。

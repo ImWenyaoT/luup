@@ -110,7 +110,14 @@ def build_search_query(query: str) -> str:
         raise ArxivError("检索词为空")
     if FIELD_PREFIX_RE.search(value):
         return value
-    return f'all:"{value.replace(chr(34), " ").strip()}"'
+    terms = [
+        term
+        for term in re.findall(r"[A-Za-z0-9][A-Za-z0-9.+-]*", value)
+        if term.upper() not in {"AND", "OR", "NOT"}
+    ]
+    if not terms:
+        raise ArxivError("检索词没有可用 token")
+    return " AND ".join(f"all:{term}" for term in terms[:10])
 
 
 def _tag(element: element_tree.Element, name: str) -> str:

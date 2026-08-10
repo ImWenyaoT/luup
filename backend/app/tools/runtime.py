@@ -20,6 +20,7 @@ from .memory import search_memory
 from .papers import RunPaperStore
 
 MAX_SCIENTIST_SEARCH_INTENTS = 2
+MAX_REVIEWER_SEARCH_INTENTS = 3
 
 
 class SearchIntentLimitError(RuntimeError):
@@ -35,6 +36,12 @@ class _ScientistBudget:
     used: int = 0
 
 
+@dataclass
+class _ReviewerBudget:
+    attempts: int = 0
+    successful_new_searches: int = 0
+
+
 class LuupTools:
     """The concrete tool set for a single run.
 
@@ -47,7 +54,7 @@ class LuupTools:
         self._campaign_memory_dir = campaign_memory_dir
         self._arxiv = arxiv or ArxivClient()
         self._budget: ContextVar[_ScientistBudget | None] = ContextVar("luup_scientist_budget", default=None)
-        self._reviewer_searches: ContextVar[int | None] = ContextVar("luup_reviewer_searches", default=None)
+        self._reviewer_budget: ContextVar[_ReviewerBudget | None] = ContextVar("luup_reviewer_budget", default=None)
         self._actor: ContextVar[str | None] = ContextVar("luup_tool_actor", default=None)
         self._search_cache: dict[str, list[dict[str, object]]] = {}
         self._failed_queries: set[str] = set()
@@ -69,15 +76,16 @@ class LuupTools:
 
     @asynccontextmanager
     async def reviewer_scope(self) -> AsyncIterator[None]:
-        token = self._reviewer_searches.set(0)
+        token = self._reviewer_budget.set(_ReviewerBudget())
         actor_token = self._actor.set("reviewer")
         try:
             yield
-            if (self._reviewer_searches.get() or 0) < 1:
+            budget = self._reviewer_budget.get()
+            if budget is None or budget.successful_new_searches < 1:
                 raise ReviewerSearchRequiredError("Reviewer 必须执行至少一次独立的新 arXiv 检索。")
         finally:
             self._actor.reset(actor_token)
-            self._reviewer_searches.reset(token)
+            self._reviewer_budget.reset(token)
 
     async def search(self, query: str, max_results: int = 10, sort_by: str = "relevance") -> dict[str, object]:
         normalized = " ".join(query.lower().split())
@@ -97,6 +105,11 @@ class LuupTools:
             if budget.used >= MAX_SCIENTIST_SEARCH_INTENTS:
                 raise SearchIntentLimitError(f"Scientist 单次运行最多 {MAX_SCIENTIST_SEARCH_INTENTS} 个检索意图。")
             budget.used += 1
+        reviewer_budget = self._reviewer_budget.get()
+        if reviewer_budget is not None:
+            if reviewer_budget.attempts >= MAX_REVIEWER_SEARCH_INTENTS:
+                raise SearchIntentLimitError(f"Reviewer 单次运行最多 {MAX_REVIEWER_SEARCH_INTENTS} 个检索意图。")
+            reviewer_budget.attempts += 1
         try:
             papers = await self._arxiv.search(query, max_results=max_results, sort_by=sort_by)
         except Exception:
@@ -108,9 +121,8 @@ class LuupTools:
         new_count = len(result_ids - self._scientist_seen_ids)
         if actor == "scientist":
             self._scientist_seen_ids.update(result_ids)
-        reviewer_searches = self._reviewer_searches.get()
-        if reviewer_searches is not None and new_count > 0:
-            self._reviewer_searches.set(reviewer_searches + 1)
+        if reviewer_budget is not None and new_count > 0:
+            reviewer_budget.successful_new_searches += 1
         self._search_cache[key] = results
         self._append_tool_event(query=query, count=len(results), deduplicated=False, new_count=new_count)
         return {"query": query, "count": len(results), "results": results, "deduplicated": False}

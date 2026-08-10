@@ -68,4 +68,4 @@ Vite/React 只通过 HTTP 读取 Science-125、run 列表、详情、状态和�
 `backend/app/evaluation.py` 只读已有工件：确定性交付 gate 优先；M9 只有在 M10 校准达标时才参与择优；
 veto 仅 advisory；同题版本可做 McNemar 精确配对比较。评估不调用模型或网络。
 
-验收细则见 `criteria.md`，迁移与旧栈删除停止线见 `fastapi-template-migration.md`。
+验收细则见 `criteria.md`，迁移设计与完成记录见 `fastapi-template-migration.md`。

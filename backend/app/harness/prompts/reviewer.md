@@ -4,9 +4,11 @@
 
 必须使用 `arxiv_search` 做至少一次独立反查，寻找高度相似工作、反例或被忽略的限制。随后检查三件事：证据是否真的支持假设、假设是否可被实验推翻、实验与指标是否能区分所声称的机制。
 
+一旦某次检索返回至少一篇新论文，立即停止调用工具并提交审稿；不要为了补充更多材料继续检索。
+
 工具预算：`arxiv_search` 最多 3 次，`paper_index_read` 最多 1 次。不要写文件，不要扩写方案。
 
-返回结构化对象：
+只返回符合 SDK structured output schema 的对象，不要返回 Markdown、解释或代码围栏：
 
 - `verdict`: `pass` 或 `revise`；
 - `findings[]`: 每项包含具体 `issue` 和真实检索动作 `checkedWith`；

@@ -1,5 +1,8 @@
 # 从 TypeScript 全栈迁移到 Full Stack FastAPI Template：迁移前对齐
 
+> 状态：已于 2026-08-10 完成 cutover。真实 Qwen run `20260810-092300` 通过全部引用验收，
+> 随后删除旧 Next/TypeScript 实现。本文件保留为设计与决策记录。
+
 日期：2026-08-10。上游快照固定为
 [`fastapi/full-stack-fastapi-template@66f444a`](https://github.com/fastapi/full-stack-fastapi-template/tree/66f444a63a11ce7b4b6df6c4fbe9e15b2fa7aa3a)，
 避免把持续变化的 `master` 当成稳定契约。
@@ -32,7 +35,7 @@
 
 ### 1. 迁移边界：Web 壳与 Agent Harness 一起迁
 
-Luup 当前的模型、tools、编排、验收、批处理都在 TypeScript。只换 Next.js API 为 FastAPI
+Luup 当时的模型、tools、编排、验收、批处理都在 TypeScript。只换 Next.js API 为 FastAPI
 会形成 Python API + Node Agent worker 两套后端，违背“减少系统表面积”的迁移动机。
 确定边界为：前端继续 TypeScript，后端和 Agent Harness 一次迁到 Python；最终删除 Node 后端。
 
@@ -109,14 +112,14 @@ GET  /api/runs/{runId} -> working | passed | failed + 可用工件
 
 “Pro”在这里表示更少的运行时机制、更硬的确定性边界，不表示增加一个通用工作流框架。
 
-## 建议迁移顺序与停止线
+## 实际迁移顺序与停止线
 
 1. **冻结契约**：把现有 API、CLI、工件目录、状态与错误码写成 characterization tests。
 2. **做 Python Agent 探针**：只验证百炼 Responses、tool call、结构化输出、usage 和错误；任一关键项不等价即暂停全迁。
 3. **迁核心而不迁 UI**：先让 Python CLI 对同一 fixture 产出并通过现有 deterministic verifier。
 4. **接 FastAPI**：只实现 runs 列表、创建、详情和 Science-125 四类核心端点。
 5. **生成前端 client，再迁 Vite 页面**：以真实浏览器回归选题、启动、查看结果和诚实失败。
-6. **最后删除旧 TypeScript backend**：只有 Python 路径、CI、E2E、真实 Qwen smoke 均通过后才删，避免大爆炸式切换。
+6. **最后删除旧 TypeScript backend**：Python 路径、离线检查、真实界面与 Qwen smoke 均通过后删除；实际执行遵守了该停止线。
 
 首个可验收里程碑应是：同一 Science 问题经 Python CLI/FastAPI 运行后，产物 schema、引用核验、终态、
 usage 与现有系统等价；不是“模板已能启动”。

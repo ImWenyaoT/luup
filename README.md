@@ -23,9 +23,6 @@ runs/      运行中 append-only、终态后不可变的证据链与工件（事
 memory/    跨 run 的战役记忆（事实数据）
 ```
 
-旧根目录 Next/TypeScript 实现仅是迁移期 parity oracle。新 Python 真实 smoke 通过后会整组删除；
-不得继续向旧实现添加能力。停止线见 `docs/design/fastapi-template-migration.md`。
-
 ## 本地运行
 
 ```sh
@@ -84,5 +81,5 @@ pnpm build
 - 产品契约：`docs/design/product-contract.md`
 - 当前架构：`docs/design/architecture.md`
 - 验收标准：`docs/design/criteria.md`
-- 迁移设计与删除停止线：`docs/design/fastapi-template-migration.md`
+- 迁移设计与完成记录：`docs/design/fastapi-template-migration.md`
 - 赛题原文：`docs/specs/`

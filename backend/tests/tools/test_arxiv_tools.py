@@ -12,7 +12,7 @@ import pytest
 from app.domain.contracts import Evidence, Proposal, ScientistOutput
 from app.domain.references import PaperCard
 from app.harness.specialists import backfill_reference_metadata
-from app.tools.arxiv import ArxivClient, ArxivError, ArxivGate, ArxivPaper
+from app.tools.arxiv import ArxivClient, ArxivError, ArxivGate, ArxivPaper, build_search_query
 from app.tools.runtime import LuupTools, ReviewerSearchRequiredError, SearchIntentLimitError
 from app.tools.verifier import FileReferenceVerifier
 
@@ -41,6 +41,10 @@ class FakeHttp:
 
 def no_wait_gate() -> ArxivGate:
     return ArxivGate(min_interval=0)
+
+
+def test_plain_language_search_uses_token_and_not_an_overly_strict_phrase() -> None:
+    assert build_search_query("electron capture supernova") == "all:electron AND all:capture AND all:supernova"
 
 
 async def test_arxiv_retries_one_transient_error_then_parses_authoritative_atom() -> None:
@@ -129,6 +133,20 @@ async def test_reviewer_search_must_return_information_not_seen_by_scientist(tmp
     with pytest.raises(ReviewerSearchRequiredError):
         async with tools.reviewer_scope():
             await tools.search("same paper under a different query")
+
+
+async def test_reviewer_budget_survives_sdk_style_child_tasks(tmp_path: Path) -> None:
+    tools = LuupTools(
+        tmp_path / "run",
+        tmp_path / "memory",
+        ArxivClient(FakeHttp([ATOM, ATOM, ATOM]), no_wait_gate()),
+    )
+
+    async with tools.reviewer_scope():
+        for index in range(3):
+            await asyncio.create_task(tools.search(f"independent query {index}"))
+        with pytest.raises(SearchIntentLimitError):
+            await asyncio.create_task(tools.search("fourth query"))
 
 
 async def test_save_index_memory_and_deterministic_verifier_use_only_run_local_cards(tmp_path: Path) -> None:

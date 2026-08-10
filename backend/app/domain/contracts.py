@@ -1,6 +1,6 @@
 """《科学假设与研究计划》的 Pydantic 契约。
 
-字段约束与原 TypeScript `lib/agents/contracts.ts` 对齐。模型默认忽略未知字段，
+字段约束来自迁移时冻结的 Luup 工件契约。模型默认忽略未知字段，
 这是 Zod `z.object()` 默认 strip unknown keys 的等价行为；不要在这一层把未来的
 Agent 输出兼容性改成额外字段错误。
 """
