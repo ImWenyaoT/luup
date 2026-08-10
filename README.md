@@ -60,10 +60,9 @@ UV_CACHE_DIR=.cache/uv uv run python -m app.cli --question "<科学问题>"
 
 ```sh
 cd backend
-UV_CACHE_DIR=.cache/uv uv run pytest -q
+UV_CACHE_DIR=.cache/uv uv run pytest -q --cov=app --cov-fail-under=85
 UV_CACHE_DIR=.cache/uv uv run ruff check app tests scripts
 UV_CACHE_DIR=.cache/uv uv run ty check app scripts
-UV_CACHE_DIR=.cache/uv uv run mypy app scripts
 UV_CACHE_DIR=.cache/uv uv run python -m app.evaluation --runs-root ../runs
 
 cd ../frontend
