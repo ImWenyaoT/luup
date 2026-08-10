@@ -5,8 +5,11 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from app.agent.orchestrator import Harness
-from app.agent.specialists import RevisionRequest, SpecialistResult
+from app.agent.specialists import ContractViolationError, RevisionRequest, SpecialistResult
+from app.agent.tools.runtime import ReviewerSearchRequiredError
 from app.domain.contracts import Evidence, Proposal, Review, ReviewFinding, ScientistOutput
 from app.services.runs import RunService
 
@@ -57,29 +60,52 @@ def scientist(title: str = "A falsifiable astronomy plan") -> ScientistOutput:
 
 
 class FakeSpecialists:
-    def __init__(self, outputs: Sequence[ScientistOutput], review: Review) -> None:
+    def __init__(self, outputs: Sequence[ScientistOutput], review: Review, *, thinking: bool = False) -> None:
         self.outputs = list(outputs)
         self.review = review
+        self.thinking = thinking
         self.revisions: list[RevisionRequest | None] = []
+        self.prior_attempts: list[Sequence[str]] = []
         self.reviewer_inputs: list[tuple[str, Sequence[Evidence], Proposal]] = []
 
-    async def run_scientist(self, question: str, revision: RevisionRequest | None = None) -> SpecialistResult:
+    async def run_scientist(
+        self, question: str, revision: RevisionRequest | None = None, prior_attempts: Sequence[str] = ()
+    ) -> SpecialistResult:
         self.revisions.append(revision)
-        return SpecialistResult(output=self.outputs.pop(0), usage={"total_tokens": 12})
+        self.prior_attempts.append(tuple(prior_attempts))
+        return SpecialistResult(output=self.outputs.pop(0), usage={"total_tokens": 12}, thinking=self.thinking)
 
     async def run_reviewer(self, question: str, evidence: Sequence[Evidence], proposal: Proposal) -> SpecialistResult:
         self.reviewer_inputs.append((question, evidence, proposal))
-        return SpecialistResult(output=self.review, usage={"total_tokens": 8})
+        return SpecialistResult(output=self.review, usage={"total_tokens": 8}, thinking=self.thinking)
 
 
 class FakeVerifier:
-    def __init__(self, ok: bool) -> None:
+    def __init__(self, ok: bool, *, infra_error: bool = False) -> None:
         self.ok = ok
+        self.infra_error = infra_error
         self.proposals: list[Proposal] = []
 
     async def verify(self, current: Proposal, run_dir: Path) -> Mapping[str, Any]:
         self.proposals.append(current)
-        return {"ok": self.ok, "failed": [] if self.ok else ["B4.2401.12340"]}
+        return {
+            "ok": self.ok,
+            "failed": [] if self.ok else ["B4.2401.12340"],
+            "infraError": self.infra_error,
+        }
+
+
+class ExplodingSpecialists:
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+
+    async def run_scientist(
+        self, question: str, revision: RevisionRequest | None = None, prior_attempts: Sequence[str] = ()
+    ) -> SpecialistResult:
+        raise self.error
+
+    async def run_reviewer(self, question: str, evidence: Sequence[Evidence], proposal: Proposal) -> SpecialistResult:
+        raise self.error
 
 
 async def test_pass_writes_handoff_artifacts_and_never_repairs(tmp_path: Path) -> None:
@@ -128,6 +154,23 @@ async def test_revise_allows_exactly_one_directed_repair_then_verifies_repaired_
     assert len((outcome.run_dir / "usage.jsonl").read_text().splitlines()) == 3
 
 
+@pytest.mark.parametrize("thinking", [False, True], ids=["thinking-off", "thinking-on"])
+async def test_usage_rows_record_the_thinking_flag_the_specialists_actually_used(
+    tmp_path: Path, thinking: bool
+) -> None:
+    """The Harness may not assert `thinking=True` while the model settings say otherwise."""
+    review = Review(
+        verdict="pass", findings=[ReviewFinding(issue="checked", checkedWith="arXiv search")], requiredChanges=[]
+    )
+    specialists = FakeSpecialists([scientist()], review, thinking=thinking)
+
+    outcome = await Harness(specialists, FakeVerifier(ok=True)).run("question", tmp_path / "run")
+
+    rows = [json.loads(line) for line in (outcome.run_dir / "usage.jsonl").read_text().splitlines()]
+    assert [row["agent"] for row in rows] == ["scientist", "reviewer"]
+    assert all(row["thinking"] is thinking for row in rows)
+
+
 async def test_verifier_rejection_is_honest_failure_without_a_second_review_or_repair(tmp_path: Path) -> None:
     review = Review(
         verdict="pass", findings=[ReviewFinding(issue="checked", checkedWith="arXiv search")], requiredChanges=[]
@@ -142,6 +185,106 @@ async def test_verifier_rejection_is_honest_failure_without_a_second_review_or_r
     assert len(specialists.reviewer_inputs) == 1
     assert "B4.2401.12340" in (outcome.run_dir / "FAILED.md").read_text()
     assert "结果: 1/1 FAILED" in (outcome.run_dir / "verification-report.md").read_text()
+
+
+async def test_prior_campaign_attempts_are_injected_into_the_opening_scientist_message(tmp_path: Path) -> None:
+    """The cross-run dead ends only stop repeating if the first dispatch carries them."""
+    review = Review(
+        verdict="pass", findings=[ReviewFinding(issue="checked", checkedWith="arXiv search")], requiredChanges=[]
+    )
+    specialists = FakeSpecialists([scientist()], review)
+    attempts = ("[2026-08-10] FAILED | 四通道混合模型 | B2 标题重合度不足",)
+
+    outcome = await Harness(specialists, FakeVerifier(ok=True)).run(
+        "question", tmp_path / "run", prior_attempts=attempts
+    )
+
+    assert specialists.prior_attempts == [attempts]
+    traced = [json.loads(line) for line in (outcome.run_dir / "trace.jsonl").read_text().splitlines()]
+    assert traced[0]["payload"]["priorAttempts"] == list(attempts)
+
+
+async def test_a_repair_that_changes_nothing_fails_closed_instead_of_shipping(tmp_path: Path) -> None:
+    """Nobody verified `requiredChanges` were applied; an unchanged proposal is a silent no-op."""
+    review = Review(
+        verdict="revise",
+        findings=[ReviewFinding(issue="missing control", checkedWith="arXiv search: counterexample")],
+        requiredChanges=["add a negative control"],
+    )
+    specialists = FakeSpecialists([scientist("an unchanged plan"), scientist("an unchanged plan")], review)
+    verifier = FakeVerifier(ok=True)
+
+    outcome = await Harness(specialists, verifier).run("question", tmp_path / "run")
+
+    assert outcome.status == "failed"
+    assert outcome.classification == "revision_no_change"
+    assert verifier.proposals == []  # A no-op repair never reaches the deterministic verifier.
+    assert "revision_no_change" in (outcome.run_dir / "FAILED.md").read_text(encoding="utf-8")
+
+
+async def test_the_repair_request_carries_the_reviewer_findings_not_only_the_demands(tmp_path: Path) -> None:
+    """`requiredChanges` says what to do; `findings` says what was checked and why it fails."""
+    review = Review(
+        verdict="revise",
+        findings=[ReviewFinding(issue="no negative control", checkedWith="arXiv search: control designs")],
+        requiredChanges=["add a negative control"],
+    )
+    specialists = FakeSpecialists([scientist("before repair"), scientist("after repair")], review)
+
+    outcome = await Harness(specialists, FakeVerifier(ok=True)).run("question", tmp_path / "run")
+
+    assert outcome.status == "passed"
+    repair = specialists.revisions[1]
+    assert repair is not None
+    assert repair.findings == tuple(review.findings)
+    traced = [json.loads(line) for line in (outcome.run_dir / "trace.jsonl").read_text().splitlines()]
+    revision_input = next(row for row in traced if row["phase"] == "revision_input")
+    assert revision_input["payload"]["findings"] == [
+        {"issue": "no negative control", "checkedWith": "arXiv search: control designs"}
+    ]
+
+
+async def test_a_reference_rejection_is_classified_apart_from_an_arxiv_outage(tmp_path: Path) -> None:
+    """M4 cannot separate environmental from quality failures unless the artifact says which it was."""
+    review = Review(
+        verdict="pass", findings=[ReviewFinding(issue="checked", checkedWith="arXiv search")], requiredChanges=[]
+    )
+
+    quality = await Harness(FakeSpecialists([scientist()], review), FakeVerifier(ok=False)).run(
+        "question", tmp_path / "quality"
+    )
+    outage = await Harness(
+        FakeSpecialists([scientist()], review), FakeVerifier(ok=False, infra_error=True)
+    ).run("question", tmp_path / "outage")
+
+    assert quality.classification == "verifier_refs"
+    assert "verifier_refs" in (quality.run_dir / "FAILED.md").read_text(encoding="utf-8")
+    assert outage.classification == "infra_error"
+    assert "infra_error" in (outage.run_dir / "FAILED.md").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        pytest.param(
+            ReviewerSearchRequiredError("Reviewer 必须执行至少一次独立的新 arXiv 检索。"),
+            "reviewer_no_new_evidence",
+            id="reviewer-brought-no-new-evidence",
+        ),
+        pytest.param(
+            ContractViolationError("模型返回未通过契约校验：..."), "contract_violation", id="uncontracted-model-output"
+        ),
+        pytest.param(RuntimeError("arXiv transient failure"), "infra_error", id="anything-else-is-environmental"),
+    ],
+)
+async def test_a_failing_specialist_is_classified_by_its_typed_error(
+    tmp_path: Path, error: Exception, expected: str
+) -> None:
+    outcome = await Harness(ExplodingSpecialists(error), FakeVerifier(ok=True)).run("question", tmp_path / "run")
+
+    assert outcome.status == "failed"
+    assert outcome.classification == expected
+    assert expected in (outcome.run_dir / "FAILED.md").read_text(encoding="utf-8")
 
 
 async def test_run_service_recognizes_harness_pass_and_failure(tmp_path: Path) -> None:

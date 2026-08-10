@@ -20,11 +20,15 @@ class FileReferenceVerifier:
         store = RunPaperStore(run_dir)
         local = verify_offline_references(proposal.references, store.cards(), store.ids())
         checks: list[ReferenceCheck] = list(local.checks)
+        infra_error = False
         try:
             resolved = await self._arxiv.get_many([reference.arxiv_id for reference in proposal.references])
             titles = {paper.arxiv_id: paper.title for paper in resolved}
             checks.extend(verify_resolved_titles(proposal.references, titles))
         except Exception as exc:
+            # An unreachable arXiv is an outage, not a fabricated reference. M4 has to
+            # be able to drop these runs from the quality denominator.
+            infra_error = True
             checks.append(ReferenceCheck(id="B2.resolve", passed=False, detail=f"arXiv 独立反查失败：{exc}"))
         failed = [check.id for check in checks if not check.passed]
         return {
@@ -33,4 +37,5 @@ class FileReferenceVerifier:
             "papersInRun": len(store.ids()),
             "checks": [check.model_dump(by_alias=True) for check in checks],
             "failed": failed,
+            "infraError": infra_error,
         }

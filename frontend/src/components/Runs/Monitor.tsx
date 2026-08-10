@@ -37,27 +37,12 @@ export function Monitor({
 
   return (
     <div className="flex flex-col gap-6">
-      <p className="flex items-center gap-2 text-[13px]">
-        <i
-          aria-hidden
-          className="size-1.5 shrink-0 rounded-[1px] bg-primary motion-safe:animate-pulse"
-        />
-        <span className="font-medium text-primary">实时推进</span>
-        {degraded ? (
-          <span className="text-muted-foreground">
-            与本地服务失联，已继续重试
-          </span>
-        ) : null}
-      </p>
+      {degraded ? (
+        <p className="text-[13px] text-muted-foreground">
+          与本地服务失联，已继续重试
+        </p>
+      ) : null}
       <Spine nodes={view.nodes} select={() => undefined} />
-      <div className="flex flex-col gap-2">
-        <h3 className="text-[13px] font-medium text-muted-foreground">
-          console.log · 末 {view.logTail.length} 行
-        </h3>
-        <pre className="max-h-64 overflow-auto rounded-sm border bg-muted/50 p-3 font-mono text-xs leading-5">
-          {view.logTail.join("\n") || "（等待子进程输出…）"}
-        </pre>
-      </div>
     </div>
   )
 }

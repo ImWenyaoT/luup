@@ -8,10 +8,16 @@ from typing import cast
 
 import httpx
 import pytest
+from agents.tool_context import ToolContext
 
 from app.agent.specialists import backfill_reference_metadata
 from app.agent.tools.arxiv import ArxivClient, ArxivError, ArxivGate, ArxivPaper, build_search_query
-from app.agent.tools.runtime import LuupTools, ReviewerSearchRequiredError, SearchIntentLimitError
+from app.agent.tools.runtime import (
+    LuupTools,
+    ReviewerSearchRequiredError,
+    SearchIntentLimitError,
+    tool_error_message,
+)
 from app.agent.verifier import FileReferenceVerifier
 from app.domain.contracts import Evidence, Proposal, ScientistOutput
 from app.domain.references import PaperCard
@@ -92,6 +98,127 @@ async def test_scientist_search_has_two_unique_intents_and_same_run_deduplicatio
     assert first["deduplicated"] is False
     assert duplicate["deduplicated"] is True
     assert len(http.urls) == 2
+
+
+def test_every_tool_hands_the_model_a_description_and_documented_arguments(tmp_path: Path) -> None:
+    """An empty tool description is the single biggest measured error source in ch4."""
+    tools = LuupTools(tmp_path / "run", tmp_path / "memory")
+
+    exposed = {
+        tool.name: tool
+        for tool in (tools.memory_search, tools.arxiv_search, tools.arxiv_save, tools.paper_index_read)
+    }
+
+    assert set(exposed) == {"memory_search", "arxiv_search", "arxiv_save", "paper_index_read"}
+    for name, tool in exposed.items():
+        assert len(tool.description.strip()) >= 40, name
+    assert "arXiv" in exposed["arxiv_search"].description
+    search_properties = exposed["arxiv_search"].params_json_schema["properties"]
+    assert all(search_properties[argument].get("description") for argument in ("query", "max_results", "sort_by"))
+    assert "2401.12345" in exposed["arxiv_save"].params_json_schema["properties"]["arxiv_ids"]["description"]
+
+
+async def test_search_reports_the_rewritten_query_the_new_count_and_the_remaining_budget(tmp_path: Path) -> None:
+    """The model cannot correct a silent AND rewrite, or ration a budget, it cannot see."""
+    http = FakeHttp([ATOM])
+    tools = LuupTools(tmp_path / "run", tmp_path / "memory", ArxivClient(http, no_wait_gate()))
+
+    async with tools.scientist_scope():
+        first = await tools.search("electron capture supernova")
+        cached = await tools.search("electron   capture supernova")
+
+    assert first["arxivQuery"] == "all:electron AND all:capture AND all:supernova"
+    assert first["newCount"] == 1
+    assert first["searchIntentsUsed"] == 1
+    assert first["searchIntentsMax"] == 2
+    assert "hint" not in first
+    assert cached["deduplicated"] is True
+    assert cached["arxivQuery"] == first["arxivQuery"]
+    assert cached["searchIntentsUsed"] == 1
+
+
+async def test_a_search_that_returns_only_known_papers_says_so_instead_of_looking_successful(
+    tmp_path: Path,
+) -> None:
+    """`newCount` used to reach only the log, while the Reviewer was judged on it."""
+    tools = LuupTools(tmp_path / "run", tmp_path / "memory", ArxivClient(FakeHttp([ATOM, ATOM]), no_wait_gate()))
+
+    async with tools.scientist_scope():
+        await tools.search("first angle")
+        repeated = await tools.search("second angle onto the same paper")
+
+    assert repeated["newCount"] == 0
+    assert "换角度" in str(repeated["hint"])
+
+
+def test_a_budget_error_tells_the_model_to_stop_searching_rather_than_try_again() -> None:
+    """The SDK default ends a terminal budget error with "Please try again", which burns turns."""
+    budget = tool_error_message(None, SearchIntentLimitError("Scientist 单次运行最多 2 个检索意图。"))
+    outage = tool_error_message(None, ArxivError("arXiv transient failure after 2 attempts"))
+
+    assert "预算已尽" in budget
+    assert "不要再调用检索" in budget
+    assert "Please try again" not in budget
+    assert "不要原样重试" in outage
+
+
+async def test_the_budget_error_message_is_what_the_sdk_hands_back_to_the_model(tmp_path: Path) -> None:
+    tools = LuupTools(tmp_path / "run", tmp_path / "memory", ArxivClient(FakeHttp([ATOM, ATOM]), no_wait_gate()))
+
+    arguments = json.dumps({"query": "a third angle"})
+
+    async with tools.scientist_scope():
+        await tools.search("first angle")
+        await tools.search("second angle")
+        answer = await tools.arxiv_search.on_invoke_tool(
+            ToolContext(
+                context=None, tool_name="arxiv_search", tool_call_id="call-1", tool_arguments=arguments
+            ),
+            arguments,
+        )
+
+    assert "预算已尽" in answer
+
+
+async def test_each_of_the_four_tools_leaves_one_tool_event(tmp_path: Path) -> None:
+    """`memory_search` used to leave zero trace, so nobody could tell whether it ran."""
+    run_dir = tmp_path / "run"
+    (tmp_path / "memory").mkdir()
+    (tmp_path / "memory" / "lessons.md").write_text("stellar mechanism was useful\n", encoding="utf-8")
+    tools = LuupTools(run_dir, tmp_path / "memory", ArxivClient(FakeHttp([ATOM, ATOM]), no_wait_gate()))
+
+    async with tools.scientist_scope():
+        await tools.search("stellar mechanism")
+        await tools.save(["2401.12345", "bad-id"])
+        tools.read_index()
+        tools.read_memory("stellar")
+
+    events = [json.loads(line) for line in (run_dir / "tool-events.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert [event["tool"] for event in events] == [
+        "arxiv_search",
+        "arxiv_save",
+        "paper_index_read",
+        "memory_search",
+    ]
+    assert all(event["agent"] == "scientist" for event in events)
+    assert events[1]["savedCount"] == 1 and events[1]["rejectedCount"] == 1
+    assert events[3]["hitCount"] == 1 and events[3]["enabled"] is True
+
+
+async def test_the_memory_off_arm_disables_the_tool_without_a_missing_directory(tmp_path: Path) -> None:
+    """The ablation arm must be a switch, not a deleted directory."""
+    (tmp_path / "memory").mkdir()
+    (tmp_path / "memory" / "lessons.md").write_text("stellar mechanism was useful\n", encoding="utf-8")
+    tools = LuupTools(tmp_path / "run", None, ArxivClient(FakeHttp([]), no_wait_gate()))
+
+    result = tools.read_memory("stellar")
+
+    assert result == {
+        "enabled": False,
+        "hitCount": 0,
+        "hits": [],
+        "hint": "长期记忆未启用；这不是错误，照常走 arxiv_search。",
+    }
 
 
 async def test_reviewer_must_make_at_least_one_new_search(tmp_path: Path) -> None:
@@ -176,11 +303,35 @@ async def test_save_index_memory_and_deterministic_verifier_use_only_run_local_c
 
     assert saved["savedCount"] == 1
     assert saved["rejectedIds"] == ["bad-id"]
-    assert "2401.12345" in tools.read_index()["index"]
-    assert "deterministic index summary" in tools.read_index()["index"]
+    index = str(tools.read_index()["index"])
+    assert "| arXiv id | 年份 | 第一作者 | 标题 | 一句话摘要 |" in index  # B4 是按第一作者判的。
+    assert "| 2401.12345 | 2024 | Ada Lovelace | Observed Mechanism |" in index
+    assert "deterministic index summary" in index
     assert memory["hitCount"] == 1
     assert verification["ok"] is False  # Four proposal references are not in this run's saved cards.
     assert "B1.2401.12346" in verification["failed"]
+
+
+async def test_an_arxiv_outage_during_verification_is_flagged_as_infrastructure_not_bad_references(
+    tmp_path: Path,
+) -> None:
+    """B2.resolve failing because arXiv is down is not the same evidence as a fabricated title."""
+
+    class OfflineArxiv:
+        async def get_many(self, raw_ids: Sequence[str]) -> list[ArxivPaper]:
+            raise ArxivError("arXiv transient failure after 2 attempts")
+
+    verification = await FileReferenceVerifier(cast(ArxivClient, OfflineArxiv())).verify(_proposal(), tmp_path / "run")
+
+    assert verification["ok"] is False
+    assert verification["infraError"] is True
+    assert "B2.resolve" in verification["failed"]
+
+
+async def test_a_complete_offline_verification_reports_no_infrastructure_error(tmp_path: Path) -> None:
+    verification = await FileReferenceVerifier(cast(ArxivClient, FakeArxiv([]))).verify(_proposal(), tmp_path / "run")
+
+    assert verification["infraError"] is False
 
 
 def test_saved_card_backfill_overrides_model_metadata_but_leaves_unknown_id_for_b1() -> None:
@@ -209,6 +360,60 @@ def test_saved_card_backfill_overrides_model_metadata_but_leaves_unknown_id_for_
     assert backfilled.proposal.references[0].authors == ["Ada Lovelace"]
     assert backfilled.proposal.references[0].year == 2024
     assert backfilled.proposal.references[1] == proposal.references[1]
+
+
+def test_a_silent_backfill_overwrite_is_reported_as_a_mismatch() -> None:
+    """ch5 log_mismatch: the override that saves the run is also the signal the model drifted."""
+    proposal = _proposal()
+    first = proposal.references[0].model_copy(
+        update={"title": "invented title", "authors": ["Invented Author"], "year": 1999}
+    )
+    proposal = proposal.model_copy(update={"references": [first, *proposal.references[1:]]})
+    output = ScientistOutput(
+        evidence=[
+            Evidence(claim=f"claim {index}", arxivId=f"2401.1234{index}", relevance="evidence") for index in range(5)
+        ],
+        proposal=proposal,
+    )
+    recorded: list[dict[str, object]] = []
+
+    backfill_reference_metadata(
+        output,
+        {
+            "2401.12345": PaperCard(
+                arxiv_id="2401.12345", title="Observed Mechanism", authors=["Ada Lovelace"], year=2024
+            )
+        },
+        on_mismatch=recorded.append,
+    )
+
+    assert len(recorded) == 1
+    assert recorded[0]["arxivId"] == "2401.12345"
+    assert recorded[0]["fields"] == ["title", "authors", "year"]
+    assert recorded[0]["before"] == {"title": "invented title", "authors": ["Invented Author"], "year": 1999}
+    assert recorded[0]["after"] == {"title": "Observed Mechanism", "authors": ["Ada Lovelace"], "year": 2024}
+
+
+def test_a_backfill_that_changes_nothing_reports_no_mismatch() -> None:
+    output = ScientistOutput(
+        evidence=[
+            Evidence(claim=f"claim {index}", arxivId=f"2401.1234{index}", relevance="evidence") for index in range(5)
+        ],
+        proposal=_proposal(),
+    )
+    recorded: list[dict[str, object]] = []
+
+    backfill_reference_metadata(
+        output,
+        {
+            "2401.12345": PaperCard(
+                arxiv_id="2401.12345", title="Observed Mechanism", authors=["Ada Lovelace"], year=2024
+            )
+        },
+        on_mismatch=recorded.append,
+    )
+
+    assert recorded == []
 
 
 async def _value(value: str) -> str:

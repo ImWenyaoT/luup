@@ -13,7 +13,7 @@ from agents.usage import Usage
 from pydantic import BaseModel
 
 from app.agent import specialists as specialists_module
-from app.agent.model import QwenSettings
+from app.agent.model import QWEN_THINKING_ENABLED, QwenSettings
 from app.agent.specialists import (
     REVIEWER_MAX_TURNS,
     SCIENTIST_MAX_TURNS,
@@ -44,6 +44,7 @@ class SpyTools:
         self.arxiv_save = "tool:arxiv_save"
         self.paper_index_read = "tool:paper_index_read"
         self.events: list[str] = []
+        self.tool_events: list[dict[str, Any]] = []
         self.cards_calls = 0
         self._cards = dict(cards or {})
         self._reviewer_scope_error = reviewer_scope_error
@@ -70,12 +71,21 @@ class SpyTools:
         self.cards_calls += 1
         return self._cards
 
+    def append_tool_event(self, *, tool: str, **fields: Any) -> None:
+        self.tool_events.append({"tool": tool, **fields})
+
 
 def _sdk_result(final_output: Any, usage: Any = _ABSENT) -> SimpleNamespace:
-    """`RunResult` in openai-agents 0.19.4 has no `usage` attribute; `_ABSENT` is that real shape."""
-    result = SimpleNamespace(final_output=final_output)
+    """`RunResult` carries token accounting on `context_wrapper.usage`, never on the result itself.
+
+    `_ABSENT` reproduces the shape the adapter used to read by mistake: a result object
+    with no `usage` attribute at all, which is why usage.jsonl came out empty.
+    """
+    result = SimpleNamespace(final_output=final_output, context_wrapper=SimpleNamespace(usage=None))
     if usage is not _ABSENT:
-        result.usage = usage
+        result.context_wrapper.usage = usage
+    else:
+        result.usage = "a decoy that must never be read"
     return result
 
 
@@ -201,6 +211,24 @@ async def test_scientist_run_happens_inside_the_scientist_scope_and_backfills_sa
     assert result.output.proposal.references[1].title == "Observed Mechanism"
 
 
+async def test_a_metadata_override_during_backfill_reaches_the_tool_event_log(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The override rescues the run; the record is what tells a reviewer the model drifted."""
+    tools = SpyTools({"2401.12340": PaperCard(arxiv_id="2401.12340", title="Card Title", authors=["G. Hopper"], year=2020)})
+    runner, _ = _install_runner(monkeypatch, tools, final_output=json.dumps(_scientist_payload()))
+
+    await runner.run_scientist("why do some stars explode?")
+
+    assert len(tools.tool_events) == 1
+    event = tools.tool_events[0]
+    assert event["tool"] == "reference_backfill"
+    assert event["arxivId"] == "2401.12340"
+    assert event["fields"] == ["title", "authors", "year"]
+    assert event["before"]["title"] == "Observed Mechanism"
+    assert event["after"]["title"] == "Card Title"
+
+
 async def test_revision_request_is_sent_as_previous_proposal_and_required_changes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -210,15 +238,17 @@ async def test_revision_request_is_sent_as_previous_proposal_and_required_change
     revision = RevisionRequest(
         proposal=Proposal.model_validate(_proposal_payload()),
         required_changes=("add a negative control", "cite one 2024 observation"),
+        findings=(ReviewFinding(issue="no negative control", checkedWith="arXiv search: control designs"),),
     )
 
     await runner.run_scientist("why do some stars explode?", revision)
 
     assert sdk_run.await_count == 1
     message = json.loads(_await_args(sdk_run)[0][1])
-    assert set(message) == {"question", "previousProposal", "requiredChanges"}
+    assert set(message) == {"question", "previousProposal", "requiredChanges", "findings"}
     assert message["requiredChanges"] == ["add a negative control", "cite one 2024 observation"]
     assert message["previousProposal"]["paperTitle"] == "A Falsifiable Test Plan"
+    assert message["findings"] == [{"issue": "no negative control", "checkedWith": "arXiv search: control designs"}]
 
 
 async def test_scientist_agent_owns_its_prompt_and_all_four_tools(
@@ -318,7 +348,7 @@ class _PydanticUsage(BaseModel):
 @pytest.mark.parametrize(
     ("usage", "expected"),
     [
-        pytest.param(_ABSENT, None, id="absent-attribute-is-the-real-runresult-shape"),
+        pytest.param(_ABSENT, None, id="context-wrapper-without-usage"),
         pytest.param(None, None, id="explicit-none"),
         pytest.param(_PydanticUsage(total_tokens=7), {"total_tokens": 7}, id="pydantic-usage-is-dumped"),
         pytest.param("41 tokens", {"value": "41 tokens"}, id="unknown-shape-is-stringified"),
@@ -337,16 +367,40 @@ async def test_usage_is_normalized_for_the_usage_jsonl_artifact(
     assert result.usage == expected
 
 
-async def test_sdk_usage_dataclass_is_carried_through_by_its_fields(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`agents.usage.Usage` has no `model_dump`; the `__dict__` branch must keep the token totals."""
+async def test_usage_comes_from_the_run_context_wrapper_and_stays_json_serializable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`agents.usage.Usage` nests detail dataclasses; usage.jsonl needs plain JSON, not a repr."""
     tools = SpyTools()
     runner, _ = _install_runner(
-        monkeypatch, tools, final_output=json.dumps(_review_payload()), usage=Usage(requests=1, total_tokens=99)
+        monkeypatch,
+        tools,
+        final_output=json.dumps(_review_payload()),
+        usage=Usage(requests=1, input_tokens=40, output_tokens=59, total_tokens=99),
     )
     proposal = Proposal.model_validate(_proposal_payload())
 
     result = await runner.run_reviewer("why do some stars explode?", [], proposal)
 
     assert result.usage is not None
-    assert result.usage["total_tokens"] == 99
     assert result.usage["requests"] == 1
+    assert result.usage["input_tokens"] == 40
+    assert result.usage["output_tokens"] == 59
+    assert result.usage["total_tokens"] == 99
+    assert result.usage["output_tokens_details"] == {"reasoning_tokens": 0}
+    assert json.loads(json.dumps(dict(result.usage)))["total_tokens"] == 99
+
+
+async def test_the_reported_thinking_flag_is_the_one_actually_sent_to_bailian(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One truth for `enable_thinking`: the same constant reaches ModelSettings and usage.jsonl."""
+    tools = SpyTools()
+    runner, sdk_run = _install_runner(monkeypatch, tools, final_output=json.dumps(_review_payload()))
+    proposal = Proposal.model_validate(_proposal_payload())
+
+    result = await runner.run_reviewer("why do some stars explode?", [], proposal)
+
+    agent = _await_args(sdk_run)[0][0]
+    assert agent.model_settings.extra_body == {"enable_thinking": QWEN_THINKING_ENABLED}
+    assert result.thinking is QWEN_THINKING_ENABLED

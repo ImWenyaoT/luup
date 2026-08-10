@@ -85,6 +85,29 @@ def test_runs_list_and_detail_match_frontend_camel_case_contract(tmp_path: Path)
     ]
 
 
+def test_the_paper_list_reads_both_the_legacy_and_the_author_bearing_index(tmp_path: Path) -> None:
+    """Committed runs carry a four-column index; new runs add 第一作者 for B4."""
+    run = write_run(tmp_path, "20260810-120000")
+    (run / "memory" / "index.md").write_text(
+        "| arXiv id | 年份 | 第一作者 | 标题 | 一句话摘要 |\n"
+        "| --- | --- | --- | --- | --- |\n"
+        "| 2401.12345 | 2024 | Ada Lovelace | Paper | First sentence. |\n",
+        encoding="utf-8",
+    )
+
+    detail = client_for(tmp_path).get("/api/runs/20260810-120000")
+
+    assert detail.json()["papers"] == [
+        {
+            "arxivId": "2401.12345",
+            "year": "2024",
+            "title": "Paper",
+            "oneline": "First sentence.",
+            "file": "memory/papers/2401.12345.md",
+        }
+    ]
+
+
 def test_status_and_artifact_views_are_read_only_and_whitelisted(tmp_path: Path) -> None:
     write_run(tmp_path)
     client = client_for(tmp_path)
@@ -96,6 +119,8 @@ def test_status_and_artifact_views_are_read_only_and_whitelisted(tmp_path: Path)
     assert status.status_code == 200
     assert status.json()["status"] == "passed"
     assert "questionText" not in status.json()
+    # 子进程 stdout 进 DEVNULL，console.log 永远不存在：读模型不再假装有它。
+    assert "logTail" not in status.json()
     assert artifact.status_code == 200
     assert artifact.headers["content-type"].startswith("text/plain")
     assert artifact.text == "# A proposal\n"

@@ -88,10 +88,12 @@ class RunPaperStore:
             "",
             "由 Python Harness 从 memory/papers/ 自动重建，请勿手改。",
             "",
-            "| arXiv id | 年份 | 标题 | 一句话摘要 |",
-            "| --- | --- | --- | --- |",
+            # 第一作者在表内：B4 按第一作者姓氏判，模型没有它就只能凭记忆填。
+            "| arXiv id | 年份 | 第一作者 | 标题 | 一句话摘要 |",
+            "| --- | --- | --- | --- | --- |",
             *[
-                f"| {card.arxiv_id} | {card.year or '?'} | {_cell(card.title)} | {_cell(oneline)} |"
+                f"| {card.arxiv_id} | {card.year or '?'} | {_cell(_first_author(card))} "
+                f"| {_cell(card.title)} | {_cell(oneline)} |"
                 for card, oneline in cards
             ],
             "",
@@ -150,6 +152,10 @@ def _first_sentence(summary: str) -> str:
     if len(text) <= 240:
         return text
     return text[:239].rstrip() + "…"
+
+
+def _first_author(card: PaperCard) -> str:
+    return card.authors[0] if card.authors else "(unknown)"
 
 
 def _cell(value: str) -> str:

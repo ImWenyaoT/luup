@@ -215,8 +215,6 @@ class ArxivClient:
         found: dict[str, ArxivPaper] = {}
         for start in range(0, len(ids), 50):
             chunk = ids[start : start + 50]
-            if not chunk:
-                continue
             params = urlencode({"id_list": ",".join(chunk), "max_results": len(chunk)})
             for paper in await self._fetch(f"{ARXIV_API_URL}?{params}"):
                 found[paper.arxiv_id] = paper

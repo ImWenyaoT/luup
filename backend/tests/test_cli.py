@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock
@@ -19,17 +20,28 @@ from app.services.runs import RunService
 
 
 class SuccessfulHarness:
-    async def run(self, question: str, run_dir: Path) -> RunOutcome:
+    async def run(self, question: str, run_dir: Path, prior_attempts: Sequence[str] = ()) -> RunOutcome:
         run_dir.mkdir(parents=True, exist_ok=True)
         (run_dir / "proposal.md").write_text("# Proposal\n", encoding="utf-8")
         (run_dir / "verification-report.md").write_text("结果: ALL PASS\n", encoding="utf-8")
         return RunOutcome(status="passed", run_dir=run_dir)
 
 
+class RecordingHarness(SuccessfulHarness):
+    def __init__(self) -> None:
+        self.prior_attempts: tuple[str, ...] = ()
+
+    async def run(self, question: str, run_dir: Path, prior_attempts: Sequence[str] = ()) -> RunOutcome:
+        self.prior_attempts = tuple(prior_attempts)
+        return await super().run(question, run_dir)
+
+
 class FailingHarness:
-    async def run(self, question: str, run_dir: Path) -> RunOutcome:
+    async def run(self, question: str, run_dir: Path, prior_attempts: Sequence[str] = ()) -> RunOutcome:
         run_dir.mkdir(parents=True, exist_ok=True)
-        return RunOutcome(status="failed", run_dir=run_dir, failures=("B1.2401.12345",))
+        return RunOutcome(
+            status="failed", run_dir=run_dir, failures=("B1.2401.12345",), classification="verifier_refs"
+        )
 
 
 def with_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -123,8 +135,73 @@ async def test_a_failed_pipeline_exits_one_and_settles_the_run_with_its_failures
 
     assert code == 1
     assert json.loads(capsys.readouterr().out)["failures"] == ["B1.2401.12345"]
-    assert json.loads((run_dir / "exit.json").read_text(encoding="utf-8"))["exitCode"] == 1
+    exit_fact = json.loads((run_dir / "exit.json").read_text(encoding="utf-8"))
+    assert exit_fact["exitCode"] == 1
+    assert exit_fact["classification"] == "verifier_refs"  # M4 must tell quality failures from outages.
     assert json.loads((run_dir / "meta.json").read_text(encoding="utf-8"))["exitCode"] == 1
+
+
+async def test_a_cli_run_can_carry_a_science125_id_so_the_evaluation_can_see_it(tmp_path: Path) -> None:
+    """CLI runs used to have no questionId, which kept every one of them out of M11."""
+    run_dir = tmp_path / "runs" / "20260810-010203"
+    (tmp_path / "memory").mkdir()
+
+    await run_cli("a scientific question", tmp_path, run_dir, harness=SuccessfulHarness(), question_id=61)
+
+    meta = json.loads((run_dir / "meta.json").read_text(encoding="utf-8"))
+    assert meta["questionId"] == 61
+    assert meta["memoryArm"] == "on"
+
+
+async def test_the_memory_off_arm_is_labelled_and_writes_nothing_to_campaign_memory(tmp_path: Path) -> None:
+    """An ablation with no arm label in the artifact is an uncomparable table row."""
+    run_dir = tmp_path / "runs" / "20260810-010203"
+    (tmp_path / "memory").mkdir()
+
+    await run_cli(
+        "a scientific question", tmp_path, run_dir, harness=SuccessfulHarness(), question_id=61, memory=False
+    )
+
+    assert json.loads((run_dir / "meta.json").read_text(encoding="utf-8"))["memoryArm"] == "off"
+    assert not (tmp_path / "memory" / "log.md").exists()
+    assert not (tmp_path / "memory" / "questions").exists()
+
+
+async def test_a_finished_run_is_appended_to_campaign_memory_and_the_next_run_is_told(tmp_path: Path) -> None:
+    """Write-back plus dispatch injection is the whole point of a campaign memory."""
+    memory = tmp_path / "memory"
+    memory.mkdir()
+    first = tmp_path / "runs" / "20260810-010203"
+    second = tmp_path / "runs" / "20260810-010204"
+    recording = RecordingHarness()
+
+    await run_cli("a scientific question", tmp_path, first, harness=SuccessfulHarness(), question_id=61)
+    await run_cli("a scientific question", tmp_path, second, harness=recording, question_id=61)
+
+    assert "run | q61 | SUCCESS" in (memory / "log.md").read_text(encoding="utf-8")
+    assert len(recording.prior_attempts) == 1
+    assert "20260810-010203" in recording.prior_attempts[0]
+
+
+async def test_the_question_id_is_taken_from_the_launcher_meta_when_not_passed(tmp_path: Path) -> None:
+    """The HTTP launcher already wrote questionId; the CLI must reuse it, not lose the memory link."""
+    memory = tmp_path / "memory"
+    memory.mkdir()
+    run_dir = tmp_path / "runs" / "20260810-010203"
+    run_dir.mkdir(parents=True)
+    (run_dir / "meta.json").write_text(json.dumps({"questionId": 54}), encoding="utf-8")
+
+    await run_cli("a scientific question", tmp_path, run_dir, harness=SuccessfulHarness())
+
+    assert (memory / "questions" / "q54.md").is_file()
+
+
+async def test_a_passed_run_records_no_failure_classification(tmp_path: Path) -> None:
+    run_dir = tmp_path / "runs" / "20260810-010203"
+
+    await run_cli("a scientific question", tmp_path, run_dir, harness=SuccessfulHarness())
+
+    assert "classification" not in json.loads((run_dir / "exit.json").read_text(encoding="utf-8"))
 
 
 async def test_the_default_harness_is_the_real_sdk_adapter_wired_to_this_run(
@@ -144,7 +221,9 @@ async def test_the_default_harness_is_the_real_sdk_adapter_wired_to_this_run(
         def __init__(self, runner: Any, verifier: Any) -> None:
             captured["harness"] = (runner, verifier)
 
-        async def run(self, question: str, harness_run_dir: Path) -> RunOutcome:
+        async def run(
+            self, question: str, harness_run_dir: Path, prior_attempts: Sequence[str] = ()
+        ) -> RunOutcome:
             captured["question"] = question
             return RunOutcome(status="passed", run_dir=harness_run_dir)
 
@@ -168,10 +247,24 @@ def test_main_passes_the_parsed_arguments_through_and_returns_the_pipeline_exit_
     pipeline = AsyncMock(return_value=1)
     monkeypatch.setattr(cli_module, "run_cli", pipeline)
 
-    code = main(["--question", "why do stars explode?", "--repo-root", str(tmp_path), "--run-dir", str(tmp_path / "r")])
+    code = main(
+        [
+            "--question",
+            "why do stars explode?",
+            "--repo-root",
+            str(tmp_path),
+            "--run-dir",
+            str(tmp_path / "r"),
+            "--science125-id",
+            "61",
+            "--no-memory",
+        ]
+    )
 
     assert code == 1
-    pipeline.assert_awaited_once_with("why do stars explode?", tmp_path, tmp_path / "r")
+    pipeline.assert_awaited_once_with(
+        "why do stars explode?", tmp_path, tmp_path / "r", question_id=61, memory=False
+    )
 
 
 def test_main_defaults_the_repo_root_to_the_parent_of_the_backend_working_directory(
@@ -184,7 +277,7 @@ def test_main_defaults_the_repo_root_to_the_parent_of_the_backend_working_direct
     monkeypatch.chdir(tmp_path / "backend")
 
     assert main(["--question", "why do stars explode?"]) == 0
-    pipeline.assert_awaited_once_with("why do stars explode?", tmp_path, None)
+    pipeline.assert_awaited_once_with("why do stars explode?", tmp_path, None, question_id=None, memory=True)
 
 
 def test_the_question_argument_is_required(capsys) -> None:
