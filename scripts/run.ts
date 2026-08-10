@@ -183,8 +183,8 @@ function buildPrompt(question: string, runDir: string, questionId: number | null
   return [
     /* ---- 稳定段：125 次 run 逐字相同，与 instructions 一起构成可复用前缀 ---- */
     "运行一次完整的科研假设流水线。",
-    "按 instructions 里的 DAG 与循环控制硬规格执行：literature → hypothesis → critique → proposal，",
-    "逐节点认证并落盘 verdicts/，最后必须跑 verify_references 并拿到 ok:true 才算成功；",
+    "按 instructions 里的最小流程执行：scientist → reviewer → 最多一次 scientist 返修 → verify，",
+    "只落 evidence.md、proposal.json、review.json；最后必须跑 verify_references 并拿到 ok:true 才算成功；",
     "否则写 FAILED.md 如实报失败。",
     "",
     /* ---- 易变段：每 run 都不同，一律后置 ---- */

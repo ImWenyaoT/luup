@@ -2,6 +2,8 @@
 
 赛题 XH-202619 赛道一·方向一·A。验收锚点见 [criteria.md](criteria.md)。
 
+> 本文记录当前 Ultra 实现，不能作为需求来源。Pro 简化的目标、保留项与删除候选以 [product-contract.md](product-contract.md) 为准；在消融实验完成前不继续扩张本文架构。
+
 ## 一句话
 
 master agent 以判据清单驱动 goal-driven loop，监督一组互不信任的 subagent 按 DAG 产出《科学假设与研究计划》；文献证据只认 arXiv API 实检结果；不合格就打回，预算耗尽就如实报失败。

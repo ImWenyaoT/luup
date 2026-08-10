@@ -29,22 +29,16 @@ function hintFor(r: ArtifactWriteResult): string {
 export default defineTool({
   description:
     "Write one artifact into this run's directory. Paths are ALWAYS relative to the run directory; " +
-    "absolute paths and `..` are rejected. Canonical artifacts: `evidence.md`, `hypotheses.md`, " +
-    "`critique.json`, `proposal.json`, `verdicts/<node>-r<round>.json`, `memory/rejected.md`, `FAILED.md`. " +
-    "`proposal.json` is validated against the 10-field proposal contract, `critique.json` against the " +
-    "critique contract and `verdicts/*.json` against the verdict contract: an invalid document is NOT " +
+    "absolute paths and `..` are rejected. Canonical artifacts: `evidence.md`, `proposal.json`, " +
+    "`review.json`, `FAILED.md`. `proposal.json` and `review.json` are schema-validated: an invalid document is NOT " +
     "written — you get the exact field errors back and the draft is kept as `<path>.rejected.json`. " +
-    "Verdicts are ALSO budget-checked: each node gets at most 3 semantic rounds, and a 4th one is refused " +
-    "outright (`deniedBy` names the cap that governs — a refusal means that node is circuit-broken, so stop " +
-    "retrying it and write FAILED.md). Every verdict write returns `budget` with `semanticRounds`, " +
-    "`formatRetries` and `remaining` — read the balance from there instead of counting rounds yourself. " +
     "`memory/papers/**` and `memory/index.md` are owned by `arxiv_save` and cannot be written here. " +
     "The result carries `runDir`, the absolute path of this run's directory — report it in your final summary.",
   inputSchema: z.object({
     path: z
       .string()
       .min(1)
-      .describe('Run-relative path, e.g. "evidence.md" or "verdicts/literature-r1.json".'),
+      .describe('Run-relative path, e.g. "evidence.md", "proposal.json" or "review.json".'),
     content: z.string().describe("Full file content. Writing replaces the file."),
   }),
   async execute({ path, content }) {
