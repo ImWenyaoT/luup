@@ -6,10 +6,10 @@
 |---|----|----|-----------|
 | 1 | 封面与摘要 | 1 | 题目/队伍/一句话：判据驱动的对抗式多智能体 AI Scientist |
 | 2 | 研究问题与解决方法 | 2 | 维度A任务拆解；核心主张：引用可信度=机制层约束而非 prompt 约束（四道防线）；对比常见 RAG 方案的取舍 |
-| 3 | 架构设计与讲解 | 4 | DAG 图（architecture.md）；master 认证循环（verdicts/熔断/fail-closed/负结果记忆）；上下文工程（显式 handoff、不共享上下文判据、文件式 memory L0/L1/L2）；eve slot 布局与 subagent 定义 |
+| 3 | 架构设计与讲解 | 4 | DAG 图（architecture.md）；master 认证循环（verdicts/熔断/fail-closed/负结果记忆）；上下文工程（显式 handoff、不共享上下文判据、文件式 memory L0/L1/L2）；OpenAI Agents SDK 装配（agent-as-tool 派工、typed 回传、maxTurns 熔断映射） |
 | 4 | 基于 Qwen 的模型层 | 2 | 百炼 responses API 接线与兼容层（enable_thinking 实测）；thinking 分档策略；调用凭证截图（百炼控制台 + usage.jsonl） |
 | 5 | 真实案例 | 3 | Q61 完整案例：输入→evidence→hypotheses→critique→proposal.md（节选）→verification-report ALL PASS；作者虚构被 B4 拦截的对照案例（负样本展示验证有效性） |
-| 6 | 质量保障 | 2 | criteria.md 判据体系；确定性验收器（B1-B4）；eve evals（smoke+full-run gate）；goal-driven E2E 方法论 |
+| 6 | 质量保障 | 2 | criteria.md 判据体系；确定性验收器（B1-B4）；eval 脚本（smoke + full-run gate）；goal-driven E2E 方法论 |
 | 7 | API 与前端入口 | 2 | 可调用测试 API（端点表+curl 示例）；前端截图（仪表台/run 详情/reasoning spine 时间线） |
 | 8 | 125 题结果文档 | 1 | 批量 runner（断点续跑）说明；全量结果文档的组织方式（runs 索引 + 逐题 proposal.md 汇编）；完成度统计表 |
 | 9 | 可复现性与源码 | 1 | 仓库结构；pnpm 三命令复现；运行成本表（token/时长）|

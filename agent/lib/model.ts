@@ -3,32 +3,41 @@
  *
  * Wire facts this file encodes (all verified against the live endpoint):
  * - The workspace endpoint speaks the OpenAI **Responses** protocol at
- *   `POST {QWEN_BASE_URL}/responses`, so we use `@ai-sdk/openai`'s
- *   `.responses()` variant rather than chat completions.
+ *   `POST {QWEN_BASE_URL}/responses`, so agents get an `OpenAIResponsesModel`
+ *   built on an `openai` client with a custom baseURL — never chat completions
+ *   (criteria D2: 不换协议).
  * - `qwen3.7-plus` has thinking **on** by default and reasoning can be >90% of
  *   the output tokens. The switch that actually works is the Bailian-specific
  *   body field `enable_thinking` (the OpenAI-standard `reasoning.effort` is
- *   silently ignored by this endpoint). Since it is not part of the AI SDK's
- *   Responses request schema, we inject it through a `fetch` compatibility
- *   wrapper.
+ *   silently ignored by this endpoint). It is not part of the standard
+ *   Responses request schema, so we inject it through a `fetch` compatibility
+ *   wrapper — the same single place that logs requests and tees usage.
  * - `thinking_budget` is accepted but must be a positive integer, so it cannot
  *   be used to reach zero reasoning; only `enable_thinking:false` can.
  *
- * eve constraints respected here (see the eve capability map):
- * - The model instance is constructed in a module imported by `agent.ts`, so the
- *   compiler can record a module source ref.
- * - No `throw` at module top level: `agent.ts` is really executed at build time,
- *   where credentials may be absent.
+ * @openai/agents wiring:
+ * - Every agent receives an explicit `Model` instance from {@link qwenModel};
+ *   per SDK semantics this bypasses the default provider entirely, so the
+ *   OPENAI_API_KEY-based defaults never engage.
+ * - Tracing is disabled process-wide below: the meta package installs an
+ *   OpenAI tracing exporter as an import side effect, and without an
+ *   OPENAI_API_KEY it logs an error on every flush.
+ * - Clients are constructed lazily on first use: entrypoints (scripts, web
+ *   API child processes) load `.env` at startup, and lazy construction means
+ *   module import order cannot race ahead of that.
  */
-import { createOpenAI } from "@ai-sdk/openai";
-import type { LanguageModel } from "ai";
+import OpenAI from "openai";
+import { OpenAIResponsesModel, setTracingDisabled } from "@openai/agents";
+import type { Model } from "@openai/agents";
 import { resolveRunDir } from "./runContext.ts";
+
+setTracingDisabled(true);
 
 /**
  * Context window for the qwen3.x `-plus` / `-max` line. Bailian does not expose
- * this through the OpenAI-compatible `/models` route and these models are absent
- * from the AI Gateway catalog, so every `defineAgent` must pass it explicitly or
- * compilation fails.
+ * this through the OpenAI-compatible `/models` route. With eve gone this no
+ * longer feeds a framework knob; it is the sizing basis for the per-agent
+ * `maxTurns` caps (see agent/agent.ts: 轮数上限 × 窗口 ≈ 原 token 熔断额度).
  */
 export const QWEN_CONTEXT_WINDOW_TOKENS = 131_072;
 
@@ -60,7 +69,7 @@ function requestLoggingEnabled(): boolean {
 
 /**
  * Rewrites the outgoing Responses request so Bailian-only knobs ride along with
- * the AI SDK's standard body. Also the single place that can log the resolved
+ * the SDK's standard body. Also the single place that can log the resolved
  * URL, which is how we prove requests land on `/responses`.
  */
 function createCompatFetch(thinking: boolean): typeof globalThis.fetch {
@@ -148,36 +157,48 @@ async function teeUsage(clone: Response, thinking: boolean): Promise<void> {
   }
 }
 
-function createProvider(thinking: boolean) {
-  return createOpenAI({
-    // Becomes `routing.provider` in the compiled manifest; keeps routing
-    // `external`, i.e. never through the Vercel AI Gateway.
-    name: "dashscope",
-    baseURL: process.env.QWEN_BASE_URL ?? "",
-    apiKey: process.env.QWEN_API_KEY ?? "",
-    fetch: createCompatFetch(thinking),
-  });
+/**
+ * 懒构造的 openai client，`enable_thinking` 两档各一个（开关烤在 fetch 包装里）。
+ * 懒 = 第一次真正要用时才读 QWEN_* 环境变量，入口脚本先 `loadEnvFile` 再跑即可；
+ * 静态装配（selftest-agents，不发请求）在无 .env 环境下也能构造 agent。
+ */
+const clients = new Map<string, OpenAI>();
+
+export function qwenClient(thinking: boolean): OpenAI {
+  const key = thinking ? "thinking" : "plain";
+  let c = clients.get(key);
+  if (!c) {
+    c = new OpenAI({
+      baseURL: process.env.QWEN_BASE_URL ?? "",
+      apiKey: process.env.QWEN_API_KEY ?? "",
+      fetch: createCompatFetch(thinking),
+    });
+    clients.set(key, c);
+  }
+  return c;
 }
 
-// Two providers, because `enable_thinking` is baked into the fetch wrapper.
-const thinkingProvider = createProvider(true);
-const nonThinkingProvider = createProvider(false);
+/**
+ * 档位决策（纯函数，selftest-rescue 直接测它）：
+ * 救援通道专用覆盖 —— 批跑对 status=failed 的题重跑一轮时，run-batch.ts 用
+ * `--rescue-model=<id>` 把档位经 LUUP_MODEL_ID 注入子进程，整条流水线随之升档。
+ * 只盖**默认档** —— 显式传入的 modelId（judge 自己定档，见 scripts/judgeClient.ts）
+ * 优先，救援轮不会顺手改判分器。
+ */
+export function resolveQwenModelId(opts: QwenModelOptions = {}): string {
+  return opts.modelId ?? (process.env.LUUP_MODEL_ID?.trim() || QWEN_DEFAULT_MODEL_ID);
+}
 
 /**
  * The Qwen model every luup agent should use.
  *
  * @example
- * defineAgent({
+ * new Agent({
+ *   name: "literature",
  *   model: qwenModel(),                   // fast, no chain of thought
- *   modelContextWindowTokens: QWEN_CONTEXT_WINDOW_TOKENS,
  * });
  */
-export function qwenModel(opts: QwenModelOptions = {}): LanguageModel {
+export function qwenModel(opts: QwenModelOptions = {}): Model {
   const { thinking = false } = opts;
-  // 救援通道专用覆盖：批跑对 status=failed 的题重跑一轮时，run-batch.ts 用 `--rescue-model=<id>`
-  // 把档位经 LUUP_MODEL_ID 注入子进程，整条流水线随之升档。只盖**默认档** —— 显式传入的
-  // modelId（judge 自己定档，见 scripts/judgeClient.ts）优先，救援轮不会顺手改判分器。
-  const modelId = opts.modelId ?? (process.env.LUUP_MODEL_ID?.trim() || QWEN_DEFAULT_MODEL_ID);
-  const provider = thinking ? thinkingProvider : nonThinkingProvider;
-  return provider.responses(modelId);
+  return new OpenAIResponsesModel(qwenClient(thinking), resolveQwenModelId(opts));
 }

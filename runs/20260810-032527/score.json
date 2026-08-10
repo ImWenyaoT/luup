@@ -1,0 +1,142 @@
+{
+  "dimensions": {
+    "falsifiability": {
+      "level": 3,
+      "claims": [
+        {
+          "quote": "预期结果显示，对于典型大质量恒星，物质抛射不对称性贡献约 60-80% 的 kick 速度，中微子辐射贡献剩余部分",
+          "attribution": "speculative",
+          "note": "明确标注为'预期结果'，给出了比例范围但未说明何种观测结果会否证此假设（如中微子贡献超过40%是否算否证）"
+        },
+        {
+          "quote": "综合两者，预期 kick 速度分布峰值在 200-300 km/s，与观测到的年轻脉冲星速度分布（平均约 300 km/s）量级一致",
+          "attribution": "speculative",
+          "note": "给出了可观测的量级范围，但未明确阈值——若峰值落在150 km/s或400 km/s是否构成否证未说明"
+        },
+        {
+          "quote": "使用 50 个模拟样本进行统计，标准误差可控制在 10% 以内，足以区分不同贡献机制的主导地位",
+          "attribution": "speculative",
+          "note": "给出了统计精度目标，但'区分主导地位'的判定规则未量化"
+        }
+      ]
+    },
+    "coherence": {
+      "level": 2,
+      "claims": [
+        {
+          "quote": "针对批判环节的 requiredChanges 逐条回应：(1) 修正 astro-ph/0103015 标题为 'Supernova Explosions and Neutron Star Formation' 以匹配 arXiv 元数据；(2) 修正 astro-ph/0402200 标题为 'Neutron Star Formation and Birth Properties' 并更正第一作者为 Hans-Thomas Janka；...",
+          "attribution": "unsourced",
+          "note": "rationale 整段为参考文献元数据修正说明，与科学问题的推导链无关，属于形式性回应而非科学论证"
+        },
+        {
+          "quote": "使用 FLASH 代码进行三维辐射流体动力学模拟，结合 neutrino transport 模块，采用 adaptive mesh refinement 技术解析激波结构，后处理分析 ejecta 不对称性和动量分布",
+          "attribution": "supported",
+          "note": "技术路线与问题对应，但未论证为何FLASH+中微子输运能分离ejecta与neutrino各自的贡献"
+        },
+        {
+          "quote": "通过后处理分析计算 ejecta 的总动量和方向，分离物质抛射和中微子辐射的贡献",
+          "attribution": "unsourced",
+          "note": "关键步骤'分离两种贡献'的方法未说明，属于断言式跳过"
+        }
+      ]
+    },
+    "actionability": {
+      "level": 2,
+      "claims": [
+        {
+          "quote": "source: Galactic radio pulsar catalog 和 LIGO/Virgo 双中子星合并事件数据",
+          "attribution": "unsourced",
+          "note": "未指明具体catalog版本（ATNF?）、LIGO/Virgo具体release（O3? GWTC-3?），无法定位数据源"
+        },
+        {
+          "quote": "选择一组代表性的超新星前身星模型（12-25 太阳质量）",
+          "attribution": "unsourced",
+          "note": "未说明前身星模型来源（Woosley & Heger? Sukhbold?），金属丰度、自转等初始条件未指定"
+        },
+        {
+          "quote": "采用控制变量法，分别运行仅包含物质抛射不对称性、仅包含中微子辐射不对称性以及两者结合的模拟组，每组 50 个随机种子以覆盖初始扰动空间",
+          "attribution": "unsourced",
+          "note": "'仅包含物质抛射不对称性'与'仅包含中微子辐射不对称性'在物理上如何解耦未说明，随机种子扰动的是什么（初始对流扰动谱？）未交代"
+        },
+        {
+          "quote": "COMPAS binary population synthesis code with default kick model / BSE (Binary Star Evolution) code with standard Maxwellian kick distribution / FLASH hydrodynamics simulation with simplified neutrino leakage scheme",
+          "attribution": "supported",
+          "note": "基线代码实名可查，但'default kick model'和'simplified neutrino leakage scheme'的具体配置未给出"
+        }
+      ]
+    },
+    "evidence": {
+      "level": 3,
+      "claims": [
+        {
+          "quote": "当前对中子星诞生时的 natal kicks 和自转起源的理解存在重大缺口，特别是非对称物质抛射和中微子辐射对 kick 大小和方向的贡献比例尚不明确",
+          "attribution": "supported",
+          "note": "与F3（2305.08920）关于natal kicks起源的论述对应，也与F6（2511.06554）关于开放问题的判断一致"
+        },
+        {
+          "quote": "中子星诞生于大质量恒星的核心坍缩超新星爆炸过程",
+          "attribution": "supported",
+          "note": "与F1（astro-ph/0103015）直接对应"
+        },
+        {
+          "quote": "预期 kick 速度分布峰值在 200-300 km/s，与观测到的年轻脉冲星速度分布（平均约 300 km/s）量级一致",
+          "attribution": "supported",
+          "note": "与F2（astro-ph/0402200）关于中子星空间速度的论述对应"
+        },
+        {
+          "quote": "对于典型大质量恒星，物质抛射不对称性贡献约 60-80% 的 kick 速度，中微子辐射贡献剩余部分",
+          "attribution": "unsourced",
+          "note": "这一具体比例断言在五篇references和fact cards中均找不到出处，属于无支撑的定量估计"
+        },
+        {
+          "quote": "典型超新星释放引力结合能约 3×10^53 erg，其中约 1% 转化为动能",
+          "attribution": "unsourced",
+          "note": "具体数值（3×10^53 erg、1%）在references和fact cards中均无出处"
+        },
+        {
+          "quote": "若 ejecta 不对称性达到 1-2%，则产生的反冲动量对应 kick 速度约 200-400 km/s（对于 1.4 太阳质量中子星）",
+          "attribution": "unsourced",
+          "note": "1-2%不对称性、200-400 km/s等具体数值在references中无出处"
+        },
+        {
+          "quote": "中微子辐射总能量约 3×10^53 erg，若各向异性达 0.1-0.5%，贡献 kick 约 50-150 km/s",
+          "attribution": "unsourced",
+          "note": "0.1-0.5%各向异性、50-150 km/s等具体数值在references中无出处"
+        }
+      ]
+    }
+  },
+  "veto": {
+    "triggered": true,
+    "claims": [
+      {
+        "quote": "对于典型大质量恒星，物质抛射不对称性贡献约 60-80% 的 kick 速度，中微子辐射贡献剩余部分",
+        "attribution": "speculative",
+        "note": "具体比例60-80%在正文与references中均找不到出处，且未标注为待验证估计"
+      },
+      {
+        "quote": "典型超新星释放引力结合能约 3×10^53 erg，其中约 1% 转化为动能",
+        "attribution": "speculative",
+        "note": "具体数值在references中无出处，未标注为估计"
+      },
+      {
+        "quote": "若 ejecta 不对称性达到 1-2%，则产生的反冲动量对应 kick 速度约 200-400 km/s（对于 1.4 太阳质量中子星）",
+        "attribution": "speculative",
+        "note": "1-2%不对称性与200-400 km/s的对应关系在references中无出处"
+      },
+      {
+        "quote": "中微子辐射总能量约 3×10^53 erg，若各向异性达 0.1-0.5%，贡献 kick 约 50-150 km/s",
+        "attribution": "speculative",
+        "note": "0.1-0.5%各向异性与50-150 km/s的对应关系在references中无出处"
+      }
+    ]
+  },
+  "runId": "20260810-032527",
+  "rubricVersion": "1.0.0",
+  "judgeModel": "qwen3.7-plus",
+  "thinking": true,
+  "scoredAt": "2026-08-10T03:53:25.737Z",
+  "weighted": 15,
+  "max": 24,
+  "percent": 62.5
+}

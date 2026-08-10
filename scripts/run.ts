@@ -8,17 +8,18 @@
  * 可选环境变量 LUUP_QUESTION_ID=<Science-125 题号>：只写进 meta.json 做续跑索引，
  * 不参与提问（问题原文仍来自 argv/文件），run-batch 靠它认领已完成的题（criteria G5）。
  *
- * 顺序是有讲究的：**先拿单并发锁，再建 runs/<ts>/ 并 export LUUP_RUN_DIR，最后启动 eve**。
- * 文献工具与工件工具都在 app runtime 里读这个环境变量来定位 run 目录；
+ * 顺序是有讲究的：**先拿单并发锁，再建 runs/<ts>/ 并 export LUUP_RUN_DIR，最后起 master**。
+ * 工具层（文献/工件）都经 runContext 读这个环境变量来定位 run 目录；
  * 晚设一步，文献就会落到 paperStore 的回退目录里，与本 run 的 proposal.json 分家。
  * 锁则要在建目录之前 —— 撞锁时不该留下一个空 run 目录。
  *
- * 触发方式选 `eve invoke`：headless、自带一次性 host、无需先起 dev server，
- * 且 WP1 已在本仓库真机验证过（eve/client 需要外部常驻 server，多一个失败面）。
+ * 触发方式 = 进程内 `run(masterAgent)`（@openai/agents）：无外部 host、无子进程、
+ * 退出码语义由本文件独占。`.env` 也因此必须由本文件自己加载（原先由 eve invoke 代劳）。
  */
-import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { run } from "@openai/agents";
+import { MASTER_MAX_TURNS, MASTER_TIMEOUT_MS, buildMasterAgent } from "#agent.ts";
 import { archiveRunOutcome } from "#lib/campaignMemory.ts";
 import { ProposalSchema, type Proposal } from "#lib/contracts.ts";
 // 题号的解析只有一份实现（agent/lib/runContext.ts）：驱动写进 meta.json 的那个数字，
@@ -168,7 +169,7 @@ function holdLock(): Held | null {
 }
 
 /* ------------------------------------------------------------------ */
-/* 触发 eve                                                             */
+/* 触发 master（进程内 @openai/agents run()）                            */
 /* ------------------------------------------------------------------ */
 
 /**
@@ -199,68 +200,81 @@ function buildPrompt(question: string, runDir: string, questionId: number | null
   ].join("\n");
 }
 
-/**
- * `eve invoke` 的退出码是有语义的（node_modules/eve/docs/reference/cli.md）：
- * 0 = 完成，1 = 失败，**3 = 挂起（paused）**。
- *
- * root 会话触及 `limits.maxInputTokensPerSession` 时 eve 并不判失败，而是在下一次
- * 模型调用前挂起会话，发出 Approve / Stop 的续跑提示（agent-config.md「Runtime
- * limits」）。把 3 混同成 1，run 目录里就没有任何失败凭据，外层只看到一个说不清
- * 缘由的非零码 —— 与 instructions「预算耗尽写 FAILED.md」的硬规格自相矛盾。
- */
-const EXIT_PAUSED = 3;
+type MasterOutcome = {
+  code: number;
+  /** master 收尾报告全文（run() 的 finalOutput）；失败时为空串。 */
+  finalOutput: string;
+  usage: { requests: number; inputTokens: number; outputTokens: number; totalTokens: number } | null;
+  error?: string;
+};
 
-function renderPausedReport(runDir: string): string {
-  const resultFile = join(runDir, "invoke-result.json");
+/**
+ * 进程内跑 master。三种熔断都走 catch：轮数（MASTER_MAX_TURNS）、绝对时限
+ * （MASTER_TIMEOUT_MS 的 AbortSignal）、模型/工具的不可恢复错误。eve 的
+ * paused(exit 3)/Approve 续跑协议已不存在——预算一次性给足，超限即失败凭据
+ * 落盘（失败诚实，criteria C4），不留人工续跑通道（human over the loop）。
+ */
+async function invokeMaster(prompt: string): Promise<MasterOutcome> {
+  const master = buildMasterAgent();
+  try {
+    const result = await run(master, prompt, {
+      maxTurns: MASTER_MAX_TURNS,
+      signal: AbortSignal.timeout(MASTER_TIMEOUT_MS),
+      // 百炼对回放的 reasoning item id 可能报 400（SDK 文档明示的兼容旋钮）
+      reasoningItemIdPolicy: "omit",
+    });
+    const finalOutput =
+      typeof result.finalOutput === "string" ? result.finalOutput : JSON.stringify(result.finalOutput ?? "");
+    // master 收尾报告直通 stdout：外层（lib/spawn.ts / eval）从这里取工件路径清单
+    process.stdout.write(`${finalOutput}\n`);
+    const u = result.state.usage;
+    return {
+      code: 0,
+      finalOutput,
+      usage: {
+        requests: u.requests,
+        inputTokens: u.inputTokens,
+        outputTokens: u.outputTokens,
+        totalTokens: u.totalTokens,
+      },
+    };
+  } catch (e) {
+    return { code: 1, finalOutput: "", usage: null, error: String(e) };
+  }
+}
+
+/** master 异常终止且自己没留失败凭据时的兜底报告（崩溃表「盘上留下什么」）。 */
+function renderCrashReport(runDir: string, error: string): string {
   return [
-    "# FAILED：会话因 token 配额暂停",
+    "# FAILED：master 会话异常终止",
     "",
     `- 判定时间：${new Date().toISOString()}`,
     `- run 目录：${runDir}`,
-    `- 直接原因：\`eve invoke\` 退出码 ${EXIT_PAUSED}（paused）。root 会话触及 \`agent/agent.ts\` 的`,
-    "  `limits.maxInputTokensPerSession`，eve 在下一次模型调用前挂起会话，等待 **Approve**",
-    "  （再发一个同样大小的预算窗口）或 **Stop**（取消在途 turn）。",
-    "- 这是预算闸门生效，**不是**流水线按判据判定的不合格：已产出的工件仍然有效，",
-    "  但流水线没有走到 `verify_references` 拿到 `ok:true` 那一步。",
+    `- 直接原因：${error}`,
+    "- 可能的熔断源：轮数上限（MaxTurnsExceededError）、2h 绝对时限（TimeoutError/AbortError）、",
+    "  模型端点不可恢复错误。这是预算/故障闸门生效，不是流水线按判据判定的不合格：",
+    "  已落盘的工件仍然有效，但流水线没有走到 `verify_references` 拿到 `ok:true` 那一步。",
     "",
-    "## 续跑",
-    "",
-    "`invoke-result.json` 就是可续跑的结果对象（`--resume` 从 stdin 读它）：",
-    "",
-    "```sh",
-    "# 批准：再发一个预算窗口继续跑（会继续花钱）",
-    `cat ${resultFile} | npx eve invoke --resume "Approve"`,
-    "",
-    "# 停止：取消在途 turn，会话终结",
-    `cat ${resultFile} | npx eve invoke --resume "Stop"`,
-    "```",
-    "",
-    "要根治：调高 `agent/agent.ts` 的 `limits.maxInputTokensPerSession`，或缩小输入规模后重跑。",
+    "处置：整题重跑（续跑粒度是「题」不是「节点」）；反复撞轮数/时限则缩小输入规模，",
+    "或经 `--rescue-model` 升档重跑（scripts/run-batch.ts 救援通道）。",
     "",
   ].join("\n");
-}
-
-function invokeEve(prompt: string, runDir: string): Promise<{ code: number; stdout: string }> {
-  return new Promise((res, rej) => {
-    const child = spawn("npx", ["eve", "invoke", prompt], {
-      cwd: REPO_ROOT,
-      env: { ...process.env, LUUP_RUN_DIR: runDir },
-      stdio: ["ignore", "pipe", "inherit"], // stderr 直通，进度可见
-    });
-    let stdout = "";
-    child.stdout.on("data", (c: Buffer) => {
-      const s = c.toString();
-      stdout += s;
-      process.stdout.write(s);
-    });
-    child.on("error", rej);
-    child.on("close", (code) => res({ code: code ?? -1, stdout }));
-  });
 }
 
 /* ------------------------------------------------------------------ */
 /* main                                                                */
 /* ------------------------------------------------------------------ */
+
+/* .env 由本文件自己加载（原先由 eve invoke 代劳）；缺 key 提前失败，不留空 run 目录 */
+try {
+  process.loadEnvFile(join(REPO_ROOT, ".env"));
+} catch {
+  // .env 不存在时不报错：环境变量也可能已经由外层注入
+}
+if (!process.env.QWEN_API_KEY || !process.env.QWEN_BASE_URL) {
+  console.error("[luup] 缺 QWEN_API_KEY / QWEN_BASE_URL（.env 或环境变量），流水线无法调用模型。");
+  process.exit(2);
+}
 
 const { question, source, defaultId } = readQuestion(process.argv[2]);
 
@@ -276,7 +290,7 @@ const runId = utcStamp();
 const runDir = join(RUNS_DIR, runId);
 mkdirSync(runDir, { recursive: true });
 lock?.setRunId(runId);
-// 关键顺序：先 export，再启动 eve（工具在 app runtime 读它定位 run 目录）
+// 关键顺序：先 export，再起 master（工具经 runContext 读它定位 run 目录）
 process.env.LUUP_RUN_DIR = runDir;
 
 writeFileSync(join(runDir, "question.md"), `${question}\n`, "utf8");
@@ -289,34 +303,51 @@ const meta: RunMeta = {
   exitCode: null,
 };
 const metaPath = join(runDir, "meta.json");
-/** 失败凭据：paused 时可能由这里写，也可能 master 早就自己写过 —— 路径只有一份。 */
+/** 失败凭据：崩溃兜底可能由这里写，也可能 master 早就自己写过 —— 路径只有一份。 */
 const failedPath = join(runDir, "FAILED.md");
 const writeMeta = () => writeFileSync(metaPath, `${JSON.stringify(meta, null, 2)}\n`, "utf8");
 // 先落一次：中途被 Ctrl-C / OOM 打断也留下 finishedAt=null，续跑不会误判为已完成
 writeMeta();
+
+// 题号从 meta 回灌运行环境：memory_note 写题页与 arxiv_save 的反查索引都经
+// resolveQuestionId() 读 LUUP_QUESTION_ID（agent/lib/runContext.ts 头注：meta 写的
+// 数字与工具定位用的数字必须是同一个判定）。默认题路径（defaultId）外层没人设
+// 这个变量，不回灌的话 master 收尾的 memory_note(target="question") 必然 failed。
+if (meta.questionId !== null) process.env.LUUP_QUESTION_ID = String(meta.questionId);
 
 console.log(`[luup] run dir : ${runDir}`);
 console.log(`[luup] question: ${source}${meta.questionId === null ? "" : `（Q${meta.questionId}）`}`);
 console.log(`[luup] ${"-".repeat(60)}`);
 
 const started = Date.now();
-const { code, stdout } = await invokeEve(buildPrompt(question, runDir, meta.questionId), runDir);
+const master = await invokeMaster(buildPrompt(question, runDir, meta.questionId));
+const { code } = master;
 const elapsed = ((Date.now() - started) / 1000).toFixed(1);
 
-writeFileSync(join(runDir, "invoke-result.json"), stdout.trim() ? stdout : `{"exitCode":${code}}\n`, "utf8");
-console.log(`\n[luup] eve invoke exit=${code}，耗时 ${elapsed}s`);
+writeFileSync(
+  join(runDir, "invoke-result.json"),
+  `${JSON.stringify(
+    {
+      status: code === 0 ? "completed" : "failed",
+      finalOutput: master.finalOutput,
+      usage: master.usage,
+      ...(master.error === undefined ? {} : { error: master.error }),
+    },
+    null,
+    2,
+  )}\n`,
+  "utf8",
+);
+console.log(`\n[luup] master run exit=${code}，耗时 ${elapsed}s`);
 
-/* exit 3 = paused：不是失败，是被预算闸门挂起 —— 必须留下凭据，否则外层无从判断 */
-if (code === EXIT_PAUSED) {
-  console.error(
-    "\n[luup] 会话因 token 配额暂停：root 触及 limits.maxInputTokensPerSession，" +
-      "eve 已挂起会话并等待 Approve / Stop，这不是流水线判定的失败。",
-  );
+/* master 异常终止（轮数/时限熔断、端点故障）：必须留下失败凭据，否则外层无从判断 */
+if (code !== 0) {
+  console.error(`\n[luup] master 会话异常终止：${master.error ?? "(未知原因)"}`);
   if (existsSync(failedPath)) {
     console.error(`[luup] ${failedPath} 已存在（master 自己写过），保留原文不覆盖。`);
   } else {
-    writeFileSync(failedPath, renderPausedReport(runDir), "utf8");
-    console.error(`[luup] 已写 ${failedPath}（含 --resume 续跑指引）。`);
+    writeFileSync(failedPath, renderCrashReport(runDir, master.error ?? "(未知原因)"), "utf8");
+    console.error(`[luup] 已写 ${failedPath}（崩溃兜底凭据）。`);
   }
 }
 
@@ -327,8 +358,8 @@ const proposalPath = join(runDir, "proposal.json");
  * 读 proposal.json 并按契约校验。**缺失 / JSON 写坏 / 不合契约一律只降级，不抛。**
  * 这里是收尾段的第一步：一个裸 JSON.parse 抛出去，后面的 meta.exitCode 回写、
  * campaign memory 归档、runs 索引重建全部不会执行，而且进程会以未捕获异常的 1 退出 ——
- * 一次「被预算闸门挂起」的 run（exit 3）会因为一份写坏的 proposal.json 退化成
- * 一个说不清缘由的 1，外层再也分不出是暂停还是失败。
+ * 一次本可如实归档收尾的 run 会因为一份写坏的 proposal.json 丢掉全部收尾凭据
+ * （meta 回写 / 归档 / 索引），只剩一个说不清缘由的 1。
  */
 function readProposal(): { data: Proposal | null; issues: string[] } {
   if (!existsSync(proposalPath)) return { data: null, issues: [] };
@@ -384,8 +415,6 @@ if (existsSync(papersDir)) console.log(`  ✔ memory/papers/  (${readdirSync(pap
 console.log(`\n[luup] 确定性验收：node scripts/verify-proposal.ts ${runDir}`);
 
 /**
- * 退出码透传：paused 原样带出 3（run-batch 会打印 exit 3），其余非成功一律 1。
- *
  * 「跑完了没有」不在这里手写：此刻 meta.exitCode 还没回写，run 目录就是最完整的证据，
  * 交给同一个 owner 判（lib/runOutcome.ts）。reachedProposal = proposal 正文已渲染
  * 且没有被 FAILED.md / 退出码否掉 —— master 写了 FAILED.md 却留着早轮 proposal 的
@@ -393,7 +422,7 @@ console.log(`\n[luup] 确定性验收：node scripts/verify-proposal.ts ${runDir
  * 验收过没过是另一件事（deliverable），由 scripts/verify-proposal.ts 单独判。
  */
 const outcome = runOutcome(readRunEvidence(runDir));
-const exitCode = code === 0 && reachedProposal(outcome) ? 0 : code === EXIT_PAUSED ? EXIT_PAUSED : 1;
+const exitCode = code === 0 && reachedProposal(outcome) ? 0 : 1;
 meta.finishedAt = new Date().toISOString();
 meta.exitCode = exitCode;
 writeMeta();
@@ -407,7 +436,7 @@ writeMeta();
 /* 加速层绝不允许改变一次真实 run 的退出码。                              */
 /* ------------------------------------------------------------------ */
 function summarizeOutcome(): { verdict: string; summary: string } {
-  const verdict = exitCode === 0 ? "SUCCESS" : exitCode === EXIT_PAUSED ? "PAUSED" : "FAILED";
+  const verdict = exitCode === 0 ? "SUCCESS" : "FAILED";
   const parts: string[] = [];
   if (proposal.data) {
     parts.push(`胜出方案：${proposal.data.paperTitle}`);

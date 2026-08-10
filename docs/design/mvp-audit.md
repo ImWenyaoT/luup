@@ -3,6 +3,14 @@
 日期：2026-08-08。审计人：master（本会话）。判据版本：criteria.md（含 B4、G 面）。
 结论：**MVP 达成**。全部判据通过或按披露条款记录。
 
+> **2026-08-10 迁移附记**（本文件其余部分是历史审计记录，不改写）：编排层已从
+> eve + Vercel AI SDK canary 迁至 `@openai/agents` 0.14.3 + `openai` SDK 直连百炼
+> Responses 端点。证据锚点的对应变化：`eve info` → `scripts/selftest-agents.ts`
+> （随 `pnpm validate`）；`eve evals` → `pnpm eval:smoke` / `pnpm eval:full`；
+> 披露第 1 条（eve 队列重投递竞态）随框架移除而消失；第 3 条不再成立——usage.jsonl
+> 在 eval 路径也记账（runs/.eval/）。迁移后全套 selftest + smoke + full-run eval
+> 重新过绿，见 git 历史与 runs/ 对应记录。
+
 ## 逐项认证
 
 ### A 产物契约（科学价值 40）

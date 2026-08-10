@@ -6,21 +6,23 @@
 
 ## 栈
 
-- [eve](https://eve.dev)（declared subagents / tools / headless invoke）
-- AI SDK `@ai-sdk/openai` `.responses()` → 阿里云百炼 Qwen（`qwen3.7-plus`，OpenAI Responses API）
+- [OpenAI Agents SDK](https://openai.github.io/openai-agents-js/)（`@openai/agents`：Agent / tool / run，agent-as-tool 派工）
+- `openai` SDK → 阿里云百炼 Qwen（`qwen3.7-plus`，OpenAI Responses 协议直连，`enable_thinking` 走 fetch 兼容层）
+- zod 4（工具参数 + 产物契约 + strict schema）
 - 文献：arXiv API + 文件式 memory（indexing + summarization），无 vector DB
-- Node 26（直跑 TS）、pnpm
+- Next.js 16 + Tailwind 4（web 交付面）；Node 26（直跑 TS）、pnpm
 
 ## Compatibility set
 
-eve 与 AI SDK 处在 canary 期，四者是一组**联动版本**：eve 的 peer 约束锁 `ai`，`ai` 的内部接口锁 `@ai-sdk/openai`，两者的 schema 层锁 `zod`。全部精确 pin，升级时**必须四个一起动**并重跑 `pnpm validate`；单独升任何一个都可能编不过或在运行期静默行为漂移。
+`@openai/agents` 内部依赖 `openai`，两者必须解析到**同一个版本**（Model 接口按实例类型对齐，
+双版本共存直接类型不兼容）。升级时以 `@openai/agents` 的 dependencies 为准对齐 `openai`，
+再跑 `pnpm validate`。
 
 | 包 | 版本 |
 |---|---|
-| `eve` | 0.31.3 |
-| `ai` | 7.0.0-canary.171 |
-| `@ai-sdk/openai` | 4.0.0-canary.73 |
-| `zod` | 4.4.3 |
+| `@openai/agents` | ^0.14.3 |
+| `openai` | ^6.49.0（对齐 agents 0.14.3 的内部依赖；agents 升到依赖 v7 时一起动） |
+| `zod` | 4.4.3（agents peer：^4.0.0） |
 
 ## 快速开始
 
@@ -58,24 +60,19 @@ master 2026-08-09 裁决：择优字典序 = **交付 gate（只认确定性判�
 → refs → token 升序 → run id**；**M9 的 veto 从 gate 降为 advisory**，只在 stats 的
 「⚠ M9 诊断」列展示，不再否掉任何版本。`score.json` 原样保留 veto 字段（动决策权，不动数据）。
 
-## 交付面（Next.js + eve 单项目）
+## 交付面（Next.js 单项目）
 
-`next.config.ts` 用 `withEve()` 包裹，agent 与 web 是**同一个项目**：仓库根既是 eve app root（`agent/`），
-也是 Next 项目根（`app/`、`components/`、`lib/`）。eve 的 `/eve/v1/*` 与我们自己的 `/api/*` 同源共存。
-
-```sh
-pnpm dev        # next dev：同时拉起 eve dev 并把 /eve/v1/* rewrite 过去 → http://localhost:3000
-pnpm dev:eve    # 只跑 agent（TUI/headless），不要 web
-pnpm build      # eve build && next build
-pnpm validate   # tsgo 全量 typecheck + eve info
-```
-
-生产（本机）要**同时**起两个进程——`withEve()` 只做反向代理，不代管 eve 进程：
+agent 与 web 是**同一个项目**：仓库根既是流水线代码根（`agent/`、`scripts/`），也是 Next
+项目根（`app/`、`components/`、`lib/`）。流水线经 `POST /api/runs` 起 `scripts/run.ts`
+子进程，web 只读 `runs/` 文件——两侧只有进程边界，没有模块耦合。
 
 ```sh
-pnpm build
-pnpm start:eve &   # eve start --host 127.0.0.1 --port 4274（EVE_NEXT_PRODUCTION_PORT 默认值）
-pnpm start         # next start，把 /eve/v1/* 代理到 4274
+pnpm dev        # next dev → http://localhost:3000
+pnpm build      # next build
+pnpm start      # next start（生产，单进程）
+pnpm validate   # tsgo 全量 typecheck + agent 装配自测（selftest-agents）
+pnpm eval:smoke # 冒烟：1 次真调用，验证模型接线与 master 服从性
+pnpm eval:full  # 全链路：真跑一题 + 契约/离线验收 gates（≈20 分钟，花真钱）
 ```
 
 | 路由 | 用途 |
@@ -84,7 +81,6 @@ pnpm start         # next start，把 /eve/v1/* 代理到 4274
 | `GET /api/runs`、`POST /api/runs` | 列表；触发 pipeline（同源 + `application/json` 双重 CSRF 门） |
 | `GET /api/runs/<id>[?view=status\|artifact=<f>]` | run 详情 / 状态视图 / 工件正文（`text/plain`，越界即 400） |
 | `GET /api/science125` | `lib/science125.json`（125 题） |
-| `/eve/v1/*` | eve channel，由 `withEve()` 挂载 |
 
 ## 运行产物（runs/<ts>/）
 

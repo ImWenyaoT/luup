@@ -1,0 +1,10 @@
+{
+  "status": "completed",
+  "finalOutput": "## 流水线完成报告\n\n**胜出假设（一句话）**：电子俘获超新星（EC-SN）产生的中子星 natal kick 幅度系统性低于铁核坍缩超新星；通过银河轨道积分反推宽距双脉冲星诞生速度，其 kick 分布的峰值和色散应显著低于孤立年轻脉冲星群体。\n\n**verify_references 结论**：✅ `ok:true` — 10 字段契约通过，5 篇引用全部 B1（在 run 内存中）、B2（标题重合度 1.00）、B4（第一作者一致）校验通过。\n\n---\n\n### 各节点轮次\n\n| 节点 | 轮次 | 结果 |\n|---|---|---|\n| literature | 1/3 | pass（10 张事实卡片，覆盖 3 个侧面） |\n| hypothesis | 1/3 | pass（3 个候选假设 H1/H2/H3） |\n| critique | 1/3 | pass（每假设 3 条实质批判，H3 胜出） |\n| proposal | 2/3 | r1 内容 pass 但 verify_references 失败（标题/作者编造）；r2 修正后 pass |\n\n---\n\n### 工件清单\n\n**Run 目录绝对路径**：`/home/ail510/tian_wenyao/projects/luup/runs/20260810-032527`\n\n| 相对路径 | 说明 |\n|---|---|\n| `evidence.md` | 10 张事实卡片 |\n| `hypotheses.md` | 3 个候选假设（H1/H2/H3） |\n| `critique.json` | 对抗式批评（9 条批判 + winner H3 + 4 条 requiredChanges） |\n| `proposal.json` | 最终 10 字段研究计划（通过 verify_references） |\n| `verdicts/literature-r1.json` | literature 轮 1 verdict |\n| `verdicts/hypothesis-r1.json` | hypothesis 轮 1 verdict |\n| `verdicts/critique-r1.json` | critique 轮 1 verdict |\n| `verdicts/proposal-r1.json` | proposal 轮 1 verdict（内容 pass） |\n| `verdicts/proposal-r2.json` | proposal 轮 2 verdict（verify_references pass） |\n\n---\n\n### 记忆归档说明\n\n- ✅ `memory/log.md` 已写入战役记录（verdict、目录、胜出假设、被拒假设、检索方向）\n- ❌ `memory/questions/q<id>.md` **未写入**——运行环境未设置 `LUUP_QUESTION_ID`，题页无法落笔。战役记录已写入 log.md 作为替代。",
+  "usage": {
+    "requests": 26,
+    "inputTokens": 899274,
+    "outputTokens": 38416,
+    "totalTokens": 937690
+  }
+}

@@ -1,10 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
 
 /**
- * E2E 打的是**生产构建**，不是 next dev：
- * dev 下 withEve 会顺带拉起 eve dev（一条 agent 运行时），而这套用例一行都不碰 /eve/v1/*，
- * 为它多等一个子进程就绪就是把无关的失败面接进测试。生产 phase 下 withEve 只写一条
- * rewrite 指向 127.0.0.1:4274，不 spawn、不健康检查，agent 侧没起也不影响本仓库的交付面。
+ * E2E 打的是**生产构建**，不是 next dev：交付面就是 `next start` 起的那一个进程
+ * （agent 流水线经 /api/runs 起子进程，不在 web 进程里），dev 特有的编译/水合时序
+ * 不该混进对交付面的断言。
  *
  * 端口取 3210 而不是 3000：本机常年有别的 next dev 占着 3000，撞上去 reuseExistingServer
  * 会拿错服务，测出来的绿是别人的绿。
@@ -43,7 +42,7 @@ export default defineConfig({
   ],
 
   webServer: {
-    command: `pnpm build:web && pnpm exec next start --port ${PORT}`,
+    command: `pnpm build && pnpm exec next start --port ${PORT}`,
     url: `${baseURL}/api/science125`,
     reuseExistingServer: !process.env.CI,
     timeout: 300_000,

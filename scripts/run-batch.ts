@@ -6,7 +6,7 @@
  *   node scripts/run-batch.ts 54 125 --dry-run  # 只打印计划，不起子进程、不写汇总
  *   node scripts/run-batch.ts 54 125 --rescue-model=qwen3.8-max   # 失败题批尾升档重跑一轮
  *
- * 串行原因：百炼端点并发过载阈值低（实测），且 eve invoke 同仓库并发未验证。
+ * 串行原因：百炼端点并发过载阈值低（实测），且 memory/ 是无锁单写者。
  * 每题 = 一次 scripts/run.ts 子进程（run 目录由 run.ts 自建，从 stdout 解析），
  * 跑完立刻用 scripts/verify-proposal.ts 独立验收，汇总写 runs/batch-<ts>.md。
  *
@@ -20,7 +20,6 @@ import { existsSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { REPO_ROOT, RUNS_DIR } from "../lib/paths.ts";
 import { science125Text } from "../lib/questionText.ts";
-import { formatBytes, planPrune, summarize } from "../lib/retention.ts";
 import { deliveredQuestionId, readRunEvidence } from "../lib/runOutcome.ts";
 import { findQuestion } from "../lib/science125.ts";
 
@@ -29,12 +28,11 @@ import { findQuestion } from "../lib/science125.ts";
 /* ------------------------------------------------------------------ */
 
 const USAGE =
-  "usage: node scripts/run-batch.ts <id 1-125> [<id> ...] [--force] [--dry-run] [--no-prune] " +
-  "[--prune-grace-min=N] [--rescue-model=<id>]";
+  "usage: node scripts/run-batch.ts <id 1-125> [<id> ...] [--force] [--dry-run] [--rescue-model=<id>]";
 const argv = process.argv.slice(2);
 const flags = argv.filter((a) => a.startsWith("--"));
-const KNOWN = new Set(["--force", "--dry-run", "--no-prune"]);
-const VALUED = ["--prune-grace-min=", "--rescue-model="];
+const KNOWN = new Set(["--force", "--dry-run"]);
+const VALUED = ["--rescue-model="];
 const unknown = flags.filter((f) => !KNOWN.has(f) && !VALUED.some((p) => f.startsWith(p)));
 if (unknown.length > 0) {
   console.error(`unknown flag: ${unknown.join(" ")}\n${USAGE}`);
@@ -42,7 +40,6 @@ if (unknown.length > 0) {
 }
 const force = flags.includes("--force");
 const dryRun = flags.includes("--dry-run");
-const noPrune = flags.includes("--no-prune");
 
 /**
  * 救援升档（默认关闭）。开启后，主批里 `status=failed` 的题在**本批全部跑完之后**各用该
@@ -65,35 +62,6 @@ const rescueModel = (() => {
   }
   return id;
 })();
-
-/**
- * 每题验收完立刻清理 workflow 流数据。
- *
- * 不清理的话，.eve/.workflow-data/streams/chunks 每题涨 ~20MB（每个流 delta 一个 .bin，
- * 且每个 .bin 嵌全文快照），125 全量跑 = 2G+ 纯重放工件。判据见 prune-eve-state.ts ——
- * 在跑的 run 由「活跃窗口 + workflow 未终态 + run 无终态凭据」三条各自独立挡住。
- */
-const pruneGraceMin = (() => {
-  const hit = flags.find((f) => f.startsWith("--prune-grace-min="));
-  if (!hit) return 60;
-  const n = Number.parseInt(hit.slice("--prune-grace-min=".length), 10);
-  if (!Number.isInteger(n) || n < 0) {
-    console.error(`--prune-grace-min 必须是非负整数\n${USAGE}`);
-    process.exit(2);
-  }
-  return n;
-})();
-
-function pruneNow(label: string): void {
-  if (noPrune) return;
-  try {
-    const r = planPrune({ apply: true, graceMs: pruneGraceMin * 60 * 1000 });
-    console.log(`[batch] prune ${label}：${summarize(r)}（状态盘余量 ${formatBytes(r.totalBytes - r.freedBytes)}）`);
-  } catch (e) {
-    // 清理是运维加速，不是交付的一部分：失败只告警，绝不打断批跑
-    console.error(`[batch] prune ${label} 失败（不影响批跑）：${String(e)}`);
-  }
-}
 
 // 去重：同一题号写两遍就是白烧两次 20 分钟的额度（completed 不在循环内刷新）
 const ids = [...new Set(argv.filter((a) => !a.startsWith("--")).map((a) => Number.parseInt(a, 10)))];
@@ -164,7 +132,7 @@ type Row = {
 };
 const rows: Row[] = [];
 
-/** 跑一题 + 独立验收 + 清流数据。主批与救援轮走**同一条**路径，救援只是多注入一个环境变量。 */
+/** 跑一题 + 独立验收。主批与救援轮走**同一条**路径，救援只是多注入一个环境变量。 */
 async function runQuestion(id: number, lane: Lane, extraEnv: Record<string, string> = {}): Promise<Row> {
   const q = question(id);
   const tag = lane === "rescue" ? `Q${id}（救援 ${rescueModel}）` : `Q${id}`;
@@ -180,8 +148,6 @@ async function runQuestion(id: number, lane: Lane, extraEnv: Record<string, stri
     verify = (await runNode(["scripts/verify-proposal.ts", runDir])).code;
   }
   const status: Status = code === 0 && verify === 0 ? "done" : "failed";
-  // 验收已经结束 = 这一题的工件都落到了 runs/<ts>/，流数据自此无人消费
-  pruneNow(tag);
   return { id, domain: q.domain, runDir, status, pipeline: code, verify, lane };
 }
 

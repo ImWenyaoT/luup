@@ -2,11 +2,10 @@
  * 写本次 run 的 handoff 工件（architecture.md「显式 handoff」）。
  * 路径 jail、保护区、契约校验、返工预算全在 agent/lib/artifacts.ts，本文件只做工具面。
  *
- * replay: "never" —— 覆盖写单个文件本身是幂等的，但 `verdicts/` 目录**就是**返工预算的
- * 计数器（lib/rework.ts）：重放一次被中断的 verdict 写入会多记一轮，或多留一份
- * `.rejected.json` 草稿，直接改变熔断判定。要重放先确认该轮次文件尚未落盘。
+ * `verdicts/` 目录**就是**返工预算的计数器（lib/rework.ts）：写 verdict 的路径上
+ * 预算当场判定，第 4 轮直接拒写 —— 轮数上限是代码的事，不是 master 数出来的。
  */
-import { defineTool } from "eve/tools";
+import { tool } from "@openai/agents";
 import { z } from "zod";
 import { REWORK_CAPS } from "../../lib/rework.ts";
 import { type ArtifactWriteResult, ArtifactPathError, writeArtifact } from "../lib/artifacts.ts";
@@ -26,7 +25,34 @@ function hintFor(r: ArtifactWriteResult): string {
   return `已落盘。${balance}`;
 }
 
-export default defineTool({
+const parameters = z.object({
+  path: z
+    .string()
+    .min(1)
+    .describe('Run-relative path, e.g. "evidence.md" or "verdicts/literature-r1.json".'),
+  content: z.string().describe("Full file content. Writing replaces the file."),
+});
+
+/** 裸执行函数：selftest 直调它，不经 SDK 的 RunContext。 */
+export async function executeArtifactWrite({ path, content }: z.infer<typeof parameters>) {
+  try {
+    const result = writeArtifact(path, content);
+    return {
+      ...result,
+      /** run 目录的绝对路径：master 的收尾报告要报它，外层（驱动 / eval）据此定位本次产物 */
+      runDir: resolveRunDir(),
+      hint: hintFor(result),
+    };
+  } catch (e) {
+    if (e instanceof ArtifactPathError) {
+      return { path, ok: false, bytes: 0, created: false, validatedAs: null, issues: [e.message], hint: "路径被拒绝，改用 run 目录内的相对路径。" };
+    }
+    throw e;
+  }
+}
+
+export default tool({
+  name: "artifact_write",
   description:
     "Write one artifact into this run's directory. Paths are ALWAYS relative to the run directory; " +
     "absolute paths and `..` are rejected. Canonical artifacts: `evidence.md`, `hypotheses.md`, " +
@@ -40,27 +66,6 @@ export default defineTool({
     "`formatRetries` and `remaining` — read the balance from there instead of counting rounds yourself. " +
     "`memory/papers/**` and `memory/index.md` are owned by `arxiv_save` and cannot be written here. " +
     "The result carries `runDir`, the absolute path of this run's directory — report it in your final summary.",
-  inputSchema: z.object({
-    path: z
-      .string()
-      .min(1)
-      .describe('Run-relative path, e.g. "evidence.md" or "verdicts/literature-r1.json".'),
-    content: z.string().describe("Full file content. Writing replaces the file."),
-  }),
-  async execute({ path, content }) {
-    try {
-      const result = writeArtifact(path, content);
-      return {
-        ...result,
-        /** run 目录的绝对路径：master 的收尾报告要报它，外层（驱动 / eval）据此定位本次产物 */
-        runDir: resolveRunDir(),
-        hint: hintFor(result),
-      };
-    } catch (e) {
-      if (e instanceof ArtifactPathError) {
-        return { path, ok: false, bytes: 0, created: false, validatedAs: null, issues: [e.message], hint: "路径被拒绝，改用 run 目录内的相对路径。" };
-      }
-      throw e;
-    }
-  },
+  parameters,
+  execute: executeArtifactWrite,
 });

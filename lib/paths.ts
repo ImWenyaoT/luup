@@ -11,10 +11,10 @@ import { isRunId } from "./runId.ts";
  *  2. 本文件所在的 `<root>/lib/` 的上一级。`node scripts/xxx.ts` 直跑时
  *     `import.meta.url` 就是源文件路径，因此**与 cwd 无关** —— 脚本从任何目录
  *     启动都指向同一个仓库根。
- *  3. `process.cwd()`。打包器（next build / eve build）会把本文件重写进
- *     `.next/` 或 `.eve/`，届时 ② 指向产物目录而不是仓库；用「上一级有没有
- *     agent/instructions.md」来判别这件事，而不是猜运行环境。
- *     next dev/build/start 与 eve 的 cwd 都是仓库根，退到 ③ 是对的。
+ *  3. `process.cwd()`。打包器（next build）会把本文件重写进 `.next/`，
+ *     届时 ② 指向产物目录而不是仓库；用「上一级有没有 agent/instructions.md」
+ *     来判别这件事，而不是猜运行环境。next dev/build/start 的 cwd 都是仓库根，
+ *     退到 ③ 是对的。
  */
 function detectRepoRoot(): string {
   try {

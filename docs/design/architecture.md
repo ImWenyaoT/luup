@@ -90,7 +90,7 @@ runs/<ts>/memory/
 | unsettled | `FAILED.md` | **failed** | 失败凭据压过一切 |
 | unsettled | `proposal.md`（无报告或报告非 ALL PASS） | **rendered** | 跑到终点 ≠ 验收通过 |
 | unsettled | `meta.exitCode` / `exit.exitCode` 非零 | **failed** | 只在没有 proposal 正文时才由退出码定性 |
-| unsettled | `verification-report.md`（但无 `proposal.md`） | unsettled | phase 不动，`terminal` 变真（报告只可能在 eve 退出后写） |
+| unsettled | `verification-report.md`（但无 `proposal.md`） | unsettled | phase 不动，`terminal` 变真（报告只可能在 master 退出后写） |
 | rendered | 报告 `结果: ALL PASS` 且无非零退出码 | **verified** | 唯一的 `deliverable=true` |
 | rendered | 非零退出码 | rendered | 退出码在 proposal 分支里只挡 verified，不倒推成 failed |
 | verified | 非零退出码后补落盘 | **rendered** | 降级：交付资格被退出码收回（web `passed` 与续跑认领由此同判） |
@@ -99,7 +99,7 @@ runs/<ts>/memory/
 
 `terminal` 与 phase 正交，五个凭据任一即真：`FAILED.md` / 报告存在 / `proposal.md` / meta 落了 `finishedAt` 或 `exitCode` / exit.json 落了 `endedAt` 或 `exitCode`。`deliverable` 有且只有 `phase === "verified"`。
 
-**崩溃表**（`scripts/run.ts` 的落盘顺序：question.md → meta.json(startedAt) → eve invoke → invoke-result.json → proposal.md → meta 回写 finishedAt/exitCode → memory 归档 / 索引重建）：
+**崩溃表**（`scripts/run.ts` 的落盘顺序：question.md → meta.json(startedAt) → master run → invoke-result.json → proposal.md → meta 回写 finishedAt/exitCode → memory 归档 / 索引重建）：
 
 | 进程死在 | 盘上留下什么 | 终态判定 | 恢复动作 |
 |---|---|---|---|
@@ -109,15 +109,16 @@ runs/<ts>/memory/
 
 不可消除的不确定区间：**meta 已落 startedAt、收尾尚未回写**。这段里 run 目录既可能是"正在跑"也可能是"已死"，两者从目录本身分不出来——「谁在跑」是进程外事实，由 `runs/.active.json` 单并发锁回答（`lib/lock.ts`），并作为显式入参进 `deriveStatus`。这是 harness 层的诚实非目标，不是待修的 bug。
 
-## 模型接线（已依 eve 能力图谱定稿）
+## 模型接线（2026-08-10 迁至 @openai/agents，端点事实不变）
 
-- 全部走百炼 Qwen responses API（一手实测：/responses 可用、function tool 可用、response_format 无效 → 结构化输出走强制 tool call 或 Zod 校验重试；qwen3.7-plus 默认开 reasoning，token 放大 ~7x，仅 H/C/M 保留思考，L/W 限制）。
-- eve 绑定（能力图谱真机验证结论）：
-  - `model` 传 AI SDK `LanguageModel` 实例 → routing external，不经 Vercel AI Gateway。共享 `agent/lib/model.ts`。
-  - 优先 `@ai-sdk/openai` 的 `.responses()` + 自定义 baseURL 打 `/responses`；不兼容处包 fetch 兼容层。仅当 responses 路线确证不可行才降级 openai-compatible（chat），且必须书面记录原因。
-  - **每个 agent.ts（含每个 subagent）必须写 `modelContextWindowTokens`**，否则编译期误导性报错。
-  - eve 架构映射：root agent = master（认证循环 instructions + 确定性核验工具）；L/H/C/W = declared subagents（各自独立 instructions/tools，天然不共享父对话历史，`outputSchema` 出结构化 JSON）。外层 `eve invoke` 单次触发，budget 用 maxTurns/token 配额兜底。
-  - subagent 从 root 继承 nothing；handoff 内容必须显式打进 message/工件文件——正好符合本设计的显式 handoff 原则。
+- 全部走百炼 Qwen responses API（一手实测：/responses 可用、function tool 可用——strict zod schema 亦实收、response_format 无效 → 结构化输出走 artifact_write 的 Zod 校验 + 格式重试；qwen3.7-plus 默认开 reasoning，token 放大 ~7x，仅 H/C/M 保留思考，L/W 限制）。
+- `@openai/agents` 0.14.3 绑定（`agent/lib/model.ts` 是唯一接线点）：
+  - 每个 Agent 显式传 `new OpenAIResponsesModel(qwenClient(thinking), modelId)` —— Model 实例绕过 SDK 全局解析，OPENAI_API_KEY 相关默认永不触发；`setTracingDisabled(true)` 在模块初始化时关掉 tracing exporter。
+  - `enable_thinking`（百炼私有 body 字段）与 usage.jsonl 记账都在 client 的 fetch 兼容包装里 —— 与 eve 时代同一手法，单点管理 wire facts。
+  - 架构映射：master = 带 12 个工具的 Agent（4 个派工工具 + 工件/核验/记忆工具）；L/H/C/W = 独立 Agent，经**同名派工工具**内的独立 `run()` 触发，除 message 外什么都不继承——显式 handoff 原则由机制成立。critique/proposal 的结构化返回由派工工具做 JSON 提取/规范化，验收权单点在 artifact_write（fail-closed）。
+  - **熔断映射**：eve 的 session token limits → `maxTurns × 131k 窗口` 上界（master 150≈20M，L 22≈3M，C 19≈2.5M，H/W 15≈2M）+ 2h AbortSignal。撞线 = typed 回传 `max_turns`/`error`，master 按「被截断」升级。paused/Approve 人工续跑通道随之消失——超限即诚实 FAILED（human over the loop）。
+  - **已知边界**：无自动 compaction（eve 0.8 阈值摘要不复存在）。master 上下文靠 handoff 预算（工件摘要 ≤20 行）自律；若真溢出 131k，端点报错 → run 诚实失败 → 救援道。后续若成为承重项，SDK 的 `callModelInputFilter` / `sessionInputCallback` 是现成的客户端裁剪钩子（R2 context 工作的落点）。
+  - 外层驱动 = `scripts/run.ts` 进程内 `run(master)`（不再有 headless host / 子进程 / 退出码 3）。
 
 ### KV cache 经营（2026-08-09，判据来自 ai-agent-book ch2，端点事实为一手实测）
 
@@ -165,10 +166,10 @@ TTL 只有 3~5 分钟，还有一条操作性后果：`run:batch` 跑 125 题必
 
 输入题库 = 《Science》125 前沿科学问题（lib/science125.json，权威来源抓取）。E2E 默认用例从中选天文类一题；批量 runner 支持按题号列表串行出多份结果（提交期跑全量 125）。
 
-## 目录布局法理（2026-08-09，依 next/eve 本地文档 + steve 考证）
+## 目录布局法理（2026-08-09 依 next 本地文档 + steve 考证；2026-08-10 迁移后复核不变）
 
 - Next 只认领 `app/ pages/ public/ src/` 四个顶层目录（本版本 02-project-structure.md:11-28），`lib/`/`components/` 是官方明说的无框架语义占位名，唯一规范是"选一种策略保持一致"——我们用文档策略 A（应用代码在根、app/ 纯路由）。
-- eve 只认领 `agent/` 与根级 `evals/`；根 `lib/` 对 eve 不可见，无碰撞。
+- `agent/` 布局沿用原约定（instructions.md 同目录、subagents/<节点>/、共享实现在 agent/lib/）——迁移只换了装配方式（约定式发现 → 显式工厂 `buildMasterAgent`），文件地理未动。
 - 数据文件归属：官方四个静态 JSON 先例全部与消费者共置并 import——`lib/science125.json` 与之同形；`public/` 定义是"served directly without processing"，数据文件放那反而违反定义。
 - **架构约束（比配置更本质）**：luup 是**有状态自托管应用**（runs/、memory/ 是运行期读写的本地状态），不做 serverless/standalone 部署；`outputFileTracingIncludes` 之类的 serverless 追踪配置因此不适用。若将来要上无持久卷平台，先回头看存储裁决的 PG 路径。
 - `lib/` 的双内容（web 消费 + harness）判定为"共享内核 + 三消费者"（paths/runId/nodes/mdTable/types 被 web+scripts+agent 三方共用），不拆——拆散会破坏 REPO_ROOT 单一定义点。
@@ -178,12 +179,12 @@ TTL 只有 3~5 分钟，还有一条操作性后果：`run:batch` 跑 125 题必
 **不引入数据库。** 判据与证据（详见会话 db-evaluation 报告）：
 - 触发条件一条不满足：写者恒为 1（百炼配额刻意串行）；runs/ 全量外推仅 ~21MB；且 runs/ 是交付物与防虚构证据链本身，进 DB 净损失。
 - 参照系：loopx 零 DB（许可 SQLite 而终未用，查询走可丢弃的派生缓存）；hermes 迁 SQLite 的触发是 6 类真并发写者 + 全局 FTS（我们都没有），且其记忆本体仍是平文件；steve 的 PG 只装 eve workflow 引擎内部状态，业务数据不进。
-- 边界即 .gitignore：runs/ + memory/（不 ignore = source of truth = 永远是文件）vs .eve/（ignore = 可丢弃派生态）。
+- 边界即 .gitignore：runs/ + memory/（不 ignore = source of truth = 永远是文件）vs 构建产物（ignore = 可丢弃派生态）。
 - 将来唯一可能的引入路径：PG + @workflow/world-postgres（eve 官方线），触发三选一——真并行跑 / 无持久卷部署 / 磁盘不可删。
 - **允许集（用户 2026-08-09 限定）**：若上 DB 只在 {SQLite, MongoDB, PostgreSQL} 内选。当前裁决在此约束下：PG 是唯一触发路径；SQLite 的候场理由（跨 run 统计）由确定性脚本覆盖；Mongo 维持排除（无文档型查询需求）。DuckDB 类"SQL 透镜"方案不在允许集内，作废。
 - 2026-08-09 二次评估（战役末态实测外推：runs ~18MB/125 目录、library ~1750 卡、单写者经 D 加固）：结论不变。
 
-**评估暴露的真雷（125 全量跑前置修复）**：.eve/.workflow-data 已 1.1GB/7 万文件（仅 7 次 run），外推 125 题 ≈20GB/125 万文件而本机余 95GB，eve 自动 prune 不覆盖 → ①批量跑加保留策略（题间清理已验收 run 的 workflow 状态）②派生 runs/index.json 缓存 ③web 列表 mtime memo。
+**（已消解）评估曾暴露的真雷**：.eve/.workflow-data 纯重放工件外推 125 题 ≈20GB/125 万文件，当时以保留策略（lib/retention.ts）对冲。2026-08-10 迁至 @openai/agents 后 durable 流数据这一层整体不存在，保留策略连同其 selftest 一并删除；仍然成立的两条：②派生 runs/index.json 缓存 ③web 列表 mtime memo。
 
 ## MVP 之外（技术方案文档中论述，不实现）
 

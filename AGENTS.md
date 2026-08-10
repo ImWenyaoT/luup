@@ -1,6 +1,6 @@
-# Eve Agent App
+# luup Agent App
 
-This project uses the Eve framework. Before writing code, always read the relevant guide in `node_modules/eve/docs/`.
+This project is built on the OpenAI Agents SDK (`@openai/agents`), driving Qwen (Bailian) through its OpenAI-compatible Responses endpoint. Before writing agent code, consult the SDK docs at <https://openai.github.io/openai-agents-js/> (a source clone lives at `../oss/openai-agents-js` for exact signatures). Model wiring facts live in `agent/lib/model.ts` — read them before touching anything model-related.
 
 ## Project docs
 

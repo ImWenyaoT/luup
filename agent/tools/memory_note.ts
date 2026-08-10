@@ -14,14 +14,42 @@
  *
  * memory/ 不存在时静默 no-op（可删除性红线）：返回 skipped，不建目录、不报错。
  *
- * replay: "never" —— 题页与 lessons.md 是 append-only 且没有幂等键，log.md 同步再追一条：
- * 重放必然写出重复条目（append-only 语义禁止事后删除，只能留着）。
+ * 追加语义注意：题页与 lessons.md 是 append-only 且没有幂等键 —— 一次调用一条记录，
+ * 重复调用必然写出重复条目（append-only 语义禁止事后删除）。
  */
-import { defineTool } from "eve/tools";
+import { tool } from "@openai/agents";
 import { z } from "zod";
 import { writeNote } from "../lib/campaignMemory.ts";
 
-export default defineTool({
+const parameters = z.object({
+  target: z.enum(["question", "lessons"]).describe("'question' = this run's question page; 'lessons' = cross-question lessons."),
+  note: z.string().min(1).describe("The record itself, Markdown. Be concrete: what was tried, what the verdict was, why."),
+});
+
+/** 裸执行函数：selftest 直调它，不经 SDK 的 RunContext。 */
+export async function executeMemoryNote({ target, note }: z.infer<typeof parameters>) {
+  const result = writeNote({ target, note });
+  if (result.skipped) {
+    return {
+      written: [],
+      failed: [],
+      skipped: true,
+      hint: `长期记忆未启用（${result.reason ?? "memory/ 不存在"}），本次未写入。这不是错误，继续收尾即可。`,
+    };
+  }
+  return {
+    written: result.written,
+    failed: result.failed,
+    skipped: false,
+    hint:
+      result.failed.length === 0
+        ? `已写入并读回验证：${result.written.map((w) => w.path).join(", ")}。`
+        : `部分未写入：${result.failed.map((f) => `${f.path}（${f.reason}）`).join("；")}。收尾报告里必须如实说明这几条没写成，不要声称已归档。`,
+  };
+}
+
+export default tool({
+  name: "memory_note",
   description:
     "Append one record to the campaign-scoped long-term memory that survives across runs. " +
     "target='question' writes to THIS run's Science-125 question page: run outcome, pointer to the run " +
@@ -34,28 +62,6 @@ export default defineTool({
     "The paper library and the indexes are code-generated and cannot be written here. " +
     "The result is verified by reading each file back: report `failed` honestly — a non-empty `failed` means " +
     "those files were NOT written, whatever your summary says.",
-  inputSchema: z.object({
-    target: z.enum(["question", "lessons"]).describe("'question' = this run's question page; 'lessons' = cross-question lessons."),
-    note: z.string().min(1).describe("The record itself, Markdown. Be concrete: what was tried, what the verdict was, why."),
-  }),
-  async execute({ target, note }) {
-    const result = writeNote({ target, note });
-    if (result.skipped) {
-      return {
-        written: [],
-        failed: [],
-        skipped: true,
-        hint: `长期记忆未启用（${result.reason ?? "memory/ 不存在"}），本次未写入。这不是错误，继续收尾即可。`,
-      };
-    }
-    return {
-      written: result.written,
-      failed: result.failed,
-      skipped: false,
-      hint:
-        result.failed.length === 0
-          ? `已写入并读回验证：${result.written.map((w) => w.path).join(", ")}。`
-          : `部分未写入：${result.failed.map((f) => `${f.path}（${f.reason}）`).join("；")}。收尾报告里必须如实说明这几条没写成，不要声称已归档。`,
-    };
-  },
+  parameters,
+  execute: executeMemoryNote,
 });

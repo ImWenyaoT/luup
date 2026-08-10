@@ -11,8 +11,8 @@
  *
  * 1. **两个证据构造器等价**：`readRunEvidence(dir)`（脚本侧）与 `evidenceFromScan(scan)`
  *    （web 侧）对同一个目录必须给出逐字段相同的证据。两条取证通路是这次收敛的唯一分叉点。
- * 2. **五个读者与判定一致**：web 五态、run-batch 续跑认领、retention 的终态、
- *    rebuild-memory 的三字符串、run.ts 的退出码。
+ * 2. **四个读者与判定一致**：web 五态、run-batch 续跑认领、rebuild-memory 的
+ *    三字符串、run.ts 的退出码。
  *    重点是**续跑判据与 web `passed` 对同一目录必须同判**（只差一个题号）。
  *    锁在 web 五态里是显式入参（deriveStatus 的 activeId），所以这里能对同一个目录
  *    分别摆出「没人持锁」与「锁在自己手上」两半 —— 锁自己的行为在 selftest-lock.ts。
@@ -33,7 +33,6 @@ import { writeArtifact } from "#lib/artifacts.ts";
 import { RUNS_DIR } from "../lib/paths.ts";
 import { check, eq, report } from "./selftestHarness.ts";
 import { deriveStatus, evidenceFromScan, scanDir, scanRun } from "../lib/phase.ts";
-import { planPrune } from "../lib/retention.ts";
 import { type VerdictFact, admitVerdict, reworkBudget, verdictFact } from "../lib/rework.ts";
 import { RUN_ID_RE, isRunId, stampToMs, utcStamp } from "../lib/runId.ts";
 import {
@@ -78,7 +77,7 @@ function legacyDelivered(f: Files): number | null {
   return legacyAllPass(f["verification-report.md"] ?? null) ? meta.questionId : null;
 }
 
-/** 旧 lib/retention.ts TERMINAL_RUN_MARKERS。 */
+/** 收编前（已删的 lib/retention.ts）的 TERMINAL_RUN_MARKERS。 */
 const legacyTerminal = (f: Files) =>
   f["verification-report.md"] !== undefined || f["FAILED.md"] !== undefined;
 
@@ -301,12 +300,6 @@ for (const c of CASES) {
   const dir = join(runsDir, c.id);
   mkdirSync(dir, { recursive: true });
   for (const [name, body] of Object.entries(c.files)) writeFileSync(join(dir, name), body, "utf8");
-  // workflow 直连键：retention 靠它把流映射回 run，不必依赖时间窗
-  writeFileSync(
-    join(dir, "invoke-result.json"),
-    `${JSON.stringify({ resume: { session: { sessionId: `wrun_${c.id}` } } })}\n`,
-    "utf8",
-  );
 }
 
 const dirOf = (c: Case) => join(runsDir, c.id);
@@ -379,44 +372,14 @@ for (const c of CASES) {
   );
 }
 
-console.log("\n[5] 读者 ④ retention 终态 —— 能不能删这个 run 的重放数据");
-const stateDir = join(root, "state");
-const chunksDir = join(stateDir, "streams", "chunks");
-mkdirSync(chunksDir, { recursive: true });
-for (const c of CASES) {
-  const wrun = `wrun_${c.id}`;
-  const wf = join(stateDir, "runs");
-  mkdirSync(wf, { recursive: true });
-  writeFileSync(
-    join(wf, `${wrun}.json`),
-    meta({ runId: wrun, status: "completed", startedAt: iso(NOW - 4 * HOUR), completedAt: iso(NOW - 3 * HOUR) }),
-    "utf8",
-  );
-  const owners = join(stateDir, "streams", "runs");
-  mkdirSync(owners, { recursive: true });
-  writeFileSync(join(owners, `${wrun}.json`), meta({ streams: [`strm_${c.id}`] }), "utf8");
-  const sd = join(chunksDir, `strm_${c.id}`);
-  mkdirSync(sd, { recursive: true });
-  const f = join(sd, "chnk_0.bin");
-  writeFileSync(f, "x".repeat(64), "utf8");
-  utimesSync(f, new Date(NOW - 3.5 * HOUR), new Date(NOW - 3.5 * HOUR));
-  utimesSync(sd, new Date(NOW - 3.5 * HOUR), new Date(NOW - 3.5 * HOUR));
-}
-const plan = planPrune({ stateDir, runsDir, graceMs: HOUR, apply: false, now: NOW });
-for (const c of CASES) {
-  const p = plan.plans.find((x) => x.id === `strm_${c.id}`);
-  eq(`${c.id} 流的去留跟着 terminal 走`, p?.decision, c.terminal ? "delete" : "keep");
-  if (!c.terminal) eq(`${c.id} 保留理由 = run-not-terminal`, p?.reason, "run-not-terminal");
-}
-
-console.log("\n[6] 读者 ⑤ rebuild-memory 三态 ⑥ run.ts 退出码");
+console.log("\n[5] 读者 ④ rebuild-memory 三态 ⑤ run.ts 退出码");
 for (const c of CASES) {
   const o = runOutcome(evidenceOf(c));
   // rebuild-memory 的映射（表示层在脚本里，这里断言它是全的且互斥）
   const verdict = o.phase === "failed" ? "FAILED" : o.deliverable ? "ALL PASS" : "UNVERIFIED";
   check(`${c.id} 三态互斥`, !(o.phase === "failed" && o.deliverable));
   eq(`${c.id} verdict`, verdict, c.phase === "failed" ? "FAILED" : c.deliverable ? "ALL PASS" : "UNVERIFIED");
-  // run.ts：eve 退 0 时才有资格谈成功，走没走到 proposal 正文由 outcome 说了算
+  // run.ts：master 退 0 时才有资格谈成功，走没走到 proposal 正文由 outcome 说了算
   eq(`${c.id} reachedProposal`, reachedProposal(o), c.reached);
 }
 
@@ -424,7 +387,7 @@ for (const c of CASES) {
 /* 4. 与收编前的手写判据比对                                              */
 /* ------------------------------------------------------------------ */
 
-console.log("\n[7] 回归 —— 新判定 == 收编前六份手写判据");
+console.log("\n[6] 回归 —— 新判定 == 收编前六份手写判据");
 for (const c of CASES) {
   if (c.legacy === "changed") {
     check(`${c.id} 有意分叉：旧 web 判 passed，旧续跑判要重跑（${c.note}）`, legacyStatus(c.files) === "passed" && legacyDelivered(c.files) === null);
@@ -450,12 +413,11 @@ for (const c of CASES) {
 }
 
 /**
- * terminal 是这次唯一一处有意放宽：收编前 retention 只认 verification-report.md 与
- * FAILED.md 两个 marker，现在 proposal 正文 / 退出码 / 结束时间同样算终结凭据 ——
- * 它们全都只可能在 eve 退出之后落盘。放宽必须是单向的（旧判终态的新一定也判终态），
- * 否则 retention 会开始留住本该清掉的重放数据。
+ * terminal 是收编时唯一一处有意放宽：此前只认 verification-report.md 与 FAILED.md
+ * 两个 marker，现在 proposal 正文 / 退出码 / 结束时间同样算终结凭据 —— 它们全都
+ * 只可能在 master 退出之后落盘。放宽必须是单向的（旧判终态的新一定也判终态）。
  */
-console.log("\n[8] terminal 的放宽是单向的");
+console.log("\n[7] terminal 的放宽是单向的");
 for (const c of CASES) {
   const o = runOutcome(evidenceOf(c));
   check(`${c.id} 旧终态 ⇒ 新终态`, !legacyTerminal(c.files) || o.terminal);

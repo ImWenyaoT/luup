@@ -71,7 +71,7 @@ MVP 门槛 = G1 + G2 可用、G3 已有、G5 续跑能力验证；G4 骨架。
 
 | 层 | 指标 | 定义/数据源 | 翻盘什么决定 |
 |---|------|------------|-------------|
-| Tier0 | 现状保留 | B1–B4 验收器、eve evals、verdicts | 单 run 通过性 |
+| Tier0 | 现状保留 | B1–B4 验收器、eval 脚本（eval:smoke / eval:full）、verdicts | 单 run 通过性 |
 | Tier1（零 LLM 派生） | M4 交付率 | deliverable runs / 总 runs（runOutcome） | 战役节奏 |
 | | M5 Pass^2 | 同题连续 2 次均 deliverable 的比例 | 可靠性口径（替代单次快照） |
 | | M6 成本会计 | usage.jsonl 聚合：token/题、¥/题、按节点分解 | 重跑预算、模型分档 |
