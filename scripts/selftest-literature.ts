@@ -17,8 +17,8 @@
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { MEMORY_DIR_ENV } from "#lib/campaignMemory.ts";
-import { arxivIdPattern } from "#lib/contracts.ts";
+import { MEMORY_DIR_ENV } from "#lib/agents/campaignMemory.ts";
+import { arxivIdPattern } from "#lib/agents/contracts.ts";
 import {
   arxivIdFromFilename,
   listPapers,
@@ -27,29 +27,14 @@ import {
   paperPath,
   parseIndexRows,
   readIndex,
-} from "#lib/paperStore.ts";
-import { RUN_DIR_ENV } from "#lib/runContext.ts";
+} from "#lib/agents/paperStore.ts";
+import { RUN_DIR_ENV } from "#lib/agents/runContext.ts";
 import { check, report } from "./selftestHarness.ts";
-import arxivSaveTool from "#tools/arxiv_save.ts";
-import arxivSearchTool from "#tools/arxiv_search.ts";
-import paperIndexReadTool from "#tools/paper_index_read.ts";
-
-/* ---------------------------------------------------------------- */
-
-/**
- * 直接调 defineTool 的 execute。eve 的 ToolContext 只在真实 runtime 里存在，
- * 这三个工具都不碰 ctx，所以传 undefined 即可；同时把 `Promise|value|AsyncIterable`
- * 的返回联合收窄成普通值。
- */
-type ToolLike<I, O> = { execute(input: I, ctx: never): Promise<O> | O | AsyncIterable<O> };
-
-async function callTool<I, O>(tool: ToolLike<I, O>, input: I): Promise<O> {
-  const result = tool.execute(input, undefined as never);
-  if (result !== null && typeof result === "object" && Symbol.asyncIterator in result) {
-    throw new Error("selftest 不支持流式（async generator）工具");
-  }
-  return await (result as Promise<O> | O);
-}
+// 工具模块同时导出「SDK tool（模型面）」与「裸 execute（测试面）」：
+// 自测直调后者，不经 @openai/agents 的 RunContext。
+import { executeArxivSave } from "#lib/agents/tools/arxiv_save.ts";
+import { executeArxivSearch } from "#lib/agents/tools/arxiv_search.ts";
+import { executePaperIndexRead } from "#lib/agents/tools/paper_index_read.ts";
 
 /* ---------------------------------------------------------------- */
 
@@ -59,7 +44,7 @@ const runDir = keepDir
   : mkdtempSync(join(tmpdir(), "luup-selftest-"));
 process.env[RUN_DIR_ENV] = runDir;
 /*
- * savePaper 会把每篇卡同步进 campaign library（agent/lib/campaignMemory.ts）。
+ * savePaper 会把每篇卡同步进 campaign library（lib/agents/campaignMemory.ts）。
  * 自测的论文不该混进 125 题战役的长期记忆里 —— 把 campaign 目录改指到临时沙箱，
  * 仓库根的 memory/ 一个字节都不会被改到。
  */
@@ -71,7 +56,7 @@ console.log(`memory dir: ${memoryDir}（临时沙箱，跑完删除）\n`);
 
 // ---- 1. arxiv_search --------------------------------------------------
 console.log("[1] arxiv_search: 真实检索 solar flare prediction");
-const search = await callTool(arxivSearchTool, {
+const search = await executeArxivSearch({
   query: "solar flare prediction",
   maxResults: 5,
   sortBy: "relevance" as const,
@@ -98,7 +83,7 @@ for (const r of search.results.slice(0, 5)) {
 // ---- 2. arxiv_save ----------------------------------------------------
 const targets = search.results.slice(0, 3).map((r) => r.arxivId);
 console.log(`\n[2] arxiv_save: 保存 ${targets.join(", ")}`);
-const saved = await callTool(arxivSaveTool, { arxivIds: targets });
+const saved = await executeArxivSave({ arxivIds: targets });
 check("savedCount === 3", saved.savedCount === 3, `savedCount=${saved.savedCount}`);
 check("无 rejectedIds", saved.rejectedIds.length === 0, JSON.stringify(saved.rejectedIds));
 check("无 notFoundIds", saved.notFoundIds.length === 0, JSON.stringify(saved.notFoundIds));
@@ -138,14 +123,14 @@ check(
 );
 for (const r of rows) console.log(`    | ${r.arxivId} | ${r.year} | ${r.title.slice(0, 50)} |`);
 
-const viaTool = await callTool(paperIndexReadTool, {});
+const viaTool = await executePaperIndexRead();
 check("paper_index_read.count === 3", viaTool.count === 3, `count=${viaTool.count}`);
 check("paper_index_read.index 与磁盘一致", viaTool.index === indexMd);
 
 // ---- 5. 旧式 id 的 "/" → "__" 映射与验收器互逆 -------------------------
 const legacyId = "astro-ph/0601001";
 console.log(`\n[5] 旧式 id 映射：${legacyId}`);
-const legacySave = await callTool(arxivSaveTool, { arxivIds: [legacyId] });
+const legacySave = await executeArxivSave({ arxivIds: [legacyId] });
 check("旧式 id 保存成功", legacySave.savedCount === 1, JSON.stringify(legacySave.notFoundIds));
 check(
   `文件名为 astro-ph__0601001.md`,
@@ -178,7 +163,7 @@ check("index.md 增至 4 行", parseIndexRows(readIndex(runDir)).length === 4);
 // ---- 6. 防虚构 ---------------------------------------------------------
 console.log("\n[6] 防虚构：非法 / 不存在的 id");
 const before = listPapers(runDir).length;
-const bogus = await callTool(arxivSaveTool, {
+const bogus = await executeArxivSave({
   arxivIds: ["totally-made-up", "9999.99999"],
 });
 check("非法格式 id 进 rejectedIds（不发请求）", bogus.rejectedIds.includes("totally-made-up"));

@@ -17,7 +17,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ArxivPaper } from "#lib/arxiv.ts";
+import type { ArxivPaper } from "#lib/agents/arxiv.ts";
 import {
   COMPACTION_DEFAULTS,
   MEMORY_DIR_ENV,
@@ -29,27 +29,16 @@ import {
   memoryEnabled,
   searchMemory,
   writeNote,
-} from "#lib/campaignMemory.ts";
-import { listPapers, readIndex, savePaper } from "#lib/paperStore.ts";
-import { RUN_DIR_ENV } from "#lib/runContext.ts";
+} from "#lib/agents/campaignMemory.ts";
+import { listPapers, readIndex, savePaper } from "#lib/agents/paperStore.ts";
+import { RUN_DIR_ENV } from "#lib/agents/runContext.ts";
 import { parseTableRows } from "../lib/mdTable.ts";
 import { check, report } from "./selftestHarness.ts";
-import memoryNoteTool from "#tools/memory_note.ts";
-import memorySearchTool from "#tools/memory_search.ts";
+// 与 selftest-literature 同款：直调工具模块导出的裸 execute，不经 SDK 的 RunContext。
+import { executeMemoryNote } from "#lib/agents/tools/memory_note.ts";
+import { executeMemorySearch } from "#lib/agents/tools/memory_search.ts";
 
-/* ---------------------------------------------------------------- */
-
-/** 与 selftest-literature 同款：直接调 defineTool 的 execute，ctx 用不到。 */
-type ToolLike<I, O> = { execute(input: I, ctx: never): Promise<O> | O | AsyncIterable<O> };
-async function callTool<I, O>(tool: ToolLike<I, O>, input: I): Promise<O> {
-  const result = tool.execute(input, undefined as never);
-  if (result !== null && typeof result === "object" && Symbol.asyncIterator in result) {
-    throw new Error("selftest 不支持流式工具");
-  }
-  return await (result as Promise<O> | O);
-}
-
-/** 手造论文：零网络、零费用，字段与 agent/lib/arxiv.ts 的 ArxivPaper 一致。 */
+/** 手造论文：零网络、零费用，字段与 lib/agents/arxiv.ts 的 ArxivPaper 一致。 */
 function fakePaper(over: Partial<ArxivPaper> & { arxivId: string }): ArxivPaper {
   return {
     version: "v1",
@@ -164,7 +153,7 @@ check("run 内 index.md 未被 campaign 层污染", readIndex(runDir).includes("
 // 模型选不了写哪一题，这里也只能靠改环境变量来切题页。
 console.log("\n[3] memory_note 写后读回 → {written[], failed[]}");
 process.env.LUUP_QUESTION_ID = "54";
-const note1 = await callTool(memoryNoteTool, {
+const note1 = await executeMemoryNote({
   target: "question" as const,
   note: "verdict: SUCCESS。胜出假设：磁图序列的时序注意力可提前 6 小时预警。被拒假设：纯统计外推（无物理机制，critique 一致驳回）。有效检索词：magnetogram flare prediction transformer。",
 });
@@ -175,7 +164,7 @@ const q54 = readFileSync(layout.questionPage(54), "utf8");
 check("q54.md 真的落盘了 note 正文", q54.includes("磁图序列的时序注意力"));
 check("q54.md 首次创建带 append-only 表头", q54.startsWith("# q54") && q54.includes("append-only"));
 
-const note2 = await callTool(memoryNoteTool, {
+const note2 = await executeMemoryNote({
   target: "question" as const,
   note: "第二次跑：假设「用 GOES X 射线单通道即可」被拒——数据分辨率不足。",
 });
@@ -185,7 +174,7 @@ check("第二次 written 仍为 2 条且无 failed", note2.written.length === 2 
 
 // 题号从环境里拿掉 = 这次 run 没有题号（直接手跑）：题页无从落笔，必须进 failed
 delete process.env.LUUP_QUESTION_ID;
-const note3 = await callTool(memoryNoteTool, {
+const note3 = await executeMemoryNote({
   target: "question" as const,
   note: "没有题号，应当进 failed 而不是静默成功。",
 });
@@ -193,7 +182,7 @@ check("环境无题号时 target=question → failed 非空", note3.failed.lengt
 check("failed 的理由指向环境题号而不是入参", note3.failed[0]?.reason.includes("LUUP_QUESTION_ID") === true, JSON.stringify(note3.failed));
 check("此时 hint 明说没写成（不许被总结盖过去）", note3.hint.includes("未写入"), note3.hint);
 
-const note4 = await callTool(memoryNoteTool, {
+const note4 = await executeMemoryNote({
   target: "lessons" as const,
   note: "教训：astro-ph.SR 的 arXiv 覆盖良好，hep-ex 的实验细节多在 CERN 内部报告，检索命中率低（样本：3 题）。",
 });
@@ -226,7 +215,7 @@ check("lessons.md 命中", hitL.hits.some((h) => h.path === "memory/lessons.md")
 const hitNone = searchMemory({ query: "quantum chromodynamics lattice", memoryDir });
 check("无关 query 零命中（不做相似度兜底）", hitNone.hitCount === 0, `hitCount=${hitNone.hitCount}`);
 
-const viaTool = await callTool(memorySearchTool, { query: "cosmic ray propagation", limit: 20 });
+const viaTool = await executeMemorySearch({ query: "cosmic ray propagation", limit: 20 });
 check("memory_search 工具可用且 enabled", viaTool.enabled && viaTool.hitCount > 0, `hitCount=${viaTool.hitCount}`);
 check("工具 hint 明说命中只是线索（B1 不放松）", viaTool.hint.includes("arxiv_save"), viaTool.hint);
 
@@ -388,10 +377,10 @@ try {
   const w = writeNote({ target: "lessons", note: "should be dropped" });
   noop.tool = w.skipped === true;
 
-  const t = await callTool(memoryNoteTool, { target: "lessons" as const, note: "dropped" });
+  const t = await executeMemoryNote({ target: "lessons" as const, note: "dropped" });
   noop.tool = noop.tool && t.skipped === true && t.written.length === 0 && t.failed.length === 0;
 
-  const ts = await callTool(memorySearchTool, { query: "magnetogram flare", limit: 20 });
+  const ts = await executeMemorySearch({ query: "magnetogram flare", limit: 20 });
   noop.toolSearch = ts.enabled === false && ts.hits.length === 0 && ts.hint.includes("不是错误");
 
   // compaction 同样受可删除性红线约束：没有 memory/ 就没有分片、没有归档、没有目录

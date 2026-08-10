@@ -4,7 +4,7 @@
  * ## 红线：rubric 文本永不进 agent 的 prompt
  *
  * 本文件里的评级锚点、veto 条款、打分指令，**只能**被 `scripts/score-run.ts` 与
- * `scripts/calibrate-judge.ts` import。它们不得出现在 `agent/instructions.md`、任何
+ * `scripts/calibrate-judge.ts` import。它们不得出现在 `lib/agents/master.md`、任何
  * subagent 的 instructions、`scripts/run.ts` 的开场 message，也不得经 memory 回传给
  * 下一次 run（题页只写事实，见 {@link factNote}）。
  *

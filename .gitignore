@@ -1,11 +1,7 @@
 node_modules
 .env*
-.eve
 .vercel
-.workflow-data
 .next
-.output
-.nitro
 dist
 .DS_Store
 *.tsbuildinfo
@@ -16,3 +12,4 @@ next-env.d.ts
 # E2E 的中间产物；docs/report/screenshots/ 是交付物，照常入库
 .playwright
 playwright-report
+runs/.active.json

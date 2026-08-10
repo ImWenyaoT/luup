@@ -58,9 +58,11 @@ test.describe("浏览运行历史", () => {
 
     await page.getByRole("button", { name: /^失败/ }).click();
 
+    // 失败 run 会随新跑变多（fixtures 的 ≥ 纪律）：断言「全是失败态 + 钉住的那个在场」，不数死数
     const rows = page.getByRole("row").filter({ has: page.getByRole("link") });
-    await expect(rows).toHaveCount(1);
-    await expect(rows.first()).toContainText(RUNS.failed);
+    expect(await rows.count()).toBeGreaterThanOrEqual(1);
+    for (const row of await rows.all()) await expect(row).toContainText("失败");
+    await expect(page.getByRole("row").filter({ hasText: RUNS.failed })).toHaveCount(1);
   });
 
   test("从列表点进详情，落在同一个 run 上", async ({ page }) => {

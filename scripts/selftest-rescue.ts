@@ -5,7 +5,7 @@
  *
  * 覆盖两件事，正好是救援通道的两个接缝：
  *
- *  1. **`LUUP_MODEL_ID` 覆盖生效**（`agent/lib/model.ts`）。这是救援轮唯一的传导机制 ——
+ *  1. **`LUUP_MODEL_ID` 覆盖生效**（`lib/agents/model.ts`）。这是救援轮唯一的传导机制 ——
  *     run-batch 只往子进程塞一个环境变量，四个 agent 节点能不能真的换档全靠它。
  *     反向断言同样重要：**显式传入的 modelId 必须压过环境变量**，否则一次救援轮会顺手
  *     把 judge（`scripts/judgeClient.ts` 自己定档）也换掉，救援轮的分就跟主批不可比了。
@@ -20,37 +20,36 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { QWEN_DEFAULT_MODEL_ID, qwenModel } from "#lib/model.ts";
+import { QWEN_DEFAULT_MODEL_ID, resolveQwenModelId } from "#lib/agents/model.ts";
 import { REPO_ROOT, RUNS_DIR } from "../lib/paths.ts";
 import { deliveredQuestionId, readRunEvidence } from "../lib/runOutcome.ts";
 import { check, eq, report } from "./selftestHarness.ts";
 
-/** `LanguageModel` 是 `string | LanguageModelV*` 的联合，取 id 要两种形态都认。 */
-const modelIdOf = (m: unknown): string =>
-  typeof m === "object" && m !== null && "modelId" in m ? String((m as { modelId: unknown }).modelId) : String(m);
-
 /* ------------------------------------------------------------------ */
 /* 1. LUUP_MODEL_ID 覆盖                                                */
 /* ------------------------------------------------------------------ */
+
+// 测档位决策本身（resolveQwenModelId 纯函数）——qwenModel 只是把它包进 SDK Model
+// 实例（那里的 model 字段是 protected，测内部字段等于测别人的实现细节）。
 
 console.log("[1] LUUP_MODEL_ID 覆盖（救援通道的传导机制）");
 
 const savedModelId = process.env.LUUP_MODEL_ID;
 
 delete process.env.LUUP_MODEL_ID;
-eq("未设 LUUP_MODEL_ID → 默认档", modelIdOf(qwenModel()), QWEN_DEFAULT_MODEL_ID);
+eq("未设 LUUP_MODEL_ID → 默认档", resolveQwenModelId(), QWEN_DEFAULT_MODEL_ID);
 
 process.env.LUUP_MODEL_ID = "qwen3.8-max";
-eq("设了 LUUP_MODEL_ID → 覆盖默认档", modelIdOf(qwenModel()), "qwen3.8-max");
-eq("thinking 档同样被覆盖", modelIdOf(qwenModel({ thinking: true })), "qwen3.8-max");
+eq("设了 LUUP_MODEL_ID → 覆盖默认档", resolveQwenModelId(), "qwen3.8-max");
+eq("thinking 档同样被覆盖", resolveQwenModelId({ thinking: true }), "qwen3.8-max");
 eq(
   "显式 modelId 压过 LUUP_MODEL_ID（救援轮不改判分器档位）",
-  modelIdOf(qwenModel({ modelId: "qwen3.7-plus" })),
+  resolveQwenModelId({ modelId: "qwen3.7-plus" }),
   "qwen3.7-plus",
 );
 
 process.env.LUUP_MODEL_ID = "   ";
-eq("空白 LUUP_MODEL_ID 视同未设", modelIdOf(qwenModel()), QWEN_DEFAULT_MODEL_ID);
+eq("空白 LUUP_MODEL_ID 视同未设", resolveQwenModelId(), QWEN_DEFAULT_MODEL_ID);
 
 if (savedModelId === undefined) delete process.env.LUUP_MODEL_ID;
 else process.env.LUUP_MODEL_ID = savedModelId;

@@ -20,7 +20,7 @@
  * `apply` 不得改写入参（selftest 逐条断言「两次施加同结果」与「原 proposal 未被就地改写」）。
  * 随机化的劣化会让检出率每次都不一样，那就不是校准而是抽奖。
  */
-import type { Proposal } from "#lib/contracts.ts";
+import type { Proposal } from "#lib/agents/contracts.ts";
 
 /** 先验期望：`lower` = 分数必须低于原版；`veto` = 必须触发虚构类断言 veto。 */
 export type MutationExpectation = "lower" | "veto";

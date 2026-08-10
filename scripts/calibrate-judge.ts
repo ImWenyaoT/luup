@@ -18,7 +18,7 @@
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
-import { ProposalSchema } from "#lib/contracts.ts";
+import { ProposalSchema } from "#lib/agents/contracts.ts";
 import { escapeCell } from "../lib/mdTable.ts";
 import { MUTATIONS, type MutantOutcome, detectionTable } from "../lib/mutate.ts";
 import { REPO_ROOT } from "../lib/paths.ts";

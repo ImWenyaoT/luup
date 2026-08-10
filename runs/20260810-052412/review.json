@@ -1,0 +1,37 @@
+{
+  "verdict": "revise",
+  "findings": [
+    {
+      "issue": "Missing formation channel: Globular cluster dynamical formation",
+      "detail": "The proposal's three-channel model (CC-SN, EC-SN, AIC) omits globular cluster dynamical formation, which produces a substantial fraction of observed millisecond pulsars through exchange interactions and other dynamical processes, not isolated binary evolution.",
+      "checkedWith": "arxiv_search(\"globular cluster millisecond pulsar formation channel\") returned 0711.3001 (Ivanova et al. 2007)"
+    },
+    {
+      "issue": "Insufficient emphasis on kick velocities as primary discriminant",
+      "detail": "The most direct observational signature distinguishing formation channels is natal kick velocity (EC-SN and AIC predict low kicks, CC-SN predicts high kicks), but the proposal's methods focus on spin period and magnetic field without adequately emphasizing proper motion measurements and binary orbital parameters (especially eccentricity).",
+      "checkedWith": "arxiv_search(\"pulsar kick velocity\") returned multiple papers showing kick velocity distributions are key discriminants"
+    },
+    {
+      "issue": "AIC channel lacks direct observational confirmation",
+      "detail": "The proposal treats AIC as an established channel with predicted signatures, but 1406.4128 explicitly states there has never been a direct detection of such an event. This weakens the empirical foundation for including AIC as a separate channel in the mixture model.",
+      "checkedWith": "Evidence card for 1406.4128 confirms no direct AIC detection exists"
+    },
+    {
+      "issue": "Hypothesis falsifiability is unclear",
+      "detail": "The hypothesis claims channels produce statistically distinguishable distributions but doesn't specify what would constitute evidence against the three-channel model. If distributions overlap significantly, the mixture model cannot distinguish them, making the hypothesis unfalsifiable.",
+      "checkedWith": "The proposal's experiments section lists Bayesian evidence and KS statistics as metrics but doesn't define rejection criteria"
+    },
+    {
+      "issue": "Missing binary system analysis",
+      "detail": "The strongest evidence for different formation channels comes from binary systems (DNS, wide binaries) where orbital eccentricity directly distinguishes high-kick vs low-kick formation. The proposal focuses on single pulsar properties but doesn't emphasize binary orbital analysis.",
+      "checkedWith": "arxiv_search(\"double neutron star eccentricity\") returned 0704.1215 showing six of eight DNS have low eccentricities (<0.27)"
+    }
+  ],
+  "requiredChanges": [
+    "Add globular cluster dynamical formation as a fourth channel or explicitly justify its exclusion with quantitative arguments about its contribution to the observed pulsar population.",
+    "Include natal kick velocities (from proper motions) and binary orbital parameters (especially eccentricity for DNS systems) as primary observables in the hierarchical Bayesian model, not just spin period and magnetic field.",
+    "Acknowledge the lack of direct observational confirmation for AIC and frame it as a theoretical prediction to be tested rather than an established channel.",
+    "Define explicit falsification criteria: specify what Bayesian evidence ratios or posterior distributions would lead to rejecting the three-channel hypothesis in favor of simpler models.",
+    "Add a dedicated analysis of binary pulsar systems (DNS, wide binaries) using orbital eccentricity distributions as key discriminants between formation channels."
+  ]
+}

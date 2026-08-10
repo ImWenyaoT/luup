@@ -45,18 +45,13 @@
     "e2e/**/*.ts",
     "playwright.config.ts",
     "lib/**/*.ts",
-    "agent/**/*.ts",
     "scripts/**/*.ts",
-    "evals/**/*.ts",
-    ".eve/**/*.d.ts",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",
     ".next",
-    ".output",
-    ".eve/dev-runtime",
     "runs"
   ]
 }

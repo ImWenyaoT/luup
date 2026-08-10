@@ -32,3 +32,24 @@
 
 ## [2026-08-10] run | q61 | FAILED
 - /Users/edward/Documents/luup/runs/20260810-013424 未产出 proposal.json，也没有 FAILED.md（流水线中途死亡）。 问题：来源：《Science》125 前沿科学问题（Science-125 题库）第 61 题，Astronomy。 问题：How are pulsars formed? 任务：围绕该问题识别当前研究的具体知识缺口，生成可验证的科学假设，并给出完整研究计划（10 标准字段）。
+
+## [2026-08-10] note | q- | -
+- ## Run 20260810-032527 — Q61: How are pulsars formed? **Verdict**: PASS (verify_references ok:true) **Run directory**: /home/ail510/tian_wenyao/projects/luup/runs/20260810-032527 **胜出假设**: H3 (修订版) — 电子俘获超新星（EC-SN）产生的中子星 natal kick 幅度系统性低于铁核坍缩超新星；通过银河轨道积分反推宽距双脉冲星诞生速度，其 kick 分布峰值和色散应显著低于孤立年轻脉冲星群体。 *…
+
+## [2026-08-10] run | q61 | SUCCESS
+- /home/ail510/tian_wenyao/projects/luup/runs/20260810-032527 胜出方案：Quantifying the Origins of Neutron Star Natal Kicks: Asymmetric Ejection versus Neutrino Radiation 引用 5 篇：astro-ph/0103015, astro-ph/0402200, 2305.08920, 2205.03989, 2001.09829 问题：来源：《Science》125 前沿科学问题（Science-125 题库）第 61 题，Astronomy…
+
+## [2026-08-10] note | q61 | -
+- - 胜出方案：Quantifying the Origins of Neutron Star Natal Kicks: Asymmetric Ejection versus Neutrino Radiation - 评估对象 run：20260810-032527 关键断言（原文摘录，只记事实）： - 「预期结果显示，对于典型大质量恒星，物质抛射不对称性贡献约 60-80% 的 kick 速度，中微子辐射贡献剩余部分」— 标注为待验证 - 「综合两者，预期 kick 速度分布峰值在 200-300 km/s，与观测到的年轻脉冲星速度分布（平均约 300 km/s）量级一致」— 标注为待验证 …
+
+## [2026-08-10] run | q61 | FAILED
+- /home/ail510/tian_wenyao/projects/luup/runs/20260810-042825 胜出方案：Disentangling Pulsar Formation Channels: A Three-Channel Hierarchical Mixture Model for Core-Collapse, Electron-Capture, and Accretion-Induced Collapse Origins 引用 11 篇：2205.03989, 1703.06895, 1805.07974, 2402.04658, 2306.07099, 2606.1…
+
+## [2026-08-10] run | q61 | FAILED
+- /home/ail510/tian_wenyao/projects/luup/runs/20260810-045543 胜出方案：Disentangling Pulsar Formation Channels: A Four-Channel Hierarchical Bayesian Mixture Model for Core-Collapse, Electron-Capture, Accretion-Induced Collapse, and Thermonuclear-ECSN Origins of Galactic Neutron Stars 引用 12 篇：2406.11428, …
+
+## [2026-08-10] run | q61 | SUCCESS
+- /home/ail510/tian_wenyao/projects/luup/runs/20260810-052412 胜出方案：Disentangling Pulsar Formation Channels: A Four-Channel Hierarchical Bayesian Mixture Model for Core-Collapse, Electron-Capture, Accretion-Induced Collapse, and Globular-Cluster Dynamical Origins of Galactic Neutron Stars 引用 10 篇：1806…
+
+## [2026-08-10] note | q61 | -
+- - 胜出方案：Disentangling Pulsar Formation Channels: A Four-Channel Hierarchical Bayesian Mixture Model for Core-Collapse, Electron-Capture, Accretion-Induced Collapse, and Globular-Cluster Dynamical Origins of Galactic Neutron Stars - 评估对象 run：20260810-052412 关键断言（原文摘录，只记事实）： - 「Explicit falsification …
