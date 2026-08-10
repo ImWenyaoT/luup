@@ -26,10 +26,10 @@ Vite UI → FastAPI adapter → Python CLI / Harness
 - usage、trace、tool event、失败证据落盘；
 - 确定性引用验收。
 
-代码：`backend/app/agent/`（`model.py`/`specialists.py`/`prompts/` 在伞顶；`harness/` 是循环
-引擎并持有零 LLM verifier；`tools/` 是模型可见能力）。`Agent = Model + Harness` 的等式直接
-落在目录上；参照 eve 的 agent-目录与 default-harness 语义（harness 管模型调用与工具执行，
-工具声明在 agent 伞下）。
+代码：`backend/app/agent/`，平铺同 eve——harness 是运行时角色不是子目录：
+`orchestrator.py`/`artifacts.py`/`verifier.py`（零 LLM）即 harness 本体，`tools/` 由它执行，
+`model.py`/`specialists.py`/`prompts/` 是 agent 配置面。参照 eve 的 agent-目录与
+default-harness 语义（eve 也没有 harness/ 目录，harness 是引擎）。
 
 ### HTTP adapter
 

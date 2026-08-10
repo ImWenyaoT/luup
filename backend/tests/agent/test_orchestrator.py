@@ -5,7 +5,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from app.agent.harness.orchestrator import Harness
+from app.agent.orchestrator import Harness
 from app.agent.specialists import RevisionRequest, SpecialistResult
 from app.domain.contracts import Evidence, Proposal, Review, ReviewFinding, ScientistOutput
 from app.services.runs import RunService

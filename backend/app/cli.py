@@ -9,9 +9,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
-from app.agent.harness import FileReferenceVerifier
-from app.agent.harness.orchestrator import Harness, RunOutcome
+from app.agent import FileReferenceVerifier
 from app.agent.model import QwenSettings
+from app.agent.orchestrator import Harness, RunOutcome
 from app.agent.specialists import AgentsSdkSpecialistRunner
 from app.agent.tools import ArxivClient, LuupTools
 from app.domain.runs import utc_stamp
