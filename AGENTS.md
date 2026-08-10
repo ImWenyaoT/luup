@@ -19,7 +19,7 @@ Agent 代码位于 `backend/app/agent/`，平铺同 eve——harness 是运行�
 
 ```sh
 cd backend
-UV_CACHE_DIR=.cache/uv uv run pytest -q --cov=app --cov-fail-under=85
+UV_CACHE_DIR=.cache/uv uv run pytest -q --cov=app --cov-fail-under=90
 UV_CACHE_DIR=.cache/uv uv run ruff check app tests scripts
 UV_CACHE_DIR=.cache/uv uv run ty check app scripts
 

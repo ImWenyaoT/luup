@@ -40,7 +40,7 @@ jobs:
       - name: Check uv.lock matches pyproject.toml
         run: uv lock --check
       - name: Test
-        run: uv run pytest -q --cov=app --cov-report=term-missing --cov-fail-under=85
+        run: uv run pytest -q --cov=app --cov-report=term-missing --cov-fail-under=90
       - name: Lint
         run: uv run ruff check app tests scripts
       - name: Type check
