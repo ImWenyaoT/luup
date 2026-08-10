@@ -53,3 +53,18 @@
 
 ## [2026-08-10] note | q61 | -
 - - 胜出方案：Disentangling Pulsar Formation Channels: A Four-Channel Hierarchical Bayesian Mixture Model for Core-Collapse, Electron-Capture, Accretion-Induced Collapse, and Globular-Cluster Dynamical Origins of Galactic Neutron Stars - 评估对象 run：20260810-052412 关键断言（原文摘录，只记事实）： - 「Explicit falsification …
+
+## [2026-08-10] run | q- | FAILED
+- runs/20260810-163739｜Effective Renormalization-Group Description of SGD Implicit Bias in Overparameterized Networks｜引用 2604.03068, 2112.11027, 2410.00396, 2006.06098, 2504.12700, 2507.05164
+
+## [2026-08-10] run | q- | FAILED
+- runs/20260810-163941｜分类：contract_violation
+
+## [2026-08-10] run | q- | FAILED
+- runs/20260810-164417｜分类：infra_error
+
+## [2026-08-10] run | q- | FAILED
+- runs/20260810-165146｜Disentangling the Causal Pathway: Arctic Amplification, Stratospheric Vortex Disruption, and Mid-Latitude Cold Extremes｜引用 2009.13568, 2104.08732, 2201.09876, 2305.14201, 2111.05432
+
+## [2026-08-10] run | q- | SUCCESS
+- runs/20260810-165229｜Disentangling Geometric and Social Drivers of Urban Superlinear Scaling: Does Transport Network Fractal Dimension Determine the Scaling Exponent?｜引用 1210.5215, 2011.06287, 1503.04795, 2603.30021, 2001.00311, 2503.00550, 1211.5124

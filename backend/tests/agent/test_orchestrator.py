@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from agents import MaxTurnsExceeded
 
 from app.agent.orchestrator import Harness
 from app.agent.specialists import ContractViolationError, RevisionRequest, SpecialistResult
@@ -273,6 +274,9 @@ async def test_a_reference_rejection_is_classified_apart_from_an_arxiv_outage(tm
         ),
         pytest.param(
             ContractViolationError("模型返回未通过契约校验：..."), "contract_violation", id="uncontracted-model-output"
+        ),
+        pytest.param(
+            MaxTurnsExceeded("Max turns (22) exceeded"), "agent_budget_exhausted", id="agent-burned-its-turn-budget"
         ),
         pytest.param(RuntimeError("arXiv transient failure"), "infra_error", id="anything-else-is-environmental"),
     ],

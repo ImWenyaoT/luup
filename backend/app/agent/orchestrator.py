@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
+from agents import MaxTurnsExceeded
+
 from app.domain.contracts import Proposal, Review, ScientistOutput
 from app.domain.runs import FailureClass
 
@@ -135,6 +137,8 @@ def _classify(exc: Exception) -> FailureClass:
         return "reviewer_no_new_evidence"
     if isinstance(exc, ContractViolationError):
         return "contract_violation"
+    if isinstance(exc, MaxTurnsExceeded):
+        return "agent_budget_exhausted"
     return "infra_error"
 
 

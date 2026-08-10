@@ -7,18 +7,20 @@ from typing import Any
 import pytest
 
 from app.evaluation import (
-    VersionCandidate,
+    RunFacts,
+    delivery_rate,
     evaluate_runs,
-    m9_ranking_eligible,
+    failure_classes,
     main,
     paired_comparison,
+    pass_squared,
+    revision_rate,
+    search_health,
     select_version,
 )
 
-CALIBRATED_REPORT = "rubric v1.0.0｜judge qwen（thinking=true）\n检出 3 / 4 = 75.0%｜逆序 0"
 
-
-def candidate(run_id: str, question_id: int = 1, **changes: object) -> VersionCandidate:
+def candidate(run_id: str, question_id: int = 1, **changes: object) -> RunFacts:
     values: dict[str, object] = {
         "run_id": run_id,
         "question_id": question_id,
@@ -27,11 +29,7 @@ def candidate(run_id: str, question_id: int = 1, **changes: object) -> VersionCa
         "tokens": 100,
         **changes,
     }
-    return VersionCandidate(**values)  # type: ignore[arg-type]
-
-
-def scored(run_id: str, **changes: object) -> VersionCandidate:
-    return candidate(run_id, **{"score": 5.0, "rubric_version": "1.0.0", "judge_model": "qwen", **changes})
+    return RunFacts(**values)  # type: ignore[arg-type]
 
 
 def write_run(
@@ -61,101 +59,17 @@ def write_run(
     return run
 
 
-def test_selection_is_gate_first_and_fail_closed_without_calibration() -> None:
+# --- version selection (M9/M10 retired 2026-08-11: the chain is deterministic) ------------------
+
+
+def test_selection_is_gate_first_then_refs() -> None:
     choice = select_version(
-        [
-            candidate("b", deliverable=False, score=99, refs=99),
-            candidate("a", score=1, refs=7, veto=True),
-            candidate("c", score=100, refs=5),
-        ]
+        [candidate("b", deliverable=False, refs=99), candidate("a", refs=7), candidate("c", refs=5)]
     )
 
     assert choice["winner"]["runId"] == "a"
-    assert choice["reason"] == "M9 未达校准阈值，refs 更多"
-    assert choice["eliminated"] == [
-        {"runId": "b", "reason": "未通过交付 gate（runOutcome 判定不可交付）"}
-    ]
-    assert choice["advisories"][0]["runId"] == "a"
-
-
-def test_calibrated_score_can_rank_and_pairing_uses_first_and_last() -> None:
-    reports = ["rubric v1.0.0｜judge qwen（thinking=true）\n检出 3 / 4 = 75.0%｜逆序 0"]
-    versions = [
-        candidate("20260810-000001", score=1, rubric_version="1.0.0", judge_model="qwen"),
-        candidate("20260810-000002", score=9, rubric_version="1.0.0", judge_model="qwen"),
-    ]
-
-    assert m9_ranking_eligible(versions, reports)
-    assert select_version(versions, reports)["winner"]["runId"] == "20260810-000002"
-    paired = paired_comparison([versions[0], versions[1], candidate("20260810-000003", deliverable=False)])
-    assert paired["questions"][0]["later"] == "20260810-000003"
-    assert paired["c"] == 1
-    assert paired["p"] == 1
-
-
-def test_file_entry_reads_runs_and_preserves_unknown_cost_as_null(tmp_path: Path) -> None:
-    for run_id, passed, refs in [("20260810-000001", False, 5), ("20260810-000002", True, 6)]:
-        run = tmp_path / run_id
-        run.mkdir()
-        (run / "question.md").write_text("来源：《Science》125 前沿科学问题（Science-125 题库）第 7 题，天文。\n问题：Q\n")
-        (run / "meta.json").write_text(json.dumps({"questionId": 7}))
-        (run / "proposal.json").write_text(json.dumps({"references": [{}] * refs}))
-        (run / "proposal.md").write_text("# plan\n")
-        (run / "verification-report.md").write_text("结果: ALL PASS\n" if passed else "结果: 1/1 FAILED\n")
-        if not passed:
-            (run / "FAILED.md").write_text("failed\n")
-
-    report = evaluate_runs(tmp_path)
-
-    assert report["versions"]["7"]["winner"]["runId"] == "20260810-000002"
-    assert report["versions"]["7"]["winner"]["tokens"] is None
-    assert report["pairedComparison"]["b"] == 1
-
-
-@pytest.mark.parametrize(
-    "report",
-    [
-        pytest.param("rubric v1.0.0｜judge qwen 本轮没有报校准数字", id="no-calibration-line"),
-        pytest.param("检出 3 / 4 = 75.0%｜逆序 0", id="no-rubric-or-judge-line"),
-        pytest.param("rubric v2.0.0｜judge qwen\n检出 3 / 4 = 75.0%｜逆序 0", id="rubric-mismatch"),
-        pytest.param("rubric v1.0.0｜judge other\n检出 3 / 4 = 75.0%｜逆序 0", id="judge-mismatch"),
-        pytest.param("rubric v1.0.0｜judge qwen\n检出 2 / 4 = 50.0%｜逆序 0", id="detection-below-threshold"),
-        pytest.param("rubric v1.0.0｜judge qwen\n检出 3 / 3 = 100.0%｜逆序 0", id="too-few-judgeable-cases"),
-        pytest.param("rubric v1.0.0｜judge qwen\n检出 4 / 4 = 100.0%｜逆序 2", id="inversions-present"),
-        pytest.param("rubric v1.0.0｜judge qwen\n检出 4 / 4 = 60.0%｜逆序 0", id="reported-rate-below-threshold"),
-    ],
-)
-def test_ranking_is_ineligible_unless_a_report_clears_every_calibration_bar(report: str) -> None:
-    """M9 may only rank when a matching calibration report proves the judge detects planted flaws."""
-    assert m9_ranking_eligible([scored("a"), scored("b")], [report]) is False
-
-
-@pytest.mark.parametrize(
-    "candidates",
-    [
-        pytest.param([scored("a"), scored("b", rubric_version="2.0.0")], id="two-rubric-versions"),
-        pytest.param([scored("a"), scored("b", judge_model="other")], id="two-judges"),
-        pytest.param([candidate("a"), candidate("b")], id="no-scores-at-all"),
-    ],
-)
-def test_ranking_is_ineligible_when_the_scores_are_not_mutually_comparable(
-    candidates: list[VersionCandidate],
-) -> None:
-    """Scores produced by different rubrics or judges are not one scale, so they cannot order versions."""
-    assert m9_ranking_eligible(candidates, [CALIBRATED_REPORT]) is False
-
-
-def test_an_unlabelled_score_rides_along_on_another_runs_rubric_label() -> None:
-    """Known fail-open gap, pinned so a fix is a deliberate change.
-
-    `m9_ranking_eligible` drops candidates whose `rubricVersion` is missing before
-    counting distinct rubrics, so one labelled run unlocks ranking for the whole
-    group and the unlabelled score is then compared as if it shared that rubric.
-    """
-    candidates = [scored("a"), scored("b", rubric_version=None, score=9.0)]
-
-    assert m9_ranking_eligible(candidates, [CALIBRATED_REPORT]) is True
-    assert select_version(candidates, [CALIBRATED_REPORT])["winner"]["runId"] == "b"
+    assert choice["reason"] == "refs 更多"
+    assert choice["eliminated"] == [{"runId": "b", "reason": "未通过交付 gate（runOutcome 判定不可交付）"}]
 
 
 def test_no_candidates_has_no_winner_and_says_so() -> None:
@@ -168,176 +82,70 @@ def test_no_candidates_has_no_winner_and_says_so() -> None:
 
 def test_every_candidate_failing_the_gate_has_no_winner() -> None:
     """The delivery gate is absolute: a best-of-the-failures is not a deliverable version."""
-    choice = select_version([candidate("a", deliverable=False), candidate("b", deliverable=False, score=100)])
+    choice = select_version([candidate("a", deliverable=False), candidate("b", deliverable=False, refs=99)])
 
     assert choice["winner"] is None
     assert choice["reason"] == "没有版本通过交付 gate"
     assert [row["runId"] for row in choice["eliminated"]] == ["a", "b"]
 
 
+def test_a_retired_judge_score_can_no_longer_appear_in_the_report(tmp_path: Path) -> None:
+    """M9/M10 were retired, so their fields must be gone rather than present and empty."""
+    write_run(
+        tmp_path,
+        "20260810-000001",
+        artifacts={
+            "score.json": json.dumps({"weighted": 9.5, "rubricVersion": "1.0.0", "judgeModel": "qwen"}),
+            "calibration.md": "rubric v1.0.0｜judge qwen\n检出 4 / 4 = 100.0%｜逆序 0",
+        },
+    )
+    write_run(tmp_path, "20260810-000002", refs=9)
+
+    report = evaluate_runs(tmp_path)
+    selection = report["versions"]["7"]
+
+    assert selection["winner"]["runId"] == "20260810-000002"  # A perfect score no longer outranks refs.
+    assert selection["reason"] == "refs 更多"
+    assert set(selection) == {"winner", "ranked", "reason", "eliminated"}
+    assert set(selection["winner"]) == {"runId", "questionId", "deliverable", "refs", "tokens"}
+
+
 @pytest.mark.parametrize(
-    ("candidates", "reports", "winner", "reason"),
+    ("candidates", "winner", "reason"),
     [
+        pytest.param([candidate("a", refs=5), candidate("b", refs=7)], "b", "refs 更多", id="refs-decide-first"),
         pytest.param(
-            [scored("a", score=1.0), scored("b", score=9.0)],
-            [CALIBRATED_REPORT],
+            [candidate("a", tokens=200), candidate("b", tokens=100)],
             "b",
-            "M9 总分更高",
-            id="score-decides-first",
-        ),
-        pytest.param(
-            [scored("a", refs=5), scored("b", refs=7)],
-            [CALIBRATED_REPORT],
-            "b",
-            "M9 总分持平，refs 更多",
-            id="refs-break-a-score-tie",
-        ),
-        pytest.param(
-            [scored("a", tokens=200), scored("b", tokens=100)],
-            [CALIBRATED_REPORT],
-            "b",
-            "M9 总分与 refs 持平，token 成本更低",
+            "refs 持平，token 成本更低",
             id="cost-breaks-a-refs-tie",
         ),
         pytest.param(
-            [scored("b"), scored("a")],
-            [CALIBRATED_REPORT],
+            [candidate("b"), candidate("a")],
             "a",
             "各级全部持平，按 run id 取最早的一版",
             id="run-id-is-the-last-resort",
         ),
-        pytest.param(
-            [candidate("a", tokens=200), candidate("b", tokens=100)],
-            [],
-            "b",
-            "M9 未达校准阈值，refs 持平，token 成本更低",
-            id="uncalibrated-falls-through-to-cost",
-        ),
     ],
 )
-def test_the_tie_break_chain_is_score_then_refs_then_cost_then_run_id(
-    candidates: list[VersionCandidate], reports: list[str], winner: str, reason: str
+def test_the_tie_break_chain_is_refs_then_cost_then_run_id(
+    candidates: list[RunFacts], winner: str, reason: str
 ) -> None:
-    choice = select_version(candidates, reports)
+    choice = select_version(candidates)
 
     assert choice["winner"]["runId"] == winner
     assert choice["reason"] == reason
     assert choice["ranked"][0]["runId"] == winner
 
 
-@pytest.mark.parametrize("field", ["refs", "tokens", "score"])
+@pytest.mark.parametrize("field", ["refs", "tokens"])
 def test_an_unmeasured_version_never_outranks_a_measured_one(field: str) -> None:
     """A missing measurement is not a good measurement; it must lose in either argument order."""
-    reports = [CALIBRATED_REPORT] if field == "score" else []
-    measured = 9.0 if field == "score" else 5
-
-    first = select_version([scored("a", **{field: None}), scored("b", **{field: measured})], reports)
-    second = select_version([scored("b", **{field: measured}), scored("a", **{field: None})], reports)
+    first = select_version([candidate("a", **{field: None}), candidate("b", **{field: 5})])
+    second = select_version([candidate("b", **{field: 5}), candidate("a", **{field: None})])
 
     assert first["winner"]["runId"] == "b"
     assert second["winner"]["runId"] == "b"
-
-
-def test_a_question_with_a_single_run_is_not_a_pair_and_no_change_is_not_significant() -> None:
-    paired = paired_comparison(
-        [
-            candidate("20260810-000001", question_id=1, deliverable=True),
-            candidate("20260810-000002", question_id=1, deliverable=True),
-            candidate("20260810-000001", question_id=2, deliverable=False),
-            candidate("20260810-000002", question_id=2, deliverable=False),
-            candidate("20260810-000001", question_id=3, deliverable=True),
-        ]
-    )
-
-    assert [row["questionId"] for row in paired["questions"]] == [1, 2]
-    assert paired["discordant"] == 0
-    assert paired["p"] == 1.0
-    assert paired["significant"] is False
-    assert paired["concordantPass"] == 1
-    assert paired["concordantFail"] == 1
-
-
-def test_six_one_sided_repairs_are_a_significant_improvement() -> None:
-    """The McNemar tail is the claim we can defend in the report; six clean repairs clear p<0.05."""
-    candidates = [
-        item
-        for question_id in range(1, 7)
-        for item in (
-            candidate(f"20260810-{question_id}00001", question_id=question_id, deliverable=False),
-            candidate(f"20260810-{question_id}00002", question_id=question_id, deliverable=True),
-        )
-    ]
-
-    paired = paired_comparison(candidates)
-
-    assert (paired["b"], paired["c"]) == (6, 0)
-    assert paired["p"] == pytest.approx(0.03125)
-    assert paired["significant"] is True
-
-
-def test_score_artifacts_drive_the_ranking_and_the_veto_stays_advisory(tmp_path: Path) -> None:
-    """A fabrication veto is a diagnostic annotation, not a second delivery gate."""
-    write_run(
-        tmp_path,
-        "20260810-000001",
-        artifacts={
-            "score.json": json.dumps(
-                {"weighted": 9.5, "rubricVersion": "1.0.0", "judgeModel": "qwen", "veto": {"triggered": True}}
-            ),
-            "calibration.md": CALIBRATED_REPORT,
-        },
-    )
-    write_run(
-        tmp_path,
-        "20260810-000002",
-        artifacts={"score.json": json.dumps({"weighted": 1.0, "rubricVersion": "1.0.0", "judgeModel": "qwen"})},
-    )
-
-    selection = evaluate_runs(tmp_path)["versions"]["7"]
-
-    assert selection["m9Eligible"] is True
-    assert selection["winner"]["runId"] == "20260810-000001"
-    assert selection["winner"]["score"] == 9.5
-    assert selection["reason"] == "M9 总分更高"
-    assert selection["advisories"] == [{"runId": "20260810-000001", "note": "M9 报了虚构类断言 veto（诊断，不影响择优）"}]
-
-
-@pytest.mark.parametrize(
-    "score_text",
-    [
-        pytest.param("not json at all", id="unparsable"),
-        pytest.param("[1, 2, 3]", id="json-but-not-an-object"),
-        pytest.param('{"weighted": true}', id="boolean-score"),
-        pytest.param('{"weighted": Infinity}', id="non-finite-score"),
-        pytest.param('{"weighted": "9.5"}', id="stringified-score"),
-    ],
-)
-def test_an_unusable_score_artifact_leaves_the_run_unscored(tmp_path: Path, score_text: str) -> None:
-    """Ranking must fall back to the deterministic criteria rather than trust a broken score file."""
-    write_run(tmp_path, "20260810-000001", refs=6, artifacts={"score.json": score_text, "calibration.md": CALIBRATED_REPORT})
-    write_run(tmp_path, "20260810-000002", refs=5, artifacts={"score.json": score_text})
-
-    selection = evaluate_runs(tmp_path)["versions"]["7"]
-
-    assert selection["m9Eligible"] is False
-    assert selection["winner"]["score"] is None
-    assert selection["winner"]["runId"] == "20260810-000001"
-    assert selection["reason"] == "M9 未达校准阈值，refs 更多"
-
-
-def test_an_unlabelled_rubric_or_judge_is_not_carried_into_the_candidate(tmp_path: Path) -> None:
-    write_run(
-        tmp_path,
-        "20260810-000001",
-        artifacts={"score.json": json.dumps({"weighted": 9.5, "rubricVersion": 100, "judgeModel": ""})},
-    )
-    write_run(tmp_path, "20260810-000002", refs=4)
-
-    winner = evaluate_runs(tmp_path)["versions"]["7"]["winner"]
-
-    assert winner["score"] == 9.5
-    assert winner["rubricVersion"] is None
-    assert winner["judgeModel"] is None
 
 
 def test_token_cost_sums_usage_rows_and_ignores_unusable_ones(tmp_path: Path) -> None:
@@ -363,17 +171,265 @@ def test_token_cost_sums_usage_rows_and_ignores_unusable_ones(tmp_path: Path) ->
     assert ranked[0]["runId"] == "20260810-000001"
 
 
-def test_a_run_without_a_science125_id_is_not_a_candidate(tmp_path: Path) -> None:
-    """Version selection compares answers to the same question; an unlabelled run has no comparison group."""
-    write_run(tmp_path, "20260810-000001")
-    write_run(tmp_path, "20260810-000002")
-    write_run(tmp_path, "20260810-000003", question_id=None)
+def test_file_entry_reads_runs_and_preserves_unknown_cost_as_null(tmp_path: Path) -> None:
+    for run_id, passed, refs in [("20260810-000001", False, 5), ("20260810-000002", True, 6)]:
+        run = tmp_path / run_id
+        run.mkdir()
+        (run / "question.md").write_text("来源：《Science》125 前沿科学问题（Science-125 题库）第 7 题，天文。\n问题：Q\n")
+        (run / "meta.json").write_text(json.dumps({"questionId": 7}))
+        (run / "proposal.json").write_text(json.dumps({"references": [{}] * refs}))
+        (run / "proposal.md").write_text("# plan\n")
+        (run / "verification-report.md").write_text("结果: ALL PASS\n" if passed else "结果: 1/1 FAILED\n")
+        if not passed:
+            (run / "FAILED.md").write_text("failed\n")
 
     report = evaluate_runs(tmp_path)
 
+    assert report["versions"]["7"]["winner"]["runId"] == "20260810-000002"
+    assert report["versions"]["7"]["winner"]["tokens"] is None
+    assert report["pairedComparison"]["firstVsLatest"]["b"] == 1
+
+
+# --- M11 paired comparison ---------------------------------------------------------------------
+
+
+def test_a_question_with_a_single_run_is_not_a_pair_and_no_change_is_not_significant() -> None:
+    paired = paired_comparison(
+        [
+            candidate("20260810-000001", question_id=1, deliverable=True),
+            candidate("20260810-000002", question_id=1, deliverable=True),
+            candidate("20260810-000001", question_id=2, deliverable=False),
+            candidate("20260810-000002", question_id=2, deliverable=False),
+            candidate("20260810-000001", question_id=3, deliverable=True),
+        ]
+    )["firstVsLatest"]
+
+    assert [row["questionId"] for row in paired["questions"]] == [1, 2]
+    assert paired["discordant"] == 0
+    assert paired["p"] == 1.0
+    assert paired["significant"] is False
+    assert paired["concordantPass"] == 1
+    assert paired["concordantFail"] == 1
+
+
+def test_six_one_sided_repairs_are_a_significant_improvement() -> None:
+    """The McNemar tail is the claim we can defend in the report; six clean repairs clear p<0.05."""
+    candidates = [
+        item
+        for question_id in range(1, 7)
+        for item in (
+            candidate(f"20260810-{question_id}00001", question_id=question_id, deliverable=False),
+            candidate(f"20260810-{question_id}00002", question_id=question_id, deliverable=True),
+        )
+    ]
+
+    paired = paired_comparison(candidates)["firstVsLatest"]
+
+    assert (paired["b"], paired["c"]) == (6, 0)
+    assert paired["p"] == pytest.approx(0.03125)
+    assert paired["significant"] is True
+
+
+def test_first_versus_latest_is_named_for_what_it_actually_compares() -> None:
+    """Two runs a week apart differ by every change in between; the key must not claim otherwise."""
+    paired = paired_comparison(
+        [
+            candidate("20260810-000001", deliverable=False),
+            candidate("20260810-000002", deliverable=True),
+            candidate("20260810-000003", deliverable=False),
+        ]
+    )
+
+    assert set(paired) == {"firstVsLatest", "memoryArms"}
+    row = paired["firstVsLatest"]["questions"][0]
+    assert (row["earlier"], row["later"]) == ("20260810-000001", "20260810-000003")
+    assert paired["memoryArms"] is None  # No question ran both arms, so there is nothing to pair.
+
+
+def test_two_memory_arms_on_the_same_question_are_paired_by_arm() -> None:
+    """The ablation is the only controlled pairing in the campaign; it must not be diluted."""
+    candidates = [
+        item
+        for question_id in range(1, 4)
+        for item in (
+            candidate(f"20260810-{question_id}00001", question_id=question_id, deliverable=False, memory_arm="off"),
+            candidate(f"20260810-{question_id}00002", question_id=question_id, deliverable=True, memory_arm="on"),
+        )
+    ]
+
+    arms = paired_comparison(candidates)["memoryArms"]
+
+    assert [row["questionId"] for row in arms["questions"]] == [1, 2, 3]
+    assert arms["questions"][0]["off"] == "20260810-100001"
+    assert arms["questions"][0]["on"] == "20260810-100002"
+    assert (arms["b"], arms["c"]) == (3, 0)
+    assert arms["p"] == pytest.approx(0.25)  # Exact binomial, not χ²: three pairs prove nothing yet.
+    assert arms["significant"] is False
+
+
+def test_a_question_that_only_ran_one_arm_contributes_no_arm_pair() -> None:
+    arms = paired_comparison(
+        [
+            candidate("20260810-000001", question_id=1, memory_arm="on"),
+            candidate("20260810-000002", question_id=1, memory_arm="on"),
+            candidate("20260810-000003", question_id=2, memory_arm="off", deliverable=False),
+            candidate("20260810-000004", question_id=2, memory_arm="on"),
+        ]
+    )["memoryArms"]
+
+    assert [row["questionId"] for row in arms["questions"]] == [2]
+    assert arms["b"] == 1
+
+
+# --- Tier1 aggregates --------------------------------------------------------------------------
+
+
+def test_delivery_rate_carries_its_standard_error_and_separates_outages() -> None:
+    """M4 read as a quality number while outages are folded in is a wrong number."""
+    facts = [
+        candidate("a", deliverable=True),
+        candidate("b", deliverable=True),
+        candidate("c", deliverable=False, classification="verifier_refs"),
+        candidate("d", deliverable=False, classification="infra_timeout"),
+    ]
+
+    rate = delivery_rate(facts)
+
+    assert (rate["runs"], rate["deliverable"], rate["rate"]) == (4, 2, 0.5)
+    assert rate["se"] == pytest.approx(0.25)
+    assert rate["excludingInfrastructure"]["runs"] == 3
+    assert rate["excludingInfrastructure"]["rate"] == pytest.approx(2 / 3)
+
+
+def test_an_empty_campaign_reports_no_rate_rather_than_a_zero() -> None:
+    assert delivery_rate([])["rate"] is None
+    assert pass_squared([])["rate"] is None
+    assert revision_rate([])["rate"] is None
+    assert search_health([])["newInformationRate"] is None
+
+
+def test_pass_squared_counts_adjacent_same_question_pairs_in_time_order() -> None:
+    """M5 asks whether the pipeline can do it twice running, not whether it ever did it once."""
+    facts = [
+        candidate("20260810-000003", question_id=1, deliverable=True),
+        candidate("20260810-000001", question_id=1, deliverable=True),
+        candidate("20260810-000002", question_id=1, deliverable=False),
+        candidate("20260810-000001", question_id=2, deliverable=True),
+        candidate("20260810-000002", question_id=2, deliverable=True),
+        candidate("20260810-000001", question_id=3, deliverable=True),
+    ]
+
+    squared = pass_squared(facts)
+
+    assert (squared["pairs"], squared["both"]) == (3, 1)
+    assert squared["rate"] == pytest.approx(1 / 3)
+
+
+def test_revision_rate_only_counts_runs_that_actually_reached_the_reviewer() -> None:
+    facts = [
+        candidate("a", reviewed=True, revised=True),
+        candidate("b", reviewed=True, revised=False),
+        candidate("c"),
+    ]
+
+    assert revision_rate(facts) == {"reviewed": 2, "revised": 1, "rate": 0.5, "se": pytest.approx(0.35355339059)}
+
+
+def test_search_health_reports_yield_per_search_not_per_run() -> None:
+    facts = [
+        candidate("a", searches=4, deduplicated_searches=1, new_information_searches=2, refs=6),
+        candidate("b", searches=6, deduplicated_searches=1, new_information_searches=1, refs=4),
+        candidate("c", searches=0, refs=None),
+    ]
+
+    health = search_health(facts)
+
+    assert (health["runsWithSearchEvents"], health["searches"]) == (2, 10)
+    assert health["deduplicatedRate"] == pytest.approx(0.2)
+    assert health["newInformationRate"] == pytest.approx(0.3)
+    assert health["refsMean"] == pytest.approx(5.0)
+
+
+def test_failure_classes_keep_outages_apart_from_quality_verdicts() -> None:
+    facts = [
+        candidate("a", deliverable=True),
+        candidate("b", deliverable=False, classification="verifier_refs"),
+        candidate("c", deliverable=False, classification="verifier_refs"),
+        candidate("d", deliverable=False, classification="reviewer_no_new_evidence"),
+        candidate("e", deliverable=False, classification="infra_timeout"),
+        candidate("f", deliverable=False),
+        candidate("g", deliverable=False, classification="agent_budget_exhausted"),
+    ]
+
+    classes = failure_classes(facts)
+
+    assert classes["failed"] == 6
+    # A burned turn budget is the agent's behaviour, not an outage, so it groups with quality.
+    assert classes["quality"] == {
+        "count": 4,
+        "byClass": {"agent_budget_exhausted": 1, "reviewer_no_new_evidence": 1, "verifier_refs": 2},
+    }
+    assert classes["infrastructure"] == {"count": 1, "byClass": {"infra_timeout": 1}}
+    assert classes["unclassified"] == 1
+
+
+def test_the_statistics_block_is_derived_from_the_artifacts_on_disk(tmp_path: Path) -> None:
+    """Every aggregate must come out of files a finished run already wrote — zero new collection."""
+    write_run(
+        tmp_path,
+        "20260810-000001",
+        artifacts={
+            "review.json": json.dumps({"verdict": "revise", "findings": [], "requiredChanges": []}),
+            "meta.json": json.dumps({"questionId": 7, "memoryArm": "on"}),
+            "tool-events.jsonl": "\n".join(
+                [
+                    json.dumps({"tool": "arxiv_search", "newCount": 3, "deduplicated": False}),
+                    json.dumps({"tool": "arxiv_search", "newCount": 0, "deduplicated": True}),
+                    json.dumps({"tool": "memory_search", "hitCount": 2}),
+                    "{ truncated",
+                ]
+            ),
+        },
+    )
+    write_run(
+        tmp_path,
+        "20260810-000002",
+        passed=False,
+        artifacts={
+            "review.json": json.dumps({"verdict": "pass", "findings": [], "requiredChanges": []}),
+            "meta.json": json.dumps({"questionId": 7, "memoryArm": "off"}),
+            "exit.json": json.dumps({"exitCode": 1, "classification": "infra_timeout"}),
+        },
+    )
+
+    report = evaluate_runs(tmp_path)
+    statistics = report["statistics"]
+
+    assert report["runs"] == 2
+    assert statistics["delivery"]["rate"] == 0.5
+    assert statistics["delivery"]["excludingInfrastructure"] == {"runs": 1, "deliverable": 1, "rate": 1.0, "se": 0.0}
+    assert statistics["passSquared"] == {"pairs": 1, "both": 0, "rate": 0.0, "se": 0.0}
+    assert statistics["revision"]["revised"] == 1 and statistics["revision"]["reviewed"] == 2
+    assert statistics["searchHealth"]["searches"] == 2  # memory_search is not a literature search.
+    assert statistics["searchHealth"]["deduplicatedRate"] == 0.5
+    assert statistics["searchHealth"]["newInformationRate"] == 0.5
+    assert statistics["failureClasses"]["infrastructure"]["byClass"] == {"infra_timeout": 1}
+    assert report["pairedComparison"]["memoryArms"]["b"] == 1  # memory on passed where memory off failed
+
+
+def test_a_free_form_run_counts_in_the_campaign_rates_but_not_in_the_pairings(tmp_path: Path) -> None:
+    """OOD runs have no question id, so they can be summed but never compared version-to-version."""
+    write_run(tmp_path, "20260810-000001")
+    write_run(tmp_path, "20260810-000002")
+    write_run(tmp_path, "20260810-000003", question_id=None, passed=False)
+
+    report = evaluate_runs(tmp_path)
+
+    assert report["runs"] == 3
+    assert report["statistics"]["delivery"]["runs"] == 3
     assert [row["runId"] for row in report["versions"]["7"]["ranked"]] == ["20260810-000001", "20260810-000002"]
     assert len(report["versions"]) == 1
-    assert report["pairedComparison"]["questions"] == [
+    assert report["pairedComparison"]["firstVsLatest"]["questions"] == [
         {
             "questionId": 7,
             "earlier": "20260810-000001",

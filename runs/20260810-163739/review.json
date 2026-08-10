@@ -1,0 +1,22 @@
+{
+  "verdict": "revise",
+  "findings": [
+    {
+      "issue": "The proposal claims an 'exact' characterization of SGD implicit bias via Renormalization Group (RG) methods. However, existing literature (e.g., 2012.04728, 2306.03521) typically uses statistical physics frameworks like Dynamical Mean-Field Theory (DMFT) or Fokker-Planck equations to describe SGD dynamics in the high-dimensional limit. These are often mean-field approximations rather than exact RG flows. The proposal does not sufficiently distinguish between these established statistical physics tools and the specific Wilsonian RG approach it proposes, risking a conflation of distinct mathematical frameworks.",
+      "checkedWith": "arxiv_search: statistical physics SGD dynamics high-dimensional limit"
+    },
+    {
+      "issue": "Recent work (2410.00396) applies RG analysis to deep neural networks by treating neurons as degrees of freedom for coarse-graining, but this is structurally different from applying RG to the *optimization trajectory* of SGD in parameter space as proposed. The proposal lacks a clear mechanism for how Wilsonian RG steps (integrating out high-frequency parameter modes) map to the stochastic updates of SGD, which are driven by data noise rather than spatial scale separation.",
+      "checkedWith": "arxiv_search: renormalization group deep learning dynamics"
+    },
+    {
+      "issue": "The evidence card cites 2604.03068 as linking SGD to statistical physics, but the search results show that most rigorous high-dimensional analyses rely on DMFT (2006.06098) or information-theoretic coarse-graining (2504.12700). The proposal's claim that RG provides an 'exact' law for generalization is not supported by current consensus, which views such mappings as approximate or limited to specific solvable models (like quadratic networks).",
+      "checkedWith": "arxiv_search: renormalization group deep learning dynamics"
+    }
+  ],
+  "requiredChanges": [
+    "Replace the claim of 'exact' characterization with 'approximate' or 'effective' field theory description, acknowledging the limitations of mapping discrete SGD steps to continuous RG flows.",
+    "Clarify the distinction between the proposed Wilsonian RG approach and existing Statistical Physics methods like Dynamical Mean-Field Theory (DMFT) or Fokker-Planck analysis, explaining why RG is necessary or superior for capturing implicit bias.",
+    "Define explicitly what constitutes 'high-frequency parameter modes' in the context of SGD and how integrating them out corresponds to the observed implicit regularization (e.g., sparsity), as this mapping is non-trivial and currently underspecified."
+  ]
+}

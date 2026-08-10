@@ -38,7 +38,8 @@ def record_run(
     label = f"q{question_id}" if question_id is not None else "q-"
     _append(
         memory_dir / "log.md",
-        f"\n## [{now.date().isoformat()}] run | {label} | {verdict}\n- {run_dir}｜{summary}{refs}\n",
+        f"\n## [{now.date().isoformat()}] run | {label} | {verdict}\n"
+        f"- {_repo_relative(run_dir, memory_dir)}｜{summary}{refs}\n",
     )
     if question_id is None:
         return
@@ -61,6 +62,18 @@ def read_prior_attempts(
         return ()
     entries = [line.strip() for line in page.read_text(encoding="utf-8").splitlines() if line.startswith(ENTRY_PREFIX)]
     return tuple(entries[-limit:])
+
+
+def _repo_relative(run_dir: Path, memory_dir: Path) -> str:
+    """Campaign memory outlives the checkout that wrote it; an absolute path does not.
+
+    `memory/` and `runs/` are siblings under the repo root, so the entry records
+    `runs/<id>` — the same string in a worktree, a clone, and a reviewer's machine.
+    """
+    try:
+        return run_dir.resolve().relative_to(memory_dir.resolve().parent).as_posix()
+    except ValueError:
+        return f"runs/{run_dir.name}"
 
 
 def _proposal_facts(run_dir: Path) -> tuple[str | None, list[str]]:

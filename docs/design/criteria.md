@@ -46,7 +46,7 @@
 
 - E0 问题源 = 官网维度 A 指定的《Science》125 前沿科学问题：`backend/app/data/science125.json`（权威来源抓取，恰 125 条）；pipeline 按题号取题，也接受自由问题输入。
 - E1 单命令跑通 E2E：输入一个科学问题（默认取自 Science-125）→ 落盘完整《科学假设与研究计划》(JSON + Markdown) 于 runs/<ts>/。
-- E1b 批量能力：批量 runner 可按题号列表串行跑多题（MVP 验证 ≥2 题抽样；全量 125 题为提交期动作，非 MVP 门槛，预算由用户拍板）。
+- E1b 批量能力：批量 runner（`python -m app.batch --ids 1-125｜3,54,61`，串行、`--dry-run` 零执行）可按题号列表串行跑多题（MVP 验证 ≥2 题抽样；全量 125 题为提交期动作，非 MVP 门槛，预算由用户拍板）。
 - E2 Python 后端 pytest/Ruff/mypy、OpenAPI client 生成检查、Vite 前端 typecheck/build 均通过。
 - E3 run trace（各 agent 输入输出、Reviewer 结论、verifier 结果、token 用量）落盘可查。
 
@@ -69,23 +69,23 @@
 
 ## H. 评估体系（书 ch6 为理论底，2026-08-09 定稿；全自动，human over the loop）
 
-四原则：gate 全确定性，judge 只产诊断分不产 gate；**rubric 永不进 agent prompt**（防 Goodhart）；指标只从已有工件派生（零新增采集）；每个指标必须能翻盘一个真实决定，否则不设。
+四原则：gate 全确定性，judge 只产诊断分不产 gate（M9/M10 退役后评估里已无 judge，本条保留为将来任何 judge 的准入前提）；**rubric 永不进 agent prompt**（防 Goodhart）；指标只从已有工件派生（零新增采集）；每个指标必须能翻盘一个真实决定，否则不设。
 
 | 层 | 指标 | 定义/数据源 | 翻盘什么决定 |
 |---|------|------------|-------------|
 | Tier0 | 现状保留 | B1–B4 验收器、eval 脚本（eval:smoke / eval:full）、verdicts | 单 run 通过性 |
-| Tier1（零 LLM 派生） | M4 交付率 | deliverable runs / 总 runs（runOutcome） | 战役节奏 |
-| | M5 Pass^2 | 同题连续 2 次均 deliverable 的比例 | 可靠性口径（替代单次快照） |
+| Tier1（零 LLM 派生） | M4 交付率 | deliverable runs / 总 runs（runOutcome），带二项标准误 √(p(1-p)/n)；环境性失败单列一档 | 战役节奏 |
+| | M5 Pass^2 | 同题按时间序相邻两次 run 均 deliverable 的比例 | 可靠性口径（替代单次快照） |
 | | M6 成本会计 | usage.jsonl 聚合：token/题、¥/题、按节点分解 | 重跑预算、模型分档 |
-| | M7 返工强度 | verdicts 轮次分布、熔断率 | instructions/节点质量定位 |
-| | M8 文献健康 | refs 数、检索命中率、library 复用率 | 检索策略、学科覆盖预警 |
-| Tier2 | M9 质量评分 | 四维（假设可证伪性/推导自洽/方案可落地/引用支撑度）×四级 rubric，LLM-judge 产分 + 断言归因；虚构类断言 = veto。只允许对确定性 deliverable run 评分并写题页 | 校准达标后用于版本择优；否则仅诊断 |
-| | M10 judge 校准 | **变异体检出率**：对已通过 proposal 施加确定性劣化（加长零信息/删推导链/插无出处数值等），标签先验已知，检出率即 judge 灵敏度——全自动零人标 | M9 可信度；检出率低 → M9 降权 |
-| Tier3 | M11 配对版本比较 | 同题多版本 McNemar 判读（125 题天然满足配对前提） | 改动是否真的更好 |
+| | M7 返工强度 | review.json 的 `verdict=="revise"` 占已评审 run 的比例 | instructions/节点质量定位 |
+| | M8 文献健康 | refs 数、tool-events.jsonl 的检索去重率与新信息率 | 检索策略、学科覆盖预警 |
+| Tier2 | ~~M9 质量评分~~ | **2026-08-11 退役**，见下 | —— |
+| | ~~M10 judge 校准~~ | **2026-08-11 退役**，见下 | —— |
+| Tier3 | M11 配对版本比较 | 同题多版本 McNemar 精确二项：`firstVsLatest`（首末，非受控）+ `memoryArms`（按 `meta.memoryArm` 两臂配对，受控） | 改动是否真的更好 |
 
-- **同族 judge 诚实条款**：judge 也是 Qwen（D1 锁死），无法消解自评偏置——处置是结构性降权（M9 只用于择优与诊断，永不进 gate、永不进报告的"成绩"栏），不假装校准过。
-- **M9 排序授权**：同 rubric、同 judge 模型的 M10 报告须满足可判样本 ≥4、检出率 ≥75%、逆序 0；否则 M9 整级跳过。授权从 `calibration.md` 与 `score.json` 元数据复算，不接受手工布尔开关。
-- **自进化闭环**（全自动）：run → 确定性交付 gate → M9 评分 → 题页 memory（**只回传事实不回传分数**：胜出假设、被拒原因、检索有效性）→ 重跑消费 → 版本择优纯函数（gate → 校准合格时 M9 → refs 数 → token 成本，字典序）。
+- **M9/M10 退役裁决（2026-08-11）**：两者随 TypeScript 栈退役，不重建。理由是事实而非偏好——生产者（score/calibration 的写入侧）随栈删除，且仓库里唯一一份校准报告 `runs/20260808-134046/calibration.md` 的变异体检出率为 0/4（逆序 1），即使重建生产者，M9 也一天都没有取得过排序授权。处置：`evaluation.py` 不再读 `score.json` / `calibration.md`，版本择优链变为 **gate → refs 数 → token 成本 → run id**（全确定性）；报告输出结构里 M9 相关字段直接消失，不留空壳。旧 `runs/*/score.json` 与 `calibration.md` 降为历史工件，只作为"曾经试过、没通过校准"的证据保留，任何报告不得引用其分数。
+- **同族 judge 诚实条款**（退役后仍为判据）：judge 也是 Qwen（D1 锁死），无法消解自评偏置。这正是 M9 退役而不是降权重建的理由：一个自评的分数，校准不过就没有资格排序，也没有资格进报告的"成绩"栏。
+- **自进化闭环**（全自动）：run → 确定性交付 gate → 题页 memory（**只回传事实不回传分数**：胜出假设、被拒原因、检索有效性）→ 重跑消费 → 版本择优纯函数（gate → refs 数 → token 成本 → run id，字典序）。
 - **ablation 白捡项**：memory/ 可删除性 = 现成的记忆贡献量化开关（技术报告实验素材，抽样跑）。
 - 不做清单（防巨无霸，理由存 backlog）：Elo、用户模拟、人工反馈环（赛题"或"字裁决）、仿真环境、统一 trace、参数化防泄漏。
 

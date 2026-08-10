@@ -56,6 +56,14 @@ cd backend
 UV_CACHE_DIR=.cache/uv uv run python -m app.cli --question "<科学问题>"
 ```
 
+批量跑 Science-125（串行、断点续跑：已有终态 passed 的题自动跳过）：
+
+```sh
+cd backend
+UV_CACHE_DIR=.cache/uv uv run python -m app.batch --ids 1-125 --dry-run   # 先看计划，零执行
+UV_CACHE_DIR=.cache/uv uv run python -m app.batch --ids 3,54,61
+```
+
 ## 验证
 
 ```sh
