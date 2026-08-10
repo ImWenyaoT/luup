@@ -9,12 +9,12 @@ from typing import cast
 import httpx
 import pytest
 
+from app.agent.harness.verifier import FileReferenceVerifier
+from app.agent.specialists import backfill_reference_metadata
+from app.agent.tools.arxiv import ArxivClient, ArxivError, ArxivGate, ArxivPaper, build_search_query
+from app.agent.tools.runtime import LuupTools, ReviewerSearchRequiredError, SearchIntentLimitError
 from app.domain.contracts import Evidence, Proposal, ScientistOutput
 from app.domain.references import PaperCard
-from app.harness.specialists import backfill_reference_metadata
-from app.tools.arxiv import ArxivClient, ArxivError, ArxivGate, ArxivPaper, build_search_query
-from app.tools.runtime import LuupTools, ReviewerSearchRequiredError, SearchIntentLimitError
-from app.tools.verifier import FileReferenceVerifier
 
 ATOM = """<?xml version="1.0"?>
 <feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom">

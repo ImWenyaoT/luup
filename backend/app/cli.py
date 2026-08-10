@@ -9,12 +9,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
+from app.agent.harness import FileReferenceVerifier
+from app.agent.harness.orchestrator import Harness, RunOutcome
+from app.agent.model import QwenSettings
+from app.agent.specialists import AgentsSdkSpecialistRunner
+from app.agent.tools import ArxivClient, LuupTools
 from app.domain.runs import utc_stamp
-from app.harness.model import QwenSettings
-from app.harness.orchestrator import Harness, RunOutcome
-from app.harness.specialists import AgentsSdkSpecialistRunner
 from app.services.launch import FileRunLock, RunInProgress
-from app.tools import ArxivClient, FileReferenceVerifier, LuupTools
 
 
 def _parser() -> argparse.ArgumentParser:

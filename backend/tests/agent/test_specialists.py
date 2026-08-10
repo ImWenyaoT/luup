@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from app.agent.specialists import AgentsSdkSpecialistRunner
 from app.domain.contracts import Review, ReviewFinding, ScientistOutput
-from app.harness.specialists import AgentsSdkSpecialistRunner
 
 
 def test_parse_accepts_sdk_validated_model_instance() -> None:

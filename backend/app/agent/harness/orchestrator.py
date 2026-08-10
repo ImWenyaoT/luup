@@ -9,8 +9,8 @@ from typing import Any, Literal, Protocol
 
 from app.domain.contracts import Proposal, Review, ScientistOutput
 
+from ..specialists import RevisionRequest, SpecialistResult, SpecialistRunner
 from .artifacts import RunArtifacts
-from .specialists import RevisionRequest, SpecialistResult, SpecialistRunner
 
 
 class DeterministicVerifier(Protocol):

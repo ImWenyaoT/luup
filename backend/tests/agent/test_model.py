@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.harness.model import QWEN_DEFAULT_MODEL_ID, QwenSettings, qwen_model_settings
+from app.agent.model import QWEN_DEFAULT_MODEL_ID, QwenSettings, qwen_model_settings
 
 
 def test_model_settings_keep_bailian_responses_compatibility_knobs() -> None:

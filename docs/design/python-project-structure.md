@@ -41,12 +41,11 @@ backend/
 | `app/main.py` | 保留 | FastAPI 原生入口；保持只负责装配，不放业务逻辑。它也在 Vercel 最新自动发现名单内 |
 | `app/api/` | 已采用并保留 | endpoints 已从 `app/main.py` 下沉，当前 `api/main.py` + `api/routes/runs.py` 已与 Full Stack FastAPI Template 的分层一致 |
 | `app/domain/` | 保留 | 模板没有 Luup 的领域模型；不要改成含义更弱的 `models.py` |
-| `app/harness/` | 保留 | 它明确拥有 Model、Agent 编排、Evidence 和确定性验证；OpenAI 示例的 `manager.py` 不是规范 |
-| `app/tools/` | 保留 | 与 Agents SDK 的 Tool 概念一致；不要把工具误放进 `services/` 或 API routes |
+| `app/agent/` | 2026-08-10 重排采用 | `Agent = Model + Harness` 落到目录：`model.py`/`specialists.py`/`prompts/` 在伞顶，`harness/` 是循环引擎（orchestrator/artifacts + 零 LLM verifier），`tools/` 是模型可见能力（按调用图归位）。参照 eve 的 agent-目录与 default-harness 语义 |
 | `app/data/` | 保留 | `science125.json` 是版本化、只读的应用数据；它不是数据库，也不是运行状态 |
 | `app/services/` | 暂时保留 | 当前只有 HTTP 用例 `RunService` 和本地 `RunLauncher`，尚未复杂到值得搬家；`services` 较泛，新增 durable 实现时再按下节拆分 |
 | `backend/scripts/` | 保留 | 与官方模板一致；仅放导出 OpenAPI 等开发/构建命令 |
-| `backend/tests/` | 保留并继续镜像 `app/` | `api/domain/harness/tools` 已清楚；后续应补 `services/` 子目录，而不是把 service 测试塞进 API 测试 |
+| `backend/tests/` | 保留并继续镜像 `app/` | `api/domain/agent` 已清楚（`app/` 根的单文件入口如 `cli.py` 对应 `tests/test_cli.py`）；后续应补 `services/` 子目录，而不是把 service 测试塞进 API 测试 |
 | `app/cli.py`、`app/evaluation.py` | 暂时保留 | 各自仍是单一入口；只有出现多个 CLI/evaluation 模块后才升格为包 |
 
 ## Durable state 的目录接缝
