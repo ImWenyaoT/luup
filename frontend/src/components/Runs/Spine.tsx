@@ -61,7 +61,7 @@ export function Spine({
   className?: string
 }) {
   return (
-    <aside className={className}>
+    <aside className={className} data-testid="spine">
       <div className="mb-2 text-[11px] uppercase tracking-wider text-muted-foreground">
         reasoning spine
       </div>
@@ -74,6 +74,7 @@ export function Spine({
             />
             <button
               type="button"
+              data-testid="spine-node"
               className="text-left"
               onClick={() => select(node)}
             >

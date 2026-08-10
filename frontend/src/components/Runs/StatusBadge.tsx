@@ -20,13 +20,16 @@ const TONE_CLASS: Record<Tone, string> = {
 export function Pill({
   children,
   tone = "muted",
+  testId,
 }: {
   children: ReactNode
   tone?: Tone
+  testId?: string
 }) {
   return (
     <Badge
       variant="outline"
+      data-testid={testId}
       className={cn(
         "rounded-sm px-1.5 py-0 text-[11px] font-normal",
         TONE_CLASS[tone],
@@ -37,8 +40,18 @@ export function Pill({
   )
 }
 
-export function StatusPill({ status }: { status: RunStatus }) {
-  return <Pill tone={tone(status)}>{statusLabel[status]}</Pill>
+export function StatusPill({
+  status,
+  testId,
+}: {
+  status: RunStatus
+  testId?: string
+}) {
+  return (
+    <Pill tone={tone(status)} testId={testId}>
+      {statusLabel[status]}
+    </Pill>
+  )
 }
 
 /** 三态验收标记与旧表格一致：pass / fail / 未验收各有固定字面量。 */

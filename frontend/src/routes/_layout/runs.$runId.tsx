@@ -99,18 +99,24 @@ function RunDetailView({
   const working = run.status === "working"
 
   return (
-    <div className="grid gap-3 pt-6">
+    <div
+      className="grid gap-3 pt-6"
+      data-testid="run-detail"
+      data-run-id={run.id}
+    >
       <header className="grid gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <Link to="/runs" className="hover:text-primary">
             ← 历史
           </Link>
-          <h1 className="text-[15px] font-normal">{run.id}</h1>
-          <StatusPill status={run.status} />
+          <h1 className="text-[15px] font-normal" data-testid="run-id">
+            {run.id}
+          </h1>
+          <StatusPill status={run.status} testId="run-status" />
           {run.domain ? <Pill>{run.domain}</Pill> : null}
           {run.science125Id ? <Pill>#{run.science125Id}</Pill> : null}
           {run.verify ? (
-            <Pill tone={run.verify.pass ? "good" : "bad"}>
+            <Pill tone={run.verify.pass ? "good" : "bad"} testId="run-verify">
               验收 {run.verify.result}
             </Pill>
           ) : null}
@@ -176,7 +182,11 @@ function RunDetailView({
               </TabsTrigger>
             ))}
           </TabsList>
-          <TabsContent value={active} className="min-h-44 border bg-card p-3">
+          <TabsContent
+            value={active}
+            className="min-h-44 border bg-card p-3"
+            data-testid="tab-content"
+          >
             <TabContent tab={active} run={run} artifacts={artifacts} />
           </TabsContent>
         </Tabs>

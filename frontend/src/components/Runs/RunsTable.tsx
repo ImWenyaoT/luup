@@ -64,16 +64,23 @@ export function RunsTable({ runs }: { runs: RunSummary[] }) {
             {runs.filter((run) => run.status === status).length}
           </FilterButton>
         ))}
-        <small className="ml-auto text-[11px] text-muted-foreground">
+        <small
+          className="ml-auto text-[11px] text-muted-foreground"
+          data-testid="runs-shown-count"
+        >
           {shown.length} 行
         </small>
       </div>
-      <Table>
+      <Table data-testid="runs-table">
         <TableHeader>
           <TableRow>
             <TableHead>状态</TableHead>
             <TableHead>
-              <button type="button" onClick={() => order("id")}>
+              <button
+                type="button"
+                data-testid="runs-sort-id"
+                onClick={() => order("id")}
+              >
                 id {sort === "id" ? (desc ? "↓" : "↑") : ""}
               </button>
             </TableHead>
@@ -103,15 +110,16 @@ export function RunsTable({ runs }: { runs: RunSummary[] }) {
         </TableHeader>
         <TableBody>
           {shown.map((run) => (
-            <TableRow key={run.id}>
+            <TableRow key={run.id} data-testid="run-row" data-run-id={run.id}>
               <TableCell className="align-top">
-                <StatusPill status={run.status} />
+                <StatusPill status={run.status} testId="run-row-status" />
               </TableCell>
               <TableCell className="align-top">
                 <Link
                   to="/runs/$runId"
                   params={{ runId: run.id }}
                   className="hover:text-primary"
+                  data-testid="run-row-id"
                 >
                   {run.id}
                 </Link>
@@ -127,7 +135,10 @@ export function RunsTable({ runs }: { runs: RunSummary[] }) {
                 <MiniSpine nodes={run.nodes} />
               </TableCell>
               <TableCell className="align-top">{run.refs ?? "—"}</TableCell>
-              <TableCell className={cn("align-top", verifyClass(run.verify))}>
+              <TableCell
+                className={cn("align-top", verifyClass(run.verify))}
+                data-testid="run-row-verify"
+              >
                 {run.verify === "pass"
                   ? "ALL PASS"
                   : run.verify === "fail"
@@ -157,6 +168,7 @@ function FilterButton({
   return (
     <button
       type="button"
+      data-testid="runs-filter"
       aria-pressed={active}
       onClick={onClick}
       className={cn(

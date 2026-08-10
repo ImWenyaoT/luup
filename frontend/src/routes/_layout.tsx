@@ -7,12 +7,18 @@ export const Route = createFileRoute("/_layout")({
 function Layout() {
   return (
     <div className="relative mx-auto max-w-6xl px-4 pb-16">
-      <header className="flex h-13 items-center gap-4 border-b">
-        <Link to="/" className="text-[15px]">
+      <header
+        className="flex h-13 items-center gap-4 border-b"
+        data-testid="topbar"
+      >
+        <Link to="/" className="text-[15px]" data-testid="topbar-brand">
           <b className="text-primary">luup</b>
           <span className="text-muted-foreground"> · 交付面</span>
         </Link>
-        <nav className="flex gap-3 text-xs text-muted-foreground">
+        <nav
+          className="flex gap-3 text-xs text-muted-foreground"
+          data-testid="topbar-nav"
+        >
           <Link to="/" className="hover:text-primary">
             仪表台
           </Link>

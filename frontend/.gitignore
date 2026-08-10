@@ -3,3 +3,7 @@ node_modules/
 dist/
 .vite/
 .tanstack/
+
+# Playwright 产物
+playwright-report/
+test-results/

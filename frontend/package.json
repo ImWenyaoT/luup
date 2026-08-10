@@ -14,7 +14,8 @@
     "lint:ci": "biome ci .",
     "generate:client": "cd ../backend && UV_CACHE_DIR=.cache/uv uv run python -m scripts.export_openapi && cd ../frontend && openapi-ts -i ../backend/openapi.json -o src/client -c @hey-api/client-fetch",
     "check:client": "pnpm generate:client && git diff --exit-code -- ../backend/openapi.json src/client",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.2.4",
@@ -32,6 +33,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.4.16",
     "@hey-api/openapi-ts": "^0.99.0",
+    "@playwright/test": "1.61.1",
     "@tanstack/router-plugin": "^1.168.18",
     "@types/node": "^26.2.0",
     "@types/react": "19.2.18",
