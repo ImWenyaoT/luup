@@ -4,7 +4,8 @@ version = "0.1.0"
 description = "Luup Python Harness migration workspace"
 requires-python = ">=3.12"
 dependencies = [
-  "fastapi>=0.115.0",
+  # app.frontend()（单进程托管前端构建产物）需要 0.141.1；官方模板取的也是这个下界
+  "fastapi>=0.141.1",
   "openai-agents>=0.9.0",
   "pydantic>=2.11.0",
 ]

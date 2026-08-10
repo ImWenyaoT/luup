@@ -1,12 +1,31 @@
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react-swc";
+import path from "node:path"
+import tailwindcss from "@tailwindcss/vite"
+import { tanstackRouter } from "@tanstack/router-plugin/vite"
+import react from "@vitejs/plugin-react-swc"
+import { defineConfig } from "vite"
 
 /**
- * 开发期保持同源 /api：页面不需要知道 FastAPI 的地址，生产环境则由
- * VITE_API_BASE_URL 显式指定。这个 adapter 是迁移期的唯一 HTTP 边界。
+ * 构建产物直接落到 backend/app/frontend，由 FastAPI 单进程托管；
+ * 开发期则保持同源 /api，页面不需要知道 FastAPI 的地址。
  */
 export default defineConfig({
-  plugins: [react()],
+  build: {
+    outDir: "../backend/app/frontend",
+    emptyOutDir: true,
+  },
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
+  },
+  plugins: [
+    tanstackRouter({
+      target: "react",
+      autoCodeSplitting: true,
+    }),
+    react(),
+    tailwindcss(),
+  ],
   server: {
     port: 5173,
     proxy: {
@@ -16,4 +35,4 @@ export default defineConfig({
       },
     },
   },
-});
+})

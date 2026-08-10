@@ -39,7 +39,14 @@ UV_CACHE_DIR=.cache/uv uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 cd frontend
 pnpm install
 pnpm generate:client
-pnpm dev                    # http://127.0.0.1:5173
+pnpm dev                    # http://127.0.0.1:5173，/api 代理到 8000
+```
+
+单进程交付（无需前端 dev server）：
+
+```sh
+cd frontend && pnpm build   # 产物写入 backend/app/frontend
+# 重启 uvicorn 后，页面与 API 同端口：http://127.0.0.1:8000
 ```
 
 直接跑题：
@@ -60,7 +67,8 @@ UV_CACHE_DIR=.cache/uv uv run mypy app scripts
 UV_CACHE_DIR=.cache/uv uv run python -m app.evaluation --runs-root ../runs
 
 cd ../frontend
-pnpm generate:client
+pnpm check:client   # client 漂移门禁
+pnpm lint           # biome
 pnpm build
 ```
 

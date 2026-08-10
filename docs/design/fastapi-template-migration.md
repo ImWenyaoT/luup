@@ -2,6 +2,13 @@
 
 > 状态：已于 2026-08-10 完成 cutover。真实 Qwen run `20260810-092300` 通过全部引用验收，
 > 随后删除旧 Next/TypeScript 实现。本文件保留为设计与决策记录。
+>
+> 补记（2026-08-10，同日第二阶段）：前端骨架已对齐模板——TanStack Router 文件路由 +
+> TanStack Query、Tailwind v4 + shadcn/ui、Biome；vite 构建产物写入 `backend/app/frontend`，
+> 由 `app.frontend()` 单进程托管（fastapi 下界随之提到 0.141.1，目录存在才挂载）。
+> 与模板的保留差异：pnpm（非 Bun）、hey-api client-fetch（非 axios）、手写 `src/types.ts`
+> （后端未声明 response_model，生成类型全 unknown）、无 Playwright/CI/docker（后议）。
+> 三页行为与生成客户端链路字节级不变。
 
 日期：2026-08-10。上游快照固定为
 [`fastapi/full-stack-fastapi-template@66f444a`](https://github.com/fastapi/full-stack-fastapi-template/tree/66f444a63a11ce7b4b6df6c4fbe9e15b2fa7aa3a)，
