@@ -17,7 +17,10 @@ export function ErrorBox({
 }) {
   const text = error instanceof Error ? error.message : "请求失败"
   return (
-    <div className="flex items-center justify-between gap-3 border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+    <div
+      className="flex items-center justify-between gap-3 border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+      data-testid="error-box"
+    >
       <span>{text}</span>
       {retry ? (
         <Button

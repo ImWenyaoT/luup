@@ -69,6 +69,7 @@ cd ../frontend
 pnpm check:client   # client 漂移门禁
 pnpm lint           # biome
 pnpm build
+pnpm test:e2e       # Playwright 打真实单进程交付形态；首次先 pnpm exec playwright install chromium
 ```
 
 ## 运行工件

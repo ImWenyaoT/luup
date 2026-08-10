@@ -11,7 +11,7 @@ export function ApiExamples({ sample }: { sample: string }) {
     `curl -s '${base}/api/runs/${sample}?artifact=proposal.md'`,
   ]
   return (
-    <ul>
+    <ul data-testid="api-examples">
       {commands.map((command, index) => (
         <li
           key={command}

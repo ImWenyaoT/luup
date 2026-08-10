@@ -39,7 +39,7 @@ export function Picker({
     : null
 
   return (
-    <div className="grid gap-3">
+    <div className="grid gap-3" data-testid="science125-picker">
       <div className="grid gap-px border bg-border md:grid-cols-[minmax(144px,224px)_1fr]">
         <nav
           aria-label="学科"
@@ -49,6 +49,7 @@ export function Picker({
             <button
               type="button"
               key={item.domain}
+              data-testid="science125-domain"
               aria-pressed={item.domain === domain}
               onClick={() => setDomain(item.domain)}
               className={cn(
@@ -66,6 +67,7 @@ export function Picker({
             <li key={question.id}>
               <button
                 type="button"
+                data-testid="science125-question"
                 aria-pressed={picked === question.id}
                 onClick={() => {
                   setPicked(picked === question.id ? null : question.id)
