@@ -1,6 +1,12 @@
 # Vercel Agent 技术栈研究笔记
 
-日期：2026-08-09。范围：Luup 当前安装的 `eve@0.31.3`、`ai@7.0.0-canary.171`，并以 `../oss/eve` 的同版本源码核对实现。`../oss/ai` 当前是 `ai@7.0.58`，仅用于观察上游方向；涉及 Luup 的 API 判断一律以 `node_modules/ai` 为准。
+> **时效注（2026-08-10）**：本文的「一句话结论」（留在 eve + AI SDK 栈上）已被同日的
+> 栈迁移决定推翻——用户当日指令明确目标栈为 OpenAI Agents SDK，编排层已整体迁至
+> `@openai/agents` + `openai` 直连百炼 Responses（见 architecture.md「模型接线」与
+> git 历史）。本文保留作 eve/AI SDK 内部机制的调研档案；文中「缺一个逐调用输入投影
+> 扩展点」的诉求在新栈对应 `callModelInputFilter` / `sessionInputCallback`。
+
+日期：2026-08-09。范围：Luup 当时安装的 `eve@0.31.3`、`ai@7.0.0-canary.171`，并以 `../oss/eve` 的同版本源码核对实现。`../oss/ai` 当前是 `ai@7.0.58`，仅用于观察上游方向；涉及 Luup 的 API 判断一律以 `node_modules/ai` 为准。
 
 ## 一句话结论
 

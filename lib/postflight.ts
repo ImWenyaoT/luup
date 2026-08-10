@@ -37,7 +37,7 @@ export async function finalizeRun(input: {
   const before = runOutcome(readRunEvidence(input.runDir));
   if (input.pipelineExitCode !== 0 || !reachedProposal(before)) {
     return {
-      exitCode: input.pipelineExitCode === 3 ? 3 : 1,
+      exitCode: 1,
       verificationExitCode: null,
       phase: before.phase,
       deliverable: false,

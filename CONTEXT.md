@@ -16,4 +16,4 @@
 | **负结果（negative result）** | 被拒假设及理由。run 内在 rejected.md，跨 run 在题页——防止重蹈死路 | memory/questions/ |
 | **单写者假设** | campaignMemory 无锁 read-modify-write 的前提。owner 是 `runs/.active.json` 单并发锁，web 与 CLI 都是它的 adapter（CLI 撞锁退 2，不排队） | lib/lock.ts |
 | **活跃 run（activeId）** | 此刻持锁的 run id，`running` 态的唯一来源。是进程外事实，不在 run 目录里，因此一律作为显式入参往下传（deriveStatus 不自己读锁，派生缓存显式传 null） | lib/lock.ts activeRunId |
-| **派工（dispatch）** | master 经同名工具（literature/hypothesis/critique/proposal）把 message 交给节点 agent 的一次独立 run()；typed 回传区分 completed / max_turns / error | agent/agent.ts dispatchTool |
+| **派工（dispatch）** | master 经同名工具（scientist/reviewer）把 message 交给节点 agent 的一次独立 run()；typed 回传区分 completed / max_turns / error | agent/agent.ts dispatchTool |

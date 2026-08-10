@@ -1,6 +1,6 @@
 # luup
 
-面向《Science》125 前沿科学问题的 AI Scientist：master agent 监督四个互不信任的 subagent（文献挖掘 → 假设生成 → 批判 → 计划撰写），逐项认证、不合格打回，产出引用经确定性反查的《科学假设与研究计划》（10 标准字段）。
+面向《Science》125 前沿科学问题的 AI Scientist：薄 master 调度 Scientist（检索证据 + 假设 + 研究计划）与独立 Reviewer（反查先行工作，pass / 一次返修），产出引用经确定性反查的《科学假设与研究计划》（10 标准字段）。需求源头见 `docs/design/product-contract.md`。
 
 赛题：挑战杯揭榜挂帅 XH-202619 赛道一·方向一·维度A。
 
@@ -86,7 +86,7 @@ pnpm eval:full  # 全链路：真跑一题 + 契约/离线验收 gates（≈20 �
 
 | 文件 | 内容 |
 |------|------|
-| evidence.md / hypotheses.md / critique.json | 各节点 handoff 工件 |
+| evidence.md / review.json | Scientist 证据卡片 / Reviewer 审稿结论（handoff 工件） |
 | proposal.{json,md} | 10 字段《科学假设与研究计划》 |
 | verdicts/*.json | master 逐节点认证记录（pass/reject + 逐项理由） |
 | memory/papers/、memory/index.md | 本次运行实检的 arXiv 文献卡与索引 |

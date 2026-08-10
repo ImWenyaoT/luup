@@ -17,41 +17,26 @@ console.log("[1] master 装配");
 const master = buildMasterAgent();
 eq("master 名称", master.name, "master");
 check(
-  "master instructions 已装载（含循环控制关键词）",
-  typeof master.instructions === "string" && master.instructions.includes("循环控制"),
+  "master instructions 已装载（含调度关键词）",
+  typeof master.instructions === "string" && master.instructions.includes("薄管理者"),
 );
 eq(
   "master 工具面与顺序（顺序即 KV 前缀，改动先改这里）",
   master.tools.map((t) => t.name).join(","),
-  [
-    "literature",
-    "hypothesis",
-    "critique",
-    "proposal",
-    "artifact_write",
-    "artifact_read",
-    "verify_references",
-    "arxiv_search",
-    "arxiv_save",
-    "paper_index_read",
-    "memory_search",
-    "memory_note",
-  ].join(","),
+  ["scientist", "reviewer", "artifact_write", "artifact_read", "verify_references"].join(","),
 );
-check("master 轮数上限在位", Number.isInteger(MASTER_MAX_TURNS) && MASTER_MAX_TURNS >= 50);
-check("master 会话时限在位（2h）", MASTER_TIMEOUT_MS === 2 * 60 * 60 * 1000);
+check("master 轮数上限在位", Number.isInteger(MASTER_MAX_TURNS) && MASTER_MAX_TURNS >= 30);
+check("master 会话时限在位（1h）", MASTER_TIMEOUT_MS === 60 * 60 * 1000);
 
-console.log("\n[2] 四个 DAG 节点");
+console.log("\n[2] 两个 DAG 节点（scientist → reviewer）");
 const EXPECTED_TOOLS: Record<string, string[]> = {
-  literature: ["arxiv_search", "arxiv_save", "memory_search", "paper_index_read"],
-  hypothesis: ["paper_index_read"],
-  critique: ["arxiv_search", "paper_index_read"],
-  proposal: ["paper_index_read"],
+  scientist: ["arxiv_search", "arxiv_save", "memory_search", "paper_index_read"],
+  reviewer: ["arxiv_search", "paper_index_read"],
 };
 eq(
   "节点清单即 DAG 顺序",
   SUBAGENT_NODES.map((n) => n.name).join(","),
-  "literature,hypothesis,critique,proposal",
+  "scientist,reviewer",
 );
 for (const node of SUBAGENT_NODES) {
   const agent = node.build();
@@ -72,10 +57,8 @@ for (const node of SUBAGENT_NODES) {
   );
 }
 check(
-  "contract 节点恰为 critique 与 proposal",
-  SUBAGENT_NODES.filter((n) => n.contract !== undefined)
-    .map((n) => n.name)
-    .join(",") === "critique,proposal",
+  "两个节点都是 contract 节点（结构化交付）",
+  SUBAGENT_NODES.every((n) => n.contract !== undefined),
 );
 
 report("selftest-agents");

@@ -17,6 +17,11 @@ master agent 以判据清单驱动 goal-driven loop，监督一组互不信任�
 
 ## DAG
 
+> **2026-08-10 拓扑收敛**：实现已按 [product-contract.md](product-contract.md) 收敛为
+> `scientist → reviewer → 至多一次返修 → verify`（工件 evidence.md / proposal.json /
+> review.json；见 agent/instructions.md）。下方 4 节点 DAG、角色表与「循环控制」是
+> Ultra 期记录，保留作设计依据与消融对照，不描述现行为。
+
 ```
 question (input)
    │
@@ -119,8 +124,8 @@ runs/<ts>/memory/
 - `@openai/agents` 0.14.3 绑定（`agent/lib/model.ts` 是唯一接线点）：
   - 每个 Agent 显式传 `new OpenAIResponsesModel(qwenClient(thinking), modelId)` —— Model 实例绕过 SDK 全局解析，OPENAI_API_KEY 相关默认永不触发；`setTracingDisabled(true)` 在模块初始化时关掉 tracing exporter。
   - `enable_thinking`（百炼私有 body 字段）与 usage.jsonl 记账都在 client 的 fetch 兼容包装里 —— 与 eve 时代同一手法，单点管理 wire facts。
-  - 架构映射：master = 带 12 个工具的 Agent（4 个派工工具 + 工件/核验/记忆工具）；L/H/C/W = 独立 Agent，经**同名派工工具**内的独立 `run()` 触发，除 message 外什么都不继承——显式 handoff 原则由机制成立。critique/proposal 的结构化返回由派工工具做 JSON 提取/规范化，验收权单点在 artifact_write（fail-closed）。
-  - **熔断映射**：eve 的 session token limits → `maxTurns × 131k 窗口` 上界（master 150≈20M，L 22≈3M，C 19≈2.5M，H/W 15≈2M）+ 2h AbortSignal。撞线 = typed 回传 `max_turns`/`error`，master 按「被截断」升级。paused/Approve 人工续跑通道随之消失——超限即诚实 FAILED（human over the loop）。
+  - 架构映射：master = 带 5 个工具的薄调度 Agent（scientist / reviewer 两个派工工具 + artifact_write / artifact_read / verify_references）；节点 = 独立 Agent，经**同名派工工具**内的独立 `run()` 触发，除 message 外什么都不继承——显式 handoff 原则由机制成立。scientist/reviewer 的结构化返回由派工工具做 JSON 提取/规范化（ScientistOutputSchema / ReviewSchema），验收权单点在 artifact_write（fail-closed）。
+  - **熔断映射**：eve 的 session token limits → `maxTurns × 131k 窗口` 上界（master 60≈8M，scientist 22≈3M，reviewer 19≈2.5M）+ 1h AbortSignal。撞线 = typed 回传 `max_turns`/`error`，master 按「被截断」写 FAILED。paused/Approve 人工续跑通道随之消失——超限即诚实 FAILED（human over the loop）。
   - **已知边界**：无自动 compaction（eve 0.8 阈值摘要不复存在）。master 上下文靠 handoff 预算（工件摘要 ≤20 行）自律；若真溢出 131k，端点报错 → run 诚实失败 → 救援道。后续若成为承重项，SDK 的 `callModelInputFilter` / `sessionInputCallback` 是现成的客户端裁剪钩子（R2 context 工作的落点）。
   - 外层驱动 = `scripts/run.ts` 进程内 `run(master)`（不再有 headless host / 子进程 / 退出码 3）。
 
