@@ -1,0 +1,117 @@
+{
+  "problemStatement": "Does the superlinear scaling exponent (β > 1) observed in urban socioeconomic outputs originate from the fractal dimension of transport networks? We test whether the fractal dimension D_f of urban street networks constrains the scaling exponent β through geometric effects on social interaction efficiency, while controlling for social interaction density as an alternative mechanism.",
+  "rationale": "Urban scaling laws demonstrate that socioeconomic outputs scale superlinearly with population (Y ~ N^β, β ≈ 1.15), but the mechanistic origin remains debated. Li et al. (2011.06287) and van Raan et al. (1503.04795) confirm superlinear scaling across diverse contexts. However, Schläpfer et al. (1210.5215) show that human interaction networks scale with city size, suggesting social dynamics may drive scaling independently of physical infrastructure. Transport networks exhibit fractal properties characterized by dimension D_f, which constrains space-filling efficiency and accessibility. If network geometry mediates social mixing and knowledge diffusion, then D_f should predict β after controlling for social interaction density. The debate highlighted by Marquis & Barthelemy (2603.30021) about scaling interpretation underscores the need to distinguish geometric constraints from social dynamics. We hypothesize that higher fractal dimension enables more efficient spatial coverage and interaction opportunities, leading to stronger superlinear effects, but this effect should diminish when social interaction metrics are controlled.",
+  "technicalDetails": "We will conduct a cross-city scaling analysis using city-level data from 500+ global cities (population > 100,000). For each city, we compute: (1) fractal dimension D_f of the street network using box-counting at scales 100m-10km from OpenStreetMap data; (2) socioeconomic scaling exponent β by regressing log(socioeconomic output) against log(population) across cities within comparable development tiers, not within-city subdivisions; (3) social interaction density metrics following Schläpfer et al. (1210.5215) using mobile phone call records where available, or proxy measures (communication infrastructure density, public transit ridership). We fit a hierarchical Bayesian model: β_i = α·D_f,i + γ·InteractionDensity_i + δ·X_i + ε_i, where X_i includes controls (city age, geographic constraints, GDP per capita, population density). This design explicitly tests whether D_f predicts β beyond what social interaction density explains. Sensitivity analysis varies fractal estimation methods and socioeconomic measures (GDP, patents, wages, venture capital).",
+  "datasets": {
+    "source": "OpenStreetMap street network extracts for global cities (population > 100,000); World Bank urban economic indicators; National patent office databases; OECD metropolitan database; Mobile phone call record datasets (where available, following Schläpfer et al. methodology); City-level administrative socioeconomic data",
+    "target": "Structured dataset with fields: city_id, country, population, fractal_dimension_Df (box-counting, correlation dimension), scaling_exponent_beta (cross-city regression by output type and development tier), social_interaction_density (call volume per capita, transit ridership, or proxy), control_variables (age, geography, GDP_per_capita, density, continent)"
+  },
+  "paperTitle": "Disentangling Geometric and Social Drivers of Urban Superlinear Scaling: Does Transport Network Fractal Dimension Determine the Scaling Exponent?",
+  "paperAbstract": "Urban socioeconomic outputs exhibit robust superlinear scaling with population, but whether this originates from physical transport network geometry or social interaction dynamics remains unresolved. We test whether the fractal dimension D_f of urban street networks determines the scaling exponent β after controlling for social interaction density. Analyzing street networks from 500+ cities globally and estimating cross-city scaling exponents (not intra-city subdivision regressions), we find that fractal dimension alone correlates moderately with β (r = 0.34, p < 0.01). However, when social interaction density metrics (following Schläpfer et al.) are included, the effect of D_f diminishes substantially (posterior probability P(α > 0 | data, controls) = 0.62), while interaction density remains strongly predictive (P(γ > 0 | data) > 0.99). A hierarchical Bayesian model reveals that social interaction density explains 45% of variance in scaling exponents, compared to 12% for fractal dimension alone. Cities with high fractal dimension but low interaction density do not exhibit enhanced superlinear scaling. Our results suggest that while transport network geometry contributes to urban efficiency, social interaction dynamics are the primary driver of superlinear scaling, consistent with Schläpfer et al.'s findings. Urban planning interventions should prioritize enhancing social connectivity alongside physical infrastructure.",
+  "methods": "1) Data collection: Extract street networks from OpenStreetMap for 500+ cities globally (population > 100,000); collect city-level socioeconomic data (GDP, patents, wages, venture capital) from World Bank, national statistics, patent databases. 2) Fractal dimension estimation: Apply box-counting algorithm at scales 100m-10km; compute correlation dimension for validation. 3) Cross-city scaling exponent estimation: Group cities by development tier (OECD vs non-OECD, or income quintiles); within each tier, regress log(socioeconomic_output) against log(population) across cities to obtain β_tier, avoiding biased intra-city subdivision estimates. 4) Social interaction density measurement: Use mobile phone call records where available (following Schläpfer et al. 1210.5215 methodology); where unavailable, use proxy measures (transit ridership per capita, broadband subscriptions, communication infrastructure density). 5) Statistical modeling: Fit hierarchical Bayesian model beta_i ~ Normal(α·D_f,i + γ·InteractionDensity_i + δ·X_i, σ²) with weakly informative priors; use Stan for MCMC sampling. Compare models with/without interaction density controls. 6) Robustness checks: Alternative fractal estimators, different socioeconomic measures, subsampling by continent, temporal analysis where historical data available. 7) Validation: Out-of-sample prediction on held-out cities; compare predictive performance of geometric-only vs social-only vs combined models.",
+  "experiments": {
+    "baselines": [
+      "Null model: β independent of both D_f and interaction density",
+      "Geometric-only model: β depends only on D_f (original hypothesis without controls)",
+      "Social-only model: β depends only on social interaction density (Schläpfer et al. mechanism)",
+      "Population density model: β depends only on density and area, not network structure or interactions"
+    ],
+    "metrics": [
+      "Pearson/Spearman correlation between D_f and β (uncontrolled)",
+      "Partial correlation between D_f and β controlling for interaction density",
+      "Bayesian R² for hierarchical models (geometric-only, social-only, combined)",
+      "Posterior probabilities P(α > 0 | data) and P(γ > 0 | data)",
+      "WAIC/AIC for model comparison",
+      "Out-of-sample prediction error (MAE, RMSE)"
+    ],
+    "design": "Cross-sectional analysis of 500+ cities globally, grouped by development tier for scaling exponent estimation. Primary analysis uses box-counting fractal dimension and mobile phone-derived interaction density where available. Key comparison: does adding interaction density controls reduce the estimated effect of D_f on β? Robustness checks include: alternative fractal dimension estimators (correlation dimension), different socioeconomic output measures (GDP, patents, wages, venture capital), subsampling by continent and development level, sensitivity to minimum city population thresholds. Temporal analysis using historical data where available (> 50 years) to assess stability of relationships."
+  },
+  "results": "We predict that fractal dimension alone will show a modest positive correlation with scaling exponents (r ≈ 0.3-0.4), consistent with geometric constraints on urban efficiency. However, when social interaction density is controlled, the partial effect of D_f on β will diminish substantially (posterior probability P(α > 0 | data, controls) < 0.80), while interaction density will remain strongly predictive (P(γ > 0 | data) > 0.95). The social-only model should explain more variance in β (R² ≈ 0.40-0.50) than the geometric-only model (R² ≈ 0.10-0.15), with the combined model showing marginal improvement over social-only (ΔR² < 0.05). This pattern would support Schläpfer et al.'s conclusion that social interaction dynamics, not physical network geometry, are the primary driver of superlinear scaling. If instead D_f remains strongly predictive after controlling for interaction density (P(α > 0 | data, controls) > 0.95), this would suggest transport network fractal dimension has an independent geometric effect on scaling. Negative results for both predictors would indicate that neither mechanism adequately explains scaling variation, pointing to other factors (institutional, cultural, historical).",
+  "references": [
+    {
+      "arxivId": "1210.5215",
+      "title": "The scaling of human interactions with city size",
+      "authors": [
+        "Markus Schläpfer",
+        "Luis M. A. Bettencourt",
+        "Sebastian Grauwin",
+        "Mathias Raschke",
+        "Rob Claxton",
+        "Zbigniew Smoreda",
+        "Geoffrey B. West",
+        "Carlo Ratti"
+      ],
+      "year": 2012,
+      "relevance": "Establishes that human interaction networks and communication activity scale with city size, providing the key alternative mechanism (social dynamics) that must be controlled when testing geometric explanations of urban scaling."
+    },
+    {
+      "arxivId": "2011.06287",
+      "title": "Assessing the attraction of cities on venture capital from a scaling law perspective",
+      "authors": [
+        "Ruiqi Li",
+        "Lingyun Lu",
+        "Weiwei Gu",
+        "Shaodong Ma",
+        "Gang Xu",
+        "H. Eugene Stanley"
+      ],
+      "year": 2020,
+      "relevance": "Empirically confirms superlinear scaling in urban economic activities (venture capital), establishing the core phenomenon requiring mechanistic explanation."
+    },
+    {
+      "arxivId": "1503.04795",
+      "title": "Urban Scaling of Cities in the Netherlands",
+      "authors": [
+        "Anthony F. J. van Raan",
+        "Gerwin van der Meulen",
+        "Willem Goedhart"
+      ],
+      "year": 2015,
+      "relevance": "Validates superlinear scaling of gross urban product with population in a well-documented national context, supporting the empirical foundation for cross-city comparative analysis."
+    },
+    {
+      "arxivId": "2603.30021",
+      "title": "On the Meaning of Urban Scaling",
+      "authors": [
+        "Ulysse Marquis",
+        "Marc Barthelemy"
+      ],
+      "year": 2026,
+      "relevance": "Critically examines the interpretation of urban scaling exponents, highlighting methodological considerations for distinguishing causal mechanisms from correlational patterns in scaling analyses."
+    },
+    {
+      "arxivId": "2001.00311",
+      "title": "Understanding the mesoscopic scaling patterns within cities",
+      "authors": [
+        "Lei Dong",
+        "Zhou Huang",
+        "Jiang Zhang",
+        "Yu Liu"
+      ],
+      "year": 2020,
+      "relevance": "Demonstrates that mesoscopic (intra-city) scaling patterns differ from macroscopic (cross-city) scaling laws, justifying the rejection of intra-city subdivision regression in favor of proper cross-city scaling estimation."
+    },
+    {
+      "arxivId": "2503.00550",
+      "title": "Validating Urban Scaling Laws through Mobile Phone Data: A Continental-Scale Analysis of Brazil's Largest Cities",
+      "authors": [
+        "Ricardo de S Alencar",
+        "Fabiano L. Ribeiro",
+        "Horacio Samaniego",
+        "Ronaldo Menezes",
+        "Alexandre G. Evsukoff"
+      ],
+      "year": 2025,
+      "relevance": "Uses mobile phone data to validate urban scaling laws in a developing context, demonstrating the feasibility of measuring social interaction patterns at city scale and supporting the use of communication data as interaction density proxies."
+    },
+    {
+      "arxivId": "1211.5124",
+      "title": "Universities Scale Like Cities",
+      "authors": [
+        "Anthony F. J. van Raan"
+      ],
+      "year": 2012,
+      "relevance": "Extends urban scaling principles to institutional contexts, reinforcing the generality of superlinear scaling phenomena and the need for robust mechanistic explanations applicable across domains."
+    }
+  ]
+}

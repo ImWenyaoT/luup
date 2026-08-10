@@ -68,7 +68,11 @@ Vite/React 只通过 HTTP 读取 Science-125、run 列表、详情、状态和�
 
 ## 评估
 
-`backend/app/evaluation.py` 只读已有工件：确定性交付 gate 优先；M9 只有在 M10 校准达标时才参与择优；
-veto 仅 advisory；同题版本可做 McNemar 精确配对比较。评估不调用模型或网络。
+`backend/app/evaluation.py` 只读已有工件，全部是纯函数：版本择优链 gate → refs → token → run id
+（M9/M10 已于 2026-08-11 退役，见 `criteria.md` H 节）；Tier1 聚合 M4/M5/M7/M8 与失败分类分组；
+M11 出 `firstVsLatest` 与 `memoryArms` 两种 McNemar 精确配对。评估不调用模型或网络。
+
+`backend/app/batch.py` 是 125 题的交付载具：按题号串行调用 `cli.run_cli` 这一个组合根，
+已有终态 passed 的题跳过，单题异常记录后继续。
 
 验收细则见 `criteria.md`，迁移设计与完成记录见 `fastapi-template-migration.md`。

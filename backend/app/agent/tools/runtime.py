@@ -119,7 +119,12 @@ class LuupTools:
         if key in self._search_cache:
             cached = self._search_cache[key]
             self.append_tool_event(
-                tool="arxiv_search", query=query, count=len(cached), newCount=0, deduplicated=True
+                tool="arxiv_search",
+                query=query,
+                arxivQuery=build_search_query(query),
+                count=len(cached),
+                newCount=0,
+                deduplicated=True,
             )
             return self._search_payload(query, cached, new_count=0, deduplicated=True)
         if key in self._failed_queries:
@@ -148,8 +153,15 @@ class LuupTools:
         if reviewer_budget is not None and new_count > 0:
             reviewer_budget.successful_new_searches += 1
         self._search_cache[key] = results
+        # The rewritten AND query is what arXiv actually answered; a zero-hit line is
+        # unreadable without it, and the model-facing payload alone leaves no artifact.
         self.append_tool_event(
-            tool="arxiv_search", query=query, count=len(results), newCount=new_count, deduplicated=False
+            tool="arxiv_search",
+            query=query,
+            arxivQuery=build_search_query(query),
+            count=len(results),
+            newCount=new_count,
+            deduplicated=False,
         )
         return self._search_payload(query, results, new_count=new_count, deduplicated=False)
 

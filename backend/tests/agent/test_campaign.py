@@ -33,6 +33,9 @@ def test_a_passed_run_appends_one_line_to_the_question_page_and_the_log(tmp_path
     assert "2205.03989, 0704.1215" in entries[0]
     log = (memory / "log.md").read_text(encoding="utf-8")
     assert "run | q61 | SUCCESS" in log
+    # Repo-relative, never absolute: this file is committed and read on other machines.
+    assert "- runs/20260811-010203｜" in log
+    assert str(tmp_path) not in log
 
 
 def test_a_failed_run_records_its_classification_rather_than_a_winning_title(tmp_path: Path) -> None:
@@ -80,6 +83,20 @@ def test_a_run_without_a_question_id_writes_only_the_log(tmp_path: Path) -> None
 
     assert not (memory / "questions").exists()
     assert "run | q- | SUCCESS" in (memory / "log.md").read_text(encoding="utf-8")
+
+
+def test_a_run_outside_the_repo_still_records_a_relative_path(tmp_path: Path) -> None:
+    """A run directory that is not a sibling of memory/ has no relative form; the id is still portable."""
+    memory = tmp_path / "repo" / "memory"
+    memory.mkdir(parents=True)
+    run_dir = tmp_path / "elsewhere" / "20260811-010203"
+    write_proposal(run_dir, "A plan from an unusual run directory", ["2205.03989"])
+
+    record_run(memory, run_dir=run_dir, question_id=None, status="passed", classification=None)
+
+    log = (memory / "log.md").read_text(encoding="utf-8")
+    assert "- runs/20260811-010203｜" in log
+    assert str(tmp_path) not in log
 
 
 def test_the_memory_off_arm_writes_nothing_at_all(tmp_path: Path) -> None:

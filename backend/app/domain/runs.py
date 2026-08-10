@@ -16,10 +16,16 @@ FailureClass = Literal[
     "verifier_refs",
     "revision_no_change",
     "contract_violation",
+    "agent_budget_exhausted",
     "infra_timeout",
     "infra_error",
 ]
-"""M4 需要区分环境性失败与质量性失败，所以终态工件必须自报分类，而不是让读者猜文案。"""
+"""M4 需要区分环境性失败与质量性失败，所以终态工件必须自报分类，而不是让读者猜文案。
+
+`agent_budget_exhausted`（SDK 的 max turns 用尽）是**质量性**的：实测 run 20260810-164417
+一次检索都不发、连打 8 次 arxiv_save 把 22 轮耗光——这是 agent 行为失败，不是环境故障。
+把它留在 `infra_error` 兜底里会虚高环境性一档，正好抹掉 M4 刚分出来的那条线。
+"""
 
 
 class BoundaryError(ValueError):

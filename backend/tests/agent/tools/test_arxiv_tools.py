@@ -137,6 +137,21 @@ async def test_search_reports_the_rewritten_query_the_new_count_and_the_remainin
     assert cached["searchIntentsUsed"] == 1
 
 
+async def test_the_rewritten_query_is_persisted_on_every_search_event(tmp_path: Path) -> None:
+    """A zero-hit line in tool-events is unreadable without the query arXiv actually answered."""
+    run_dir = tmp_path / "run"
+    tools = LuupTools(run_dir, tmp_path / "memory", ArxivClient(FakeHttp([ATOM]), no_wait_gate()))
+
+    async with tools.scientist_scope():
+        await tools.search("electron capture supernova")
+        await tools.search("electron   capture   supernova")
+
+    events = [json.loads(line) for line in (run_dir / "tool-events.jsonl").read_text(encoding="utf-8").splitlines()]
+
+    assert [event["deduplicated"] for event in events] == [False, True]
+    assert all(event["arxivQuery"] == "all:electron AND all:capture AND all:supernova" for event in events)
+
+
 async def test_a_search_that_returns_only_known_papers_says_so_instead_of_looking_successful(
     tmp_path: Path,
 ) -> None:
