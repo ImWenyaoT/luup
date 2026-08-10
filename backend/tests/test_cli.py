@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app.agent.harness.orchestrator import RunOutcome
+from app.agent.orchestrator import RunOutcome
 from app.cli import run_cli
 from app.services.runs import RunService
 

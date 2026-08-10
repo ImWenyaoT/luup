@@ -9,10 +9,10 @@ from typing import cast
 import httpx
 import pytest
 
-from app.agent.harness.verifier import FileReferenceVerifier
 from app.agent.specialists import backfill_reference_metadata
 from app.agent.tools.arxiv import ArxivClient, ArxivError, ArxivGate, ArxivPaper, build_search_query
 from app.agent.tools.runtime import LuupTools, ReviewerSearchRequiredError, SearchIntentLimitError
+from app.agent.verifier import FileReferenceVerifier
 from app.domain.contracts import Evidence, Proposal, ScientistOutput
 from app.domain.references import PaperCard
 

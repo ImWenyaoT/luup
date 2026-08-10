@@ -6,7 +6,7 @@
 
 Luup 当前的 `backend/app/main.py`、`api/main.py`、`api/routes/`、`scripts/`、`tests/` 已经与 FastAPI 官方的大型应用示例及 Full Stack FastAPI Template 对齐。无需为了“像模板”而引入 `core/`、`crud.py`、`models.py`、Alembic、SQLAlchemy、Docker 或认证模块。
 
-应该保留 Luup 自己的领域边界：`domain/`、`harness/`、`tools/`、`data/`。它们表达的是 Luup 的问题，而 FastAPI 模板中的 `crud.py`、`models.py` 表达的是模板自带的 PostgreSQL CRUD 问题，两者不能机械映射。
+应该保留 Luup 自己的领域边界：`domain/`、`agent/`、`data/`。它们表达的是 Luup 的问题，而 FastAPI 模板中的 `crud.py`、`models.py` 表达的是模板自带的 PostgreSQL CRUD 问题，两者不能机械映射。
 
 ```text
 backend/
@@ -16,8 +16,14 @@ backend/
 │   │   ├── main.py             # 聚合 APIRouter
 │   │   └── routes/runs.py      # HTTP 适配层
 │   ├── domain/                 # 纯业务契约与规则
-│   ├── harness/                # Agent 编排、模型接线、提示词、工件生成
-│   ├── tools/                  # Model 可调用工具及其确定性边界
+│   ├── agent/                  # Agent = Model + Harness，平铺同 eve
+│   │   ├── model.py            #   百炼接线（agent 的配置项）
+│   │   ├── specialists.py      #   Scientist/Reviewer 组装
+│   │   ├── prompts/            #   instructions
+│   │   ├── orchestrator.py     #   harness 本体：确定性循环引擎
+│   │   ├── artifacts.py        #   harness：工件落盘
+│   │   ├── verifier.py         #   harness：零 LLM 确定性验收
+│   │   └── tools/              #   模型可见工具，由 harness 执行
 │   ├── services/               # 当前 HTTP 用例与本地执行适配
 │   └── data/                   # 随应用版本发布的只读静态数据
 ├── scripts/                    # 开发/构建入口，不参与运行时 import
@@ -32,7 +38,7 @@ backend/
 | [Full Stack FastAPI Template](https://github.com/fastapi/full-stack-fastapi-template/tree/66f444a63a11ce7b4b6df6c4fbe9e15b2fa7aa3a/backend) | `app/main.py` → `app/api/main.py` → `app/api/routes/*.py`；另有面向 SQLModel/PostgreSQL/认证的 `core/`、`crud.py`、`models.py`、Alembic | 只对齐 API 骨架、`scripts/` 和 `tests/`；数据库与认证目录没有需求就不复制 |
 | [Vercel：FastAPI 最新部署指南](https://vercel.com/kb/guide/ship-a-fastapi-app-on-vercel) | 零配置扫描 `app.py`、`index.py`、`server.py`、`main.py`、`wsgi.py`、`asgi.py`，位置可在项目根或 `src/`、`app/`、`api/` 下；也允许显式 entrypoint | `backend/app/main.py` 已是可识别入口；未来部署应先实测自动发现，只有 monorepo root 配置无法定位 backend 时才显式声明 entrypoint |
 | [Vercel Labs Agents/FastAPI starter](https://github.com/vercel-labs/openai-agents-fastapi-starter/tree/cc6f9e529fed408eb4454e8834fbfaa8eec0ac27) | 为演示部署而把 API、Agent、SSE、Sandbox 全写在根 `app.py` | 它是最小部署示例，不是大型应用目录标准；可借鉴 SSE、Sandbox 生命周期和环境变量检查，不能照搬单文件结构 |
-| [OpenAI Agents SDK examples](https://openai.github.io/openai-agents-python/examples/) | 示例按能力分组；简单模式是单文件，`research_bot` / `financial_research_agent` 使用 `main.py`、`manager.py`、`agents/` | 官方没有规定应用目录模板；Luup 的确定性 `harness/` 比照搬 `manager.py` 更准确，`tools/` 也应继续属于 Harness 边界 |
+| [OpenAI Agents SDK examples](https://openai.github.io/openai-agents-python/examples/) | 示例按能力分组；简单模式是单文件，`research_bot` / `financial_research_agent` 使用 `main.py`、`manager.py`、`agents/` | 官方没有规定应用目录模板；Luup 的确定性 harness（orchestrator/artifacts/verifier）比照搬 `manager.py` 更准确，`tools/` 继续属于 Harness 执行边界 |
 
 ## 当前命名逐项判定
 
@@ -41,7 +47,7 @@ backend/
 | `app/main.py` | 保留 | FastAPI 原生入口；保持只负责装配，不放业务逻辑。它也在 Vercel 最新自动发现名单内 |
 | `app/api/` | 已采用并保留 | endpoints 已从 `app/main.py` 下沉，当前 `api/main.py` + `api/routes/runs.py` 已与 Full Stack FastAPI Template 的分层一致 |
 | `app/domain/` | 保留 | 模板没有 Luup 的领域模型；不要改成含义更弱的 `models.py` |
-| `app/agent/` | 2026-08-10 重排采用 | `Agent = Model + Harness` 落到目录：`model.py`/`specialists.py`/`prompts/` 在伞顶，`harness/` 是循环引擎（orchestrator/artifacts + 零 LLM verifier），`tools/` 是模型可见能力（按调用图归位）。参照 eve 的 agent-目录与 default-harness 语义 |
+| `app/agent/` | 2026-08-10 重排采用（同日拍平） | `Agent = Model + Harness`，目录平铺同 eve——harness 是运行时角色不设子目录：orchestrator/artifacts/verifier 即 harness 本体，`tools/` 是模型可见能力（按调用图归位），model/specialists/prompts 是 agent 配置面 |
 | `app/data/` | 保留 | `science125.json` 是版本化、只读的应用数据；它不是数据库，也不是运行状态 |
 | `app/services/` | 暂时保留 | 当前只有 HTTP 用例 `RunService` 和本地 `RunLauncher`，尚未复杂到值得搬家；`services` 较泛，新增 durable 实现时再按下节拆分 |
 | `backend/scripts/` | 保留 | 与官方模板一致；仅放导出 OpenAPI 等开发/构建命令 |

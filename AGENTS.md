@@ -1,8 +1,9 @@
 # luup Agent App
 
 Luup 使用 Python OpenAI Agents SDK，通过百炼的 OpenAI-compatible Responses 端点驱动 Qwen。
-Agent 代码位于 `backend/app/agent/`（model/specialists/prompts 在伞顶，`harness/` 是循环
-引擎与确定性验收，`tools/` 是模型可见能力）；模型接线唯一事实源是
+Agent 代码位于 `backend/app/agent/`，平铺同 eve——harness 是运行时角色不是子目录：
+`orchestrator.py`/`artifacts.py`/`verifier.py` 即 harness 本体，`tools/` 由它执行，
+`model.py`/`specialists.py`/`prompts/` 是 agent 配置面；模型接线唯一事实源是
 `backend/app/agent/model.py`。修改模型或 Agent 前先查
 <https://openai.github.io/openai-agents-python/>，不得回退到默认 OpenAI 客户端。
 
