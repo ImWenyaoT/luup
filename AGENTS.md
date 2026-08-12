@@ -26,6 +26,7 @@ UV_CACHE_DIR=.cache/uv uv run ty check app scripts
 cd ../frontend
 bun run check:client   # 导出 openapi + 重新生成 client，diff 非空即失败
 bun run lint           # biome，会自动写回格式
+bun run test           # bun test（内置，零测试依赖）；只扫 src/**/*.test.ts，见 bunfig.toml
 bun run build          # tsc --noEmit + vite，产物进 backend/app/frontend（不入库）
 bun run test:e2e       # Playwright E2E，须先 build；只读已提交 runs/，零 LLM 调用
 ```

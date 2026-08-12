@@ -1,0 +1,25 @@
+# `bun test` 与 Playwright 必须互不相扰：Playwright 的 tests/*.spec.ts 会被 bun 的
+# 默认测试文件模式捡起来，用 bun 跑直接报错。把 bun 的搜索根钉死在 src，单测就只能是
+# src/**/*.test.ts，`bun test` 与 `bun run test:e2e` 各管一边，谁都不用记得加参数。
+[test]
+root = "./src"
+coverageSkipTestFiles = true
+
+# bun 的 coverageThreshold 是「逐文件」判定的，而覆盖率表只统计被真正 import 进来的
+# 文件——所以计分面必须收敛到「单测直接针对的模块」，否则地板会被那些仅仅被传递性
+# import 进来的模块拖到 0。被排除的四类各有理由：
+#   src/client/**      openapi-ts 生成，由 check:client 把关，不是本仓写的代码；
+#   **/*.tsx           bun test 没有 DOM，组件渲染分支根本不可达，计分没有意义；它们
+#                      由 21 条 Playwright e2e 覆盖（artifactForTab 仍有单测，只是不计分）；
+#   src/lib/utils.ts   cn() 是 clsx+tailwind-merge 的直通，测它等于测第三方库；
+#   src/queries.ts     queryOptions 的直通封装，同上。
+coveragePathIgnorePatterns = [
+  "src/client/**",
+  "**/*.tsx",
+  "src/lib/utils.ts",
+  "src/queries.ts",
+]
+# 地板 = 实测逐文件最小值（api.ts 90.91% funcs / 93.58% lines，format.ts 100%/100%）
+# 向下取整，只作棘轮。缺的那点是 api.science125 / api.status 两个纯委托的端点壳子——
+# 它们委托到的 generated() 已被 runs/detail 走遍，专门为凑数补测没有信息量。
+coverageThreshold = { functions = 0.90, lines = 0.93 }
