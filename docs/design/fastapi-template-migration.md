@@ -6,7 +6,7 @@
 > 补记（2026-08-10，同日第二阶段）：前端骨架已对齐模板——TanStack Router 文件路由 +
 > TanStack Query、Tailwind v4 + shadcn/ui、Biome；vite 构建产物写入 `backend/app/frontend`，
 > 由 `app.frontend()` 单进程托管（fastapi 下界随之提到 0.141.1，目录存在才挂载）。
-> 与模板的保留差异：pnpm（非 Bun）、hey-api client-fetch（非 axios）、手写 `src/types.ts`
+> 与模板的保留差异：hey-api client-fetch（非 axios）、手写 `src/types.ts`
 > （后端未声明 response_model，生成类型全 unknown）、无 Playwright/CI/docker（后议）。
 > 三页行为与生成客户端链路字节级不变。
 
@@ -33,7 +33,7 @@
 | 层 | 官方基线 | 对 Luup 的含义 |
 |---|---|---|
 | 后端 | Python 3.14、FastAPI、Pydantic、SQLModel、PostgreSQL、Alembic、uv；pytest、mypy、ty、Ruff | 依赖与检查项见 [`backend/pyproject.toml`](https://github.com/fastapi/full-stack-fastapi-template/blob/66f444a63a11ce7b4b6df6c4fbe9e15b2fa7aa3a/backend/pyproject.toml)。Python 3.14 是当前模板选择，不应未经依赖验证直接变成 Luup 的要求。 |
-| 前端 | React 19、TypeScript、Vite 8、TanStack Router/Query、Tailwind、shadcn/ui、Playwright、Biome；当前推荐 Bun | 依赖与命令见 [`frontend/package.json`](https://github.com/fastapi/full-stack-fastapi-template/blob/66f444a63a11ce7b4b6df6c4fbe9e15b2fa7aa3a/frontend/package.json) 和 [`frontend/README.md`](https://github.com/fastapi/full-stack-fastapi-template/blob/66f444a63a11ce7b4b6df6c4fbe9e15b2fa7aa3a/frontend/README.md)。Luup 可继续用 pnpm，但需主动维护与上游 Bun 脚本的差异。 |
+| 前端 | React 19、TypeScript、Vite 8、TanStack Router/Query、Tailwind、shadcn/ui、Playwright、Biome；当前推荐 Bun | 依赖与命令见 [`frontend/package.json`](https://github.com/fastapi/full-stack-fastapi-template/blob/66f444a63a11ce7b4b6df6c4fbe9e15b2fa7aa3a/frontend/package.json) 和 [`frontend/README.md`](https://github.com/fastapi/full-stack-fastapi-template/blob/66f444a63a11ce7b4b6df6c4fbe9e15b2fa7aa3a/frontend/README.md)。Luup 已于 2026-08-12 从 pnpm 切到 Bun，与上游包管理器一致；脚本集仍是 Luup 自有的一套。 |
 | 契约 | FastAPI 导出 OpenAPI，`@hey-api/openapi-ts` 生成并提交前端 client | 官方脚本先导出 schema，再生成 client 并 lint；后端接口变化后必须再生成，见 [`scripts/generate-client.sh`](https://github.com/fastapi/full-stack-fastapi-template/blob/66f444a63a11ce7b4b6df6c4fbe9e15b2fa7aa3a/scripts/generate-client.sh)。 |
 | 运行 | Docker Compose 包含 Postgres、prestart migration、backend、Adminer；开发覆盖层另加 Traefik、Mailcatcher、Playwright | 这是一套完整 SaaS/部署基线，不是 FastAPI 本身的硬依赖，见 [`compose.yml`](https://github.com/fastapi/full-stack-fastapi-template/blob/66f444a63a11ce7b4b6df6c4fbe9e15b2fa7aa3a/compose.yml) 与 [`compose.override.yml`](https://github.com/fastapi/full-stack-fastapi-template/blob/66f444a63a11ce7b4b6df6c4fbe9e15b2fa7aa3a/compose.override.yml)。 |
 | CI | 后端以 uv 运行迁移、pytest/coverage，覆盖率门槛 90%；另有 Playwright、Compose 与 pre-commit 工作流 | 不应照抄门槛；先把 Luup 现有可观察行为迁成测试，再决定覆盖率目标。官方后端流程见 [`test-backend.yml`](https://github.com/fastapi/full-stack-fastapi-template/blob/66f444a63a11ce7b4b6df6c4fbe9e15b2fa7aa3a/.github/workflows/test-backend.yml)。 |

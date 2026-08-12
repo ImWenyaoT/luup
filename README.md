@@ -37,15 +37,15 @@ UV_CACHE_DIR=.cache/uv uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 ```sh
 cd frontend
-pnpm install
-pnpm generate:client
-pnpm dev                    # http://127.0.0.1:5173，/api 代理到 8000
+bun install
+bun run generate:client
+bun run dev                    # http://127.0.0.1:5173，/api 代理到 8000
 ```
 
 单进程交付（无需前端 dev server）：
 
 ```sh
-cd frontend && pnpm build   # 产物写入 backend/app/frontend
+cd frontend && bun run build   # 产物写入 backend/app/frontend
 # 重启 uvicorn 后，页面与 API 同端口：http://127.0.0.1:8000
 ```
 
@@ -74,10 +74,10 @@ UV_CACHE_DIR=.cache/uv uv run ty check app scripts
 UV_CACHE_DIR=.cache/uv uv run python -m app.evaluation --runs-root ../runs
 
 cd ../frontend
-pnpm check:client   # client 漂移门禁
-pnpm lint           # biome
-pnpm build
-pnpm test:e2e       # Playwright 打真实单进程交付形态；首次先 pnpm exec playwright install chromium
+bun run check:client   # client 漂移门禁
+bun run lint           # biome
+bun run build
+bun run test:e2e       # Playwright 打真实单进程交付形态；首次先 bunx playwright install chromium
 ```
 
 ## 运行工件

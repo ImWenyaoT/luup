@@ -52,8 +52,8 @@ Luup 当前是 `.tsx` + Vite + `tsc --noEmit`，但 OpenAPI 生成器是上述 p
 
 ```sh
 cd frontend
-pnpm generate:client
-pnpm build
+bun run generate:client
+bun run build
 ```
 
 结果 `@hey-api/openapi-ts@0.99.0` 在读取 `ts.SyntaxKind.AnyKeyword` 时失败；回退 6.0.3 后客户端

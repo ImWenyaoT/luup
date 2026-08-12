@@ -21,7 +21,7 @@ const ownServer = !process.env.PLAYWRIGHT_BASE_URL
 // 症状是 webServer 等 / 超时；这里提前把原因说清楚，省一次两分钟的等待。
 if (ownServer && !existsSync(buildOutput)) {
   throw new Error(
-    `找不到前端构建产物 ${buildOutput}。先在 frontend/ 跑 \`pnpm build\`，再跑 \`pnpm test:e2e\`。`,
+    `找不到前端构建产物 ${buildOutput}。先在 frontend/ 跑 \`bun run build\`，再跑 \`bun run test:e2e\`。`,
   )
 }
 

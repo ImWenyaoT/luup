@@ -37,17 +37,14 @@ jobs:
           # See: https://github.com/astral-sh/setup-uv/issues/851#issuecomment-4282017837
           version: "0.11.18"
           working-directory: backend
-      - name: Install pnpm
-        # No `version` input on purpose: the action reads packageManager from package.json.
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - name: Install Bun
+        # No `bun-version` input on purpose: the version comes from
+        # packageManager in frontend/package.json (path is workspace-relative).
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          package_json_file: frontend/package.json
-      - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: "24"
+          bun-version-file: frontend/package.json
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
       - name: Sync backend dependencies
         # Pre-sync so the Playwright webServer only has to boot uvicorn. Same
         # UV_CACHE_DIR as playwright.config.ts, so both hit one cache.
@@ -56,13 +53,13 @@ jobs:
         env:
           UV_CACHE_DIR: .cache/uv
       - name: Install Playwright browsers
-        run: pnpm exec playwright install --with-deps chromium
+        run: bunx playwright install --with-deps chromium
       # `app.frontend()` only mounts when backend/app/frontend exists (see
       # backend/app/main.py), so the build has to land before the server boots.
       - name: Build
-        run: pnpm build
+        run: bun run build
       - name: Test
-        run: pnpm test:e2e
+        run: bun run test:e2e
       - name: Upload Playwright report
         if: ${{ failure() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

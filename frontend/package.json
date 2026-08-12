@@ -2,18 +2,18 @@
   "name": "luup-frontend",
   "private": true,
   "version": "0.0.0",
-  "packageManager": "pnpm@11.21.0",
-  "engines": {
-    "node": ">=24"
-  },
+  "packageManager": "bun@1.3.14",
   "type": "module",
+  "trustedDependencies": [
+    "@swc/core"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "lint": "biome check --write --unsafe --no-errors-on-unmatched --files-ignore-unknown=true ./",
     "lint:ci": "biome ci .",
     "generate:client": "cd ../backend && UV_CACHE_DIR=.cache/uv uv run python -m scripts.export_openapi && cd ../frontend && openapi-ts -i ../backend/openapi.json -o src/client -c @hey-api/client-fetch",
-    "check:client": "pnpm generate:client && git diff --exit-code -- ../backend/openapi.json src/client",
+    "check:client": "bun run generate:client && git diff --exit-code -- ../backend/openapi.json src/client",
     "preview": "vite preview",
     "test:e2e": "playwright test"
   },
