@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -202,6 +203,56 @@ async def test_a_passed_run_records_no_failure_classification(tmp_path: Path) ->
     await run_cli("a scientific question", tmp_path, run_dir, harness=SuccessfulHarness())
 
     assert "classification" not in json.loads((run_dir / "exit.json").read_text(encoding="utf-8"))
+
+
+def seeded_git_repo(root: Path) -> str:
+    """A one-commit repository, so `sourceIdentity` can be asserted against a known HEAD."""
+    root.mkdir(parents=True, exist_ok=True)
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ("git", *args), cwd=root, capture_output=True, text=True, check=True
+        ).stdout.strip()
+
+    git("init", "-q")
+    git("config", "user.email", "harness@example.invalid")
+    git("config", "user.name", "harness")
+    (root / "seed.py").write_text("seed = 1\n", encoding="utf-8")
+    git("add", "seed.py")
+    git("commit", "-qm", "seed")
+    return git("rev-parse", "HEAD")
+
+
+async def test_a_settled_run_records_the_code_that_produced_it(tmp_path: Path) -> None:
+    """The model cannot know which build it ran on; without this the 125 numbers name no version."""
+    head = seeded_git_repo(tmp_path)
+    run_dir = tmp_path / "runs" / "20260810-010203"
+
+    await run_cli("a scientific question", tmp_path, run_dir, harness=SuccessfulHarness())
+
+    identity = json.loads((run_dir / "exit.json").read_text(encoding="utf-8"))["sourceIdentity"]
+    assert identity == {"gitCommit": head, "treeDirty": False}  # The run's own new dir is not a code change.
+
+
+async def test_an_uncommitted_working_tree_is_recorded_as_dirty(tmp_path: Path) -> None:
+    """A dirty tree means the commit no longer identifies the code, so the number is not defensible."""
+    seeded_git_repo(tmp_path)
+    (tmp_path / "seed.py").write_text("seed = 2\n", encoding="utf-8")
+    run_dir = tmp_path / "runs" / "20260810-010203"
+
+    await run_cli("a scientific question", tmp_path, run_dir, harness=SuccessfulHarness())
+
+    assert json.loads((run_dir / "exit.json").read_text(encoding="utf-8"))["sourceIdentity"]["treeDirty"] is True
+
+
+async def test_an_unavailable_git_identity_is_recorded_as_null_and_never_fails_the_run(tmp_path: Path) -> None:
+    """Accounting for the build is worth a null, never a lost run."""
+    run_dir = tmp_path / "runs" / "20260810-010203"
+
+    code = await run_cli("a scientific question", tmp_path, run_dir, harness=SuccessfulHarness())
+
+    assert code == 0
+    assert json.loads((run_dir / "exit.json").read_text(encoding="utf-8"))["sourceIdentity"] is None
 
 
 async def test_the_default_harness_is_the_real_sdk_adapter_wired_to_this_run(

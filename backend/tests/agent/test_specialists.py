@@ -18,6 +18,7 @@ from app.agent.specialists import (
     REVIEWER_MAX_TURNS,
     SCIENTIST_MAX_TURNS,
     AgentsSdkSpecialistRunner,
+    ContractViolationError,
     RevisionRequest,
 )
 from app.agent.tools.runtime import ReviewerSearchRequiredError
@@ -389,6 +390,23 @@ async def test_usage_comes_from_the_run_context_wrapper_and_stays_json_serializa
     assert result.usage["total_tokens"] == 99
     assert result.usage["output_tokens_details"] == {"reasoning_tokens": 0}
     assert json.loads(json.dumps(dict(result.usage)))["total_tokens"] == 99
+
+
+async def test_a_rejected_answer_still_carries_what_it_cost(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A contract violation is thrown away, but it was already paid for; usage.jsonl must still see it."""
+    tools = SpyTools()
+    runner, _ = _install_runner(
+        monkeypatch,
+        tools,
+        final_output='{"evidence": []}',
+        usage=Usage(requests=1, input_tokens=5, output_tokens=6, total_tokens=11),
+    )
+
+    with pytest.raises(ContractViolationError) as raised:
+        await runner.run_scientist("why do some stars explode?")
+
+    assert raised.value.usage is not None
+    assert raised.value.usage["total_tokens"] == 11
 
 
 async def test_the_reported_thinking_flag_is_the_one_actually_sent_to_bailian(

@@ -233,6 +233,108 @@ async def test_one_question_raising_never_takes_down_the_rest_of_the_batch(
     assert "TimeoutError" in outcomes[0].detail and "arXiv" in outcomes[0].detail
 
 
+def stub_classified_runner(
+    monkeypatch: pytest.MonkeyPatch, runs_root: Path, classifications: dict[int, str]
+) -> list[int]:
+    """Fails the listed questions the way the Harness does: a settled run dir carrying its class."""
+    attempted: list[int] = []
+
+    async def fake_run_cli(question: str, repo_root: Path, run_dir: Path | None = None, **options: Any) -> int:
+        question_id = options["question_id"]
+        attempted.append(question_id)
+        classification = classifications.get(question_id)
+        if classification is None:
+            return 0
+        run = runs_root / f"20260811-{question_id:06d}"
+        run.mkdir(parents=True)
+        (run / "meta.json").write_text(json.dumps({"questionId": question_id}), encoding="utf-8")
+        (run / "exit.json").write_text(
+            json.dumps({"exitCode": 1, "classification": classification}), encoding="utf-8"
+        )
+        return 1
+
+    monkeypatch.setattr(batch_module, "run_cli", fake_run_cli)
+    return attempted
+
+
+async def test_five_consecutive_failures_of_one_class_stop_the_batch(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Per-question independence is what makes a batch worth running; a same-class streak refutes it."""
+    attempted = stub_classified_runner(
+        monkeypatch, tmp_path / "runs", dict.fromkeys(range(1, 9), "contract_violation")
+    )
+
+    outcomes = await run_batch(list(range(1, 9)), tmp_path)
+
+    assert attempted == [1, 2, 3, 4, 5]
+    assert len(outcomes) == 5
+    stop = next(line for line in capsys.readouterr().out.splitlines() if "熔断" in line)
+    assert "contract_violation" in stop and "5/8" in stop and "6,7,8" in stop
+
+
+async def test_two_consecutive_infrastructure_failures_stop_the_batch_at_once(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Credentials, network, or quota: question 3 through 125 would fail exactly the same way."""
+    attempted = stub_classified_runner(monkeypatch, tmp_path / "runs", dict.fromkeys(range(1, 6), "infra_error"))
+
+    outcomes = await run_batch(list(range(1, 6)), tmp_path)
+
+    assert attempted == [1, 2]
+    assert [row.classification for row in outcomes] == ["infra_error", "infra_error"]
+
+
+async def test_a_refusal_to_start_twice_in_a_row_is_treated_as_an_outage(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """exit 2 writes no run to read a class off, but it is still the environment refusing."""
+    stub_runner(monkeypatch, codes=dict.fromkeys(range(1, 6), 2))
+
+    outcomes = await run_batch(list(range(1, 6)), tmp_path)
+
+    assert len(outcomes) == 2
+    assert outcomes[0].classification == "infra_error"
+
+
+async def test_one_success_clears_the_failure_streak(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    classes = dict.fromkeys([1, 2, 3, 4, 6, 7], "verifier_refs")
+    attempted = stub_classified_runner(monkeypatch, tmp_path / "runs", classes)
+
+    outcomes = await run_batch([1, 2, 3, 4, 5, 6, 7], tmp_path)
+
+    assert attempted == [1, 2, 3, 4, 5, 6, 7]
+    assert len(outcomes) == 7
+
+
+async def test_alternating_failure_classes_never_trip_the_streak(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The breaker fires on one repeated cause, not on a batch that is merely hard."""
+    classes = {index: ("verifier_refs" if index % 2 else "contract_violation") for index in range(1, 9)}
+    attempted = stub_classified_runner(monkeypatch, tmp_path / "runs", classes)
+
+    await run_batch(list(range(1, 9)), tmp_path)
+
+    assert attempted == list(range(1, 9))
+
+
+async def test_the_final_tally_groups_failures_by_classification(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """After 125 questions the histogram is the only thing that says what to rerun and what to fix."""
+    stub_classified_runner(
+        monkeypatch, tmp_path / "runs", {1: "verifier_refs", 2: "verifier_refs", 3: "contract_violation"}
+    )
+
+    await run_batch([1, 2, 3, 4], tmp_path)
+
+    summary = capsys.readouterr().out.splitlines()[-1]
+    assert "failed/verifier_refs 2" in summary
+    assert "failed/contract_violation 1" in summary
+    assert "passed 1" in summary
+
+
 async def test_a_dry_run_executes_nothing_at_all(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """`--dry-run` is the plan review before the money is spent; it must not start a single run."""
     runs_root = tmp_path / "runs"

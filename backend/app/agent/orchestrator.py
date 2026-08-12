@@ -13,7 +13,14 @@ from app.domain.contracts import Proposal, Review, ScientistOutput
 from app.domain.runs import FailureClass
 
 from .artifacts import RunArtifacts
-from .specialists import ContractViolationError, RevisionRequest, SpecialistResult, SpecialistRunner
+from .model import QWEN_THINKING_ENABLED
+from .specialists import (
+    ContractViolationError,
+    RevisionRequest,
+    SpecialistResult,
+    SpecialistRunner,
+    usage_of_failure,
+)
 from .tools.runtime import ReviewerSearchRequiredError
 
 
@@ -43,6 +50,8 @@ class Harness:
 
     async def run(self, question: str, run_dir: Path, prior_attempts: Sequence[str] = ()) -> RunOutcome:
         artifacts = RunArtifacts(run_dir)
+        in_flight = "scientist"
+        """Which specialist is spending money right now — the model cannot see this, the Harness can."""
         try:
             artifacts.append_trace(
                 agent="scientist",
@@ -66,6 +75,7 @@ class Harness:
                     "proposal": output.proposal.model_dump(by_alias=True),
                 },
             )
+            in_flight = "reviewer"
             reviewer = await self._specialists.run_reviewer(question, output.evidence, output.proposal)
             review = _as_review(reviewer)
             artifacts.append_trace(agent="reviewer", phase="output", payload=review.model_dump(by_alias=True))
@@ -84,6 +94,7 @@ class Harness:
                         "findings": [finding.model_dump(by_alias=True) for finding in review.findings],
                     },
                 )
+                in_flight = "scientist"
                 repaired = await self._specialists.run_scientist(
                     question,
                     RevisionRequest(
@@ -117,6 +128,8 @@ class Harness:
                 return self._failed(artifacts, _verification_failures(verification), classification)
             return RunOutcome(status="passed", run_dir=artifacts.run_dir)
         except Exception as exc:
+            # A failed call still burned tokens: a run without its usage.jsonl is an unaudited bill.
+            artifacts.append_usage(agent=in_flight, thinking=QWEN_THINKING_ENABLED, usage=usage_of_failure(exc))
             return self._failed(artifacts, (f"{type(exc).__name__}: {exc}",), _classify(exc))
 
     @staticmethod
