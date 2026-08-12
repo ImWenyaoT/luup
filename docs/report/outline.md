@@ -12,7 +12,7 @@
 | 6 | 质量保障 | 2 | criteria.md 判据体系；确定性验收器（B1-B4）；eval 脚本（smoke + full-run gate）；goal-driven E2E 方法论 |
 | 7 | API 与前端入口 | 2 | 可调用测试 API（端点表+curl 示例）；前端截图（仪表台/run 详情/reasoning spine 时间线） |
 | 8 | 125 题结果文档 | 1 | 批量 runner（断点续跑）说明；全量结果文档的组织方式（runs 索引 + 逐题 proposal.md 汇编）；完成度统计表 |
-| 9 | 可复现性与源码 | 1 | 仓库结构；pnpm 三命令复现；运行成本表（token/时长）|
+| 9 | 可复现性与源码 | 1 | 仓库结构；bun 三命令复现；运行成本表（token/时长）|
 | 10 | 局限与展望 | 1 | arXiv 领域覆盖偏物理/CS（医学/生态题的文献源扩展路径：PubMed/Crossref）；SFT/多模态扩展路径 |
 | 11 | 附录索引 | 1 | 全量 125 输出文档、源码、演示入口的链接/网盘 |
 
