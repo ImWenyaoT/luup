@@ -24,7 +24,14 @@ _USAGE_DETAIL_FIELDS = ("input_tokens_details", "output_tokens_details")
 
 
 class ContractViolationError(RuntimeError):
-    """模型输出没过 Pydantic 契约。是质量性失败，不是环境性失败。"""
+    """模型输出没过 Pydantic 契约。是质量性失败，不是环境性失败。
+
+    被丢弃的那次回答已经付过钱了，所以它带着自己的 usage 一起抛。
+    """
+
+    def __init__(self, message: str, usage: Mapping[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.usage = usage
 
 
 class ToolOwnership(Protocol):
@@ -119,11 +126,12 @@ class AgentsSdkSpecialistRunner:
                 json.dumps(message, ensure_ascii=False),
                 max_turns=SCIENTIST_MAX_TURNS,
             )
-        parsed = self._parse(result.final_output, ScientistOutput)
+        usage = _usage_of(result)
+        parsed = self._parse(result.final_output, ScientistOutput, usage)
         assert isinstance(parsed, ScientistOutput)
         return SpecialistResult(
             output=backfill_reference_metadata(parsed, self._tools.saved_paper_cards(), self._record_mismatch),
-            usage=_usage_of(result),
+            usage=usage,
             thinking=QWEN_THINKING_ENABLED,
         )
 
@@ -142,9 +150,10 @@ class AgentsSdkSpecialistRunner:
                 json.dumps(message, ensure_ascii=False),
                 max_turns=REVIEWER_MAX_TURNS,
             )
+        usage = _usage_of(result)
         return SpecialistResult(
-            output=self._parse(result.final_output, Review),
-            usage=_usage_of(result),
+            output=self._parse(result.final_output, Review, usage),
+            usage=usage,
             thinking=QWEN_THINKING_ENABLED,
         )
 
@@ -152,7 +161,9 @@ class AgentsSdkSpecialistRunner:
         return (self._prompt_dir / name).read_text(encoding="utf-8")
 
     @staticmethod
-    def _parse(value: Any, model_type: type[ScientistOutput] | type[Review]) -> ScientistOutput | Review:
+    def _parse(
+        value: Any, model_type: type[ScientistOutput] | type[Review], usage: Mapping[str, Any] | None = None
+    ) -> ScientistOutput | Review:
         if isinstance(value, model_type):
             return value
         if not isinstance(value, str):
@@ -166,7 +177,16 @@ class AgentsSdkSpecialistRunner:
         try:
             return model_type.model_validate_json(stripped)
         except ValidationError as exc:
-            raise ContractViolationError(f"模型返回未通过契约校验：{exc}") from exc
+            raise ContractViolationError(f"模型返回未通过契约校验：{exc}", usage) from exc
+
+
+def usage_of_failure(exc: Exception) -> Mapping[str, Any] | None:
+    """What a raised specialist call had already burned.
+
+    The SDK hangs the partial run on the exception (`run_data`); a rejected-but-paid-for
+    answer carries its own. Either way the Harness, not the model, keeps the books.
+    """
+    return _usage_of(getattr(exc, "run_data", None)) or getattr(exc, "usage", None)
 
 
 def _usage_of(result: Any) -> Mapping[str, Any] | None:

@@ -3,10 +3,12 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from agents import MaxTurnsExceeded
+from agents.usage import Usage
 
 from app.agent.orchestrator import Harness
 from app.agent.specialists import ContractViolationError, RevisionRequest, SpecialistResult
@@ -107,6 +109,60 @@ class ExplodingSpecialists:
 
     async def run_reviewer(self, question: str, evidence: Sequence[Evidence], proposal: Proposal) -> SpecialistResult:
         raise self.error
+
+
+class ReviewerOutage(FakeSpecialists):
+    """The Scientist answers; the Reviewer burns its budget and raises."""
+
+    def __init__(self, outputs: Sequence[ScientistOutput], review: Review, error: Exception) -> None:
+        super().__init__(outputs, review)
+        self.error = error
+
+    async def run_reviewer(self, question: str, evidence: Sequence[Evidence], proposal: Proposal) -> SpecialistResult:
+        raise self.error
+
+
+def passing_review() -> Review:
+    return Review(
+        verdict="pass", findings=[ReviewFinding(issue="checked", checkedWith="arXiv search")], requiredChanges=[]
+    )
+
+
+async def test_a_specialist_that_raised_still_books_the_tokens_it_burned(tmp_path: Path) -> None:
+    """Two of five OOD runs settled with no usage.jsonl at all; the money was spent either way."""
+    error = MaxTurnsExceeded("Max turns (19) exceeded")
+    error.run_data = SimpleNamespace(  # type: ignore[assignment]
+        context_wrapper=SimpleNamespace(usage=Usage(requests=1, input_tokens=40, output_tokens=24, total_tokens=64))
+    )
+    specialists = ReviewerOutage([scientist()], passing_review(), error)
+
+    outcome = await Harness(specialists, FakeVerifier(ok=True)).run("question", tmp_path / "run")
+
+    assert outcome.status == "failed"
+    rows = [json.loads(line) for line in (outcome.run_dir / "usage.jsonl").read_text().splitlines()]
+    assert [row["agent"] for row in rows] == ["scientist", "reviewer"]
+    assert rows[1]["usage"]["total_tokens"] == 64
+
+
+async def test_a_rejected_model_answer_is_booked_against_the_specialist_that_produced_it(tmp_path: Path) -> None:
+    """A contract violation happens after the tokens are already spent, not instead of spending them."""
+    specialists = ExplodingSpecialists(ContractViolationError("模型返回未通过契约校验：...", {"total_tokens": 31}))
+
+    outcome = await Harness(specialists, FakeVerifier(ok=True)).run("question", tmp_path / "run")
+
+    rows = [json.loads(line) for line in (outcome.run_dir / "usage.jsonl").read_text().splitlines()]
+    assert rows == [
+        {"at": rows[0]["at"], "agent": "scientist", "thinking": rows[0]["thinking"], "usage": {"total_tokens": 31}}
+    ]
+
+
+async def test_a_failure_that_burned_nothing_writes_no_usage_row(tmp_path: Path) -> None:
+    """Accounting records what happened; it must not invent a zero-token call."""
+    outcome = await Harness(ExplodingSpecialists(RuntimeError("arXiv down")), FakeVerifier(ok=True)).run(
+        "question", tmp_path / "run"
+    )
+
+    assert not (outcome.run_dir / "usage.jsonl").exists()
 
 
 async def test_pass_writes_handoff_artifacts_and_never_repairs(tmp_path: Path) -> None:

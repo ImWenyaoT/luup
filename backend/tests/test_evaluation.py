@@ -417,6 +417,38 @@ def test_the_statistics_block_is_derived_from_the_artifacts_on_disk(tmp_path: Pa
     assert report["pairedComparison"]["memoryArms"]["b"] == 1  # memory on passed where memory off failed
 
 
+def test_the_statistics_say_which_code_version_produced_them(tmp_path: Path) -> None:
+    """Derived, not declared: the cohort is read off the runs, so no doc can claim the wrong one."""
+    write_run(
+        tmp_path,
+        "20260810-000001",
+        artifacts={
+            "exit.json": json.dumps(
+                {"exitCode": 0, "sourceIdentity": {"gitCommit": "abc123", "treeDirty": False}}
+            )
+        },
+    )
+    write_run(
+        tmp_path,
+        "20260810-000002",
+        question_id=8,
+        passed=False,
+        artifacts={
+            "exit.json": json.dumps(
+                {"exitCode": 1, "sourceIdentity": {"gitCommit": "abc123", "treeDirty": True}}
+            )
+        },
+    )
+    write_run(tmp_path, "20260810-000003", question_id=9)
+
+    cohorts = evaluate_runs(tmp_path)["statistics"]["sourceIdentity"]
+
+    assert set(cohorts) == {"abc123", "abc123+dirty", "unknown"}
+    assert cohorts["abc123"]["runs"] == 1 and cohorts["abc123"]["deliverable"] == 1
+    assert cohorts["abc123+dirty"]["deliverable"] == 0
+    assert cohorts["unknown"]["runs"] == 1
+
+
 def test_a_free_form_run_counts_in_the_campaign_rates_but_not_in_the_pairings(tmp_path: Path) -> None:
     """OOD runs have no question id, so they can be summed but never compared version-to-version."""
     write_run(tmp_path, "20260810-000001")

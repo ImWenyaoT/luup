@@ -45,6 +45,8 @@ class RunFacts:
     tokens: int | None = None
     classification: str | None = None
     memory_arm: str | None = None
+    git_commit: str | None = None
+    tree_dirty: bool | None = None
     reviewed: bool = False
     revised: bool = False
     searches: int = 0
@@ -167,6 +169,23 @@ def failure_classes(facts: Sequence[RunFacts]) -> dict[str, Any]:
     }
 
 
+def commit_cohorts(facts: Sequence[RunFacts]) -> dict[str, Any]:
+    """Which build produced these numbers, derived from the runs rather than declared in a doc.
+
+    A dirty tree is part of the label because the commit alone then fails to identify the code.
+    """
+    groups: dict[str, list[RunFacts]] = defaultdict(list)
+    for item in facts:
+        groups[_cohort_label(item)].append(item)
+    return {label: delivery_rate(group) for label, group in sorted(groups.items())}
+
+
+def _cohort_label(item: RunFacts) -> str:
+    if item.git_commit is None:
+        return "unknown"
+    return f"{item.git_commit}+dirty" if item.tree_dirty else item.git_commit
+
+
 def evaluate_runs(runs_root: Path) -> dict[str, Any]:
     service = RunService(runs_root)
     facts = [candidate for run_id in service.list_ids() if (candidate := _load_facts(service, run_id))]
@@ -186,6 +205,7 @@ def evaluate_runs(runs_root: Path) -> dict[str, Any]:
             "revision": revision_rate(facts),
             "searchHealth": search_health(facts),
             "failureClasses": failure_classes(facts),
+            "sourceIdentity": commit_cohorts(facts),
         },
     }
 
@@ -201,6 +221,9 @@ def _load_facts(service: RunService, run_id: str) -> RunFacts | None:
     exit_fact = _json_mapping(service.artifact(run_id, "exit.json")) or {}
     meta = _json_mapping(service.artifact(run_id, "meta.json")) or {}
     searches, deduplicated, fresh = _search_events(service.artifact(run_id, "tool-events.jsonl"))
+    source = exit_fact.get("sourceIdentity")
+    source = source if isinstance(source, Mapping) else {}
+    dirty = source.get("treeDirty")
     return RunFacts(
         run_id=run_id,
         question_id=question_id if isinstance(question_id, int) and not isinstance(question_id, bool) else None,
@@ -209,6 +232,8 @@ def _load_facts(service: RunService, run_id: str) -> RunFacts | None:
         tokens=_usage_total(service.artifact(run_id, "usage.jsonl")),
         classification=_string(exit_fact.get("classification")),
         memory_arm=_string(meta.get("memoryArm")),
+        git_commit=_string(source.get("gitCommit")),
+        tree_dirty=dirty if isinstance(dirty, bool) else None,
         reviewed="verdict" in review,
         revised=review.get("verdict") == "revise",
         searches=searches,

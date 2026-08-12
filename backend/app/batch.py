@@ -32,6 +32,14 @@ Status = Literal["passed", "failed", "skipped", "error", "missing", "planned"]
 CLEAN = ("passed", "skipped", "planned")
 """Statuses that leave the batch's exit code at 0; everything else is a question owed."""
 
+SAME_CLASS_STOP = 5
+"""A batch is worth running because questions are independent; a same-class streak refutes that."""
+
+OUTAGE_STOP = 2
+"""Two outages in a row is credentials, network, or quota — the other 123 would fail identically."""
+
+OUTAGE_CLASSES = frozenset({"infra_error", "infra_timeout"})
+
 _RANGE = re.compile(r"(\d+)-(\d+)")
 _SINGLE = re.compile(r"\d+")
 
@@ -42,6 +50,7 @@ class QuestionOutcome:
     status: Status
     seconds: float
     detail: str = ""
+    classification: str | None = None
 
 
 def parse_ids(spec: str) -> list[int]:
@@ -79,15 +88,27 @@ def passed_question_runs(runs_root: Path) -> dict[int, str]:
     terminal state, which is the whole reason it is fact data and not cache.
     """
     passed: dict[int, str] = {}
-    try:
-        entries = sorted(entry for entry in runs_root.iterdir() if entry.is_dir() and is_run_id(entry.name))
-    except OSError:
-        return passed
-    for entry in entries:
+    for entry in _run_dirs(runs_root):
         question_id = _int(_read_mapping(entry / "meta.json").get("questionId"))
         if question_id is not None and _is_deliverable(entry):
             passed[question_id] = entry.name
     return passed
+
+
+def _run_dirs(runs_root: Path) -> list[Path]:
+    try:
+        return sorted(entry for entry in runs_root.iterdir() if entry.is_dir() and is_run_id(entry.name))
+    except OSError:
+        return []
+
+
+def _failure_class(runs_root: Path, question_id: int) -> str | None:
+    """Read back the reason the Harness recorded — the only thing that can tell the batch to stop."""
+    runs = [
+        run for run in _run_dirs(runs_root) if _int(_read_mapping(run / "meta.json").get("questionId")) == question_id
+    ]
+    classification = _read_mapping(runs[-1] / "exit.json").get("classification") if runs else None
+    return classification if isinstance(classification, str) and classification else None
 
 
 def _is_deliverable(run: Path) -> bool:
@@ -114,22 +135,38 @@ async def run_batch(
     memory: bool = True,
 ) -> list[QuestionOutcome]:
     root = repo_root.resolve()
-    already = passed_question_runs(runs_root or root / "runs")
+    runs = runs_root or root / "runs"
+    already = passed_question_runs(runs)
     outcomes: list[QuestionOutcome] = []
+    cause, streak = "", 0
     for index, question_id in enumerate(question_ids, start=1):
-        outcome = await _run_one(question_id, root, already, dry_run=dry_run, memory=memory)
+        outcome = await _run_one(question_id, root, already, runs, dry_run=dry_run, memory=memory)
         print(
             f"[batch] {index}/{len(question_ids)} q{outcome.question_id} | {outcome.status} | "
             f"{outcome.seconds:.1f}s{f' | {outcome.detail}' if outcome.detail else ''}",
             flush=True,
         )
         outcomes.append(outcome)
+        if outcome.status == "passed":
+            cause, streak = "", 0
+        if outcome.status in CLEAN:
+            continue
+        current = outcome.classification or outcome.status
+        streak = streak + 1 if current == cause else 1
+        cause = current
+        if streak >= (OUTAGE_STOP if current in OUTAGE_CLASSES else SAME_CLASS_STOP):
+            remaining = ",".join(str(owed) for owed in question_ids[index:])
+            print(
+                f"[batch] 熔断停批：连续 {streak} 次 {current}。已完成 {index}/{len(question_ids)}，"
+                f"剩余 --ids {remaining or '（无）'}"
+            )
+            break
     print(f"[batch] 合计 {len(outcomes)} 题：" + "，".join(f"{name} {count}" for name, count in _tally(outcomes)))
     return outcomes
 
 
 async def _run_one(
-    question_id: int, root: Path, already: dict[int, str], *, dry_run: bool, memory: bool
+    question_id: int, root: Path, already: dict[int, str], runs_root: Path, *, dry_run: bool, memory: bool
 ) -> QuestionOutcome:
     if question_id in already:
         return QuestionOutcome(question_id, "skipped", 0.0, f"已有终态 passed 的 run {already[question_id]}")
@@ -142,19 +179,24 @@ async def _run_one(
     try:
         code = await run_cli(science125_text(question), root, question_id=question_id, memory=memory)
     except Exception as exc:  # One question's outage must not cost the other 124.
-        return QuestionOutcome(question_id, "error", time.monotonic() - started, f"{type(exc).__name__}: {exc}")
+        detail = f"{type(exc).__name__}: {exc}"
+        return QuestionOutcome(question_id, "error", time.monotonic() - started, detail, "infra_error")
     elapsed = time.monotonic() - started
     if code == 0:
         return QuestionOutcome(question_id, "passed", elapsed)
     # exit 2 is a refusal to start (missing credentials, lock held) rather than a verdict;
-    # printing the code is what tells a half-hour batch log apart from a five-second one.
-    return QuestionOutcome(question_id, "failed", elapsed, f"app.cli exit {code}")
+    # printing the code is what tells a half-hour batch log apart from a five-second one, and
+    # it settles no run to read a class off, so the environment is named here instead.
+    classification = _failure_class(runs_root, question_id) or ("infra_error" if code == 2 else None)
+    return QuestionOutcome(question_id, "failed", elapsed, f"app.cli exit {code}", classification)
 
 
 def _tally(outcomes: Sequence[QuestionOutcome]) -> list[tuple[str, int]]:
+    """A histogram over (status, classification): after 125 questions it is what says what to fix."""
     counts: dict[str, int] = {}
     for outcome in outcomes:
-        counts[outcome.status] = counts.get(outcome.status, 0) + 1
+        key = outcome.status if outcome.classification is None else f"{outcome.status}/{outcome.classification}"
+        counts[key] = counts.get(key, 0) + 1
     return sorted(counts.items())
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import subprocess
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -81,7 +82,7 @@ async def run_cli(
             harness = Harness(AgentsSdkSpecialistRunner(settings, tools), FileReferenceVerifier(arxiv))
         outcome = await harness.run(question, run_dir, read_prior_attempts(memory_dir, settled_id))
         exit_code = 0 if outcome.status == "passed" else 1
-        _write_cli_complete(run_dir, exit_code, outcome.classification)
+        _write_cli_complete(run_dir, exit_code, outcome.classification, root)
         record_run(
             memory_dir,
             run_dir=run_dir,
@@ -121,11 +122,32 @@ def _write_cli_start(run_dir: Path, question: str, question_id: int | None, memo
     return settled if isinstance(settled, int) and not isinstance(settled, bool) else None
 
 
-def _write_cli_complete(run_dir: Path, exit_code: int, classification: str | None = None) -> None:
+def _source_identity(repo_root: Path) -> dict[str, object] | None:
+    """Which build produced this run — a fact the model has no way to know or report.
+
+    ``--untracked-files=no`` because the run writes its own new directory under ``runs/``:
+    counting that as a dirty tree would mark every run dirty and make the flag say nothing.
+    """
+    try:
+        commit = _git(repo_root, "rev-parse", "HEAD")
+        dirty = _git(repo_root, "status", "--porcelain", "--untracked-files=no")
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if commit.returncode != 0 or dirty.returncode != 0:
+        return None
+    return {"gitCommit": commit.stdout.strip(), "treeDirty": bool(dirty.stdout.strip())}
+
+
+def _git(repo_root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(("git", *args), cwd=repo_root, capture_output=True, text=True, timeout=10)
+
+
+def _write_cli_complete(run_dir: Path, exit_code: int, classification: str | None, repo_root: Path) -> None:
     finished = _now()
     exit_fact: dict[str, object] = {"exitCode": exit_code, "endedAt": finished}
     if classification is not None:
         exit_fact["classification"] = classification
+    exit_fact["sourceIdentity"] = _source_identity(repo_root)
     (run_dir / "exit.json").write_text(
         json.dumps(exit_fact, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
