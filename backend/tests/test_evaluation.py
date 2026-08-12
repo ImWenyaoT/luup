@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -30,33 +31,6 @@ def candidate(run_id: str, question_id: int = 1, **changes: object) -> RunFacts:
         **changes,
     }
     return RunFacts(**values)  # type: ignore[arg-type]
-
-
-def write_run(
-    runs_root: Path,
-    run_id: str,
-    *,
-    question_id: int | None = 7,
-    passed: bool = True,
-    refs: int = 5,
-    artifacts: dict[str, str] | None = None,
-) -> Path:
-    run = runs_root / run_id
-    run.mkdir(parents=True)
-    header = (
-        f"来源：《Science》125 前沿科学问题（Science-125 题库）第 {question_id} 题，天文。\n"
-        if question_id is not None
-        else ""
-    )
-    (run / "question.md").write_text(f"{header}问题：Q\n", encoding="utf-8")
-    (run / "proposal.json").write_text(json.dumps({"references": [{}] * refs}), encoding="utf-8")
-    (run / "proposal.md").write_text("# plan\n", encoding="utf-8")
-    (run / "verification-report.md").write_text("结果: ALL PASS\n" if passed else "结果: 1/1 FAILED\n", encoding="utf-8")
-    if not passed:
-        (run / "FAILED.md").write_text("failed\n", encoding="utf-8")
-    for name, text in (artifacts or {}).items():
-        (run / name).write_text(text, encoding="utf-8")
-    return run
 
 
 # --- version selection (M9/M10 retired 2026-08-11: the chain is deterministic) ------------------
@@ -89,7 +63,9 @@ def test_every_candidate_failing_the_gate_has_no_winner() -> None:
     assert [row["runId"] for row in choice["eliminated"]] == ["a", "b"]
 
 
-def test_a_retired_judge_score_can_no_longer_appear_in_the_report(tmp_path: Path) -> None:
+def test_a_retired_judge_score_can_no_longer_appear_in_the_report(
+    tmp_path: Path, write_run: Callable[..., Path]
+) -> None:
     """M9/M10 were retired, so their fields must be gone rather than present and empty."""
     write_run(
         tmp_path,
@@ -148,7 +124,9 @@ def test_an_unmeasured_version_never_outranks_a_measured_one(field: str) -> None
     assert second["winner"]["runId"] == "b"
 
 
-def test_token_cost_sums_usage_rows_and_ignores_unusable_ones(tmp_path: Path) -> None:
+def test_token_cost_sums_usage_rows_and_ignores_unusable_ones(
+    tmp_path: Path, write_run: Callable[..., Path]
+) -> None:
     """usage.jsonl is append-only evidence written per model call; one bad row must not void the total."""
     usage = "\n".join(
         [
@@ -171,17 +149,12 @@ def test_token_cost_sums_usage_rows_and_ignores_unusable_ones(tmp_path: Path) ->
     assert ranked[0]["runId"] == "20260810-000001"
 
 
-def test_file_entry_reads_runs_and_preserves_unknown_cost_as_null(tmp_path: Path) -> None:
-    for run_id, passed, refs in [("20260810-000001", False, 5), ("20260810-000002", True, 6)]:
-        run = tmp_path / run_id
-        run.mkdir()
-        (run / "question.md").write_text("来源：《Science》125 前沿科学问题（Science-125 题库）第 7 题，天文。\n问题：Q\n")
-        (run / "meta.json").write_text(json.dumps({"questionId": 7}))
-        (run / "proposal.json").write_text(json.dumps({"references": [{}] * refs}))
-        (run / "proposal.md").write_text("# plan\n")
-        (run / "verification-report.md").write_text("结果: ALL PASS\n" if passed else "结果: 1/1 FAILED\n")
-        if not passed:
-            (run / "FAILED.md").write_text("failed\n")
+def test_file_entry_reads_runs_and_preserves_unknown_cost_as_null(
+    tmp_path: Path, write_run: Callable[..., Path]
+) -> None:
+    """No usage.jsonl anywhere: an unmeasured cost stays null instead of being read as a free run."""
+    write_run(tmp_path, "20260810-000001", passed=False, refs=5)
+    write_run(tmp_path, "20260810-000002", passed=True, refs=6)
 
     report = evaluate_runs(tmp_path)
 
@@ -373,7 +346,9 @@ def test_failure_classes_keep_outages_apart_from_quality_verdicts() -> None:
     assert classes["unclassified"] == 1
 
 
-def test_the_statistics_block_is_derived_from_the_artifacts_on_disk(tmp_path: Path) -> None:
+def test_the_statistics_block_is_derived_from_the_artifacts_on_disk(
+    tmp_path: Path, write_run: Callable[..., Path]
+) -> None:
     """Every aggregate must come out of files a finished run already wrote — zero new collection."""
     write_run(
         tmp_path,
@@ -417,7 +392,9 @@ def test_the_statistics_block_is_derived_from_the_artifacts_on_disk(tmp_path: Pa
     assert report["pairedComparison"]["memoryArms"]["b"] == 1  # memory on passed where memory off failed
 
 
-def test_the_statistics_say_which_code_version_produced_them(tmp_path: Path) -> None:
+def test_the_statistics_say_which_code_version_produced_them(
+    tmp_path: Path, write_run: Callable[..., Path]
+) -> None:
     """Derived, not declared: the cohort is read off the runs, so no doc can claim the wrong one."""
     write_run(
         tmp_path,
@@ -439,7 +416,8 @@ def test_the_statistics_say_which_code_version_produced_them(tmp_path: Path) -> 
             )
         },
     )
-    write_run(tmp_path, "20260810-000003", question_id=9)
+    # The committed pre-2026-08-10 runs have no exit.json at all — that is what "unknown" is for.
+    write_run(tmp_path, "20260810-000003", question_id=9, artifacts={"exit.json": None})
 
     cohorts = evaluate_runs(tmp_path)["statistics"]["sourceIdentity"]
 
@@ -449,7 +427,9 @@ def test_the_statistics_say_which_code_version_produced_them(tmp_path: Path) -> 
     assert cohorts["unknown"]["runs"] == 1
 
 
-def test_a_free_form_run_counts_in_the_campaign_rates_but_not_in_the_pairings(tmp_path: Path) -> None:
+def test_a_free_form_run_counts_in_the_campaign_rates_but_not_in_the_pairings(
+    tmp_path: Path, write_run: Callable[..., Path]
+) -> None:
     """OOD runs have no question id, so they can be summed but never compared version-to-version."""
     write_run(tmp_path, "20260810-000001")
     write_run(tmp_path, "20260810-000002")
@@ -472,7 +452,9 @@ def test_a_free_form_run_counts_in_the_campaign_rates_but_not_in_the_pairings(tm
     ]
 
 
-def test_evaluation_cli_writes_the_same_report_it_prints(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_evaluation_cli_writes_the_same_report_it_prints(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], write_run: Callable[..., Path]
+) -> None:
     runs_root = tmp_path / "runs"
     write_run(runs_root, "20260810-000001")
     write_run(runs_root, "20260810-000002", passed=False)

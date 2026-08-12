@@ -72,12 +72,12 @@ def test_child_failure_leaves_exit_meta_and_failed_evidence(tmp_path: Path) -> N
     run_dir = Path(response.json()["runDir"])
     child.release.set()
 
-    assert _wait_for(lambda: (run_dir / "exit.json").exists())
+    # FAILED.md is the last file `_complete` writes, so waiting on it settles the whole trio.
+    assert _wait_for(lambda: (run_dir / "FAILED.md").exists())
     assert json.loads((run_dir / "exit.json").read_text(encoding="utf-8"))["exitCode"] == 3
     meta = json.loads((run_dir / "meta.json").read_text(encoding="utf-8"))
     assert meta["exitCode"] == 3
     assert "finishedAt" in meta
-    assert (run_dir / "FAILED.md").exists()
 
 
 def test_a_hung_child_is_killed_at_the_timeout_and_the_lock_is_released(tmp_path: Path) -> None:
@@ -88,7 +88,7 @@ def test_a_hung_child_is_killed_at_the_timeout_and_the_lock_is_released(tmp_path
     response = client.post("/api/runs", json={"science125Id": 1})
     run_dir = Path(response.json()["runDir"])
 
-    assert _wait_for(lambda: (run_dir / "exit.json").exists())
+    assert _wait_for(lambda: (run_dir / "FAILED.md").exists())
     assert child.killed is True
     exit_fact = json.loads((run_dir / "exit.json").read_text(encoding="utf-8"))
     assert exit_fact["exitCode"] == -1
@@ -121,6 +121,37 @@ def test_a_child_written_classification_survives_the_parent_settling_the_run(tmp
     assert _wait_for(lambda: json.loads((run_dir / "exit.json").read_text(encoding="utf-8")).get("endedAt") is not None)
     assert _wait_for(lambda: not (tmp_path / ".active.json").exists())
     assert json.loads((run_dir / "exit.json").read_text(encoding="utf-8"))["classification"] == "verifier_refs"
+
+
+def test_a_child_written_source_identity_survives_the_parent_settling_the_run(tmp_path: Path) -> None:
+    """`app.cli` records which build produced the run; the parent settles it and must merge.
+
+    The parent used to rebuild exit.json from scratch after `wait()` and carry only
+    `classification` across, so every run started over HTTP silently lost
+    `sourceIdentity` — the field the 125 statistics cohort by.
+    """
+    child = FakeChild(exit_code=0)
+    client, _ = client_for(tmp_path, lambda *args, **kwargs: child)
+
+    response = client.post("/api/runs", json={"science125Id": 1})
+    run_dir = Path(response.json()["runDir"])
+    (run_dir / "exit.json").write_text(
+        json.dumps(
+            {
+                "exitCode": 0,
+                "endedAt": "2026-08-10T00:00:00.000Z",
+                "sourceIdentity": {"gitCommit": "abc123", "treeDirty": False},
+            }
+        ),
+        encoding="utf-8",
+    )
+    child.release.set()
+
+    assert _wait_for(lambda: not (tmp_path / ".active.json").exists())
+    exit_fact = json.loads((run_dir / "exit.json").read_text(encoding="utf-8"))
+    assert exit_fact["sourceIdentity"] == {"gitCommit": "abc123", "treeDirty": False}
+    assert exit_fact["exitCode"] == 0
+    assert exit_fact["endedAt"] != "2026-08-10T00:00:00.000Z"  # The parent still owns the settle time.
 
 
 def test_spawn_failure_releases_lock_and_returns_500(tmp_path: Path) -> None:

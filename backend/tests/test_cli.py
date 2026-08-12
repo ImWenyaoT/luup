@@ -205,6 +205,29 @@ async def test_a_passed_run_records_no_failure_classification(tmp_path: Path) ->
     assert "classification" not in json.loads((run_dir / "exit.json").read_text(encoding="utf-8"))
 
 
+async def test_settling_a_run_never_rewrites_the_bytes_a_reader_already_holds_open(tmp_path: Path) -> None:
+    """meta.json and exit.json are read over HTTP while a 125-question batch keeps writing them.
+
+    An in-place `write_text` truncates the very file a concurrent reader is holding, so the
+    read model can observe half a JSON document. An atomic replace leaves that reader on the
+    previous, complete bytes and publishes the new ones in one step.
+    """
+    run_dir = tmp_path / "runs" / "20260810-010203"
+    await run_cli("a scientific question", tmp_path, run_dir, harness=SuccessfulHarness())
+
+    with (
+        (run_dir / "meta.json").open(encoding="utf-8") as meta_reader,
+        (run_dir / "exit.json").open(encoding="utf-8") as exit_reader,
+    ):
+        await run_cli("a scientific question", tmp_path, run_dir, harness=FailingHarness())
+        held_meta = json.loads(meta_reader.read())
+        held_exit = json.loads(exit_reader.read())
+
+    assert (held_meta["exitCode"], held_exit["exitCode"]) == (0, 0)
+    assert json.loads((run_dir / "meta.json").read_text(encoding="utf-8"))["exitCode"] == 1
+    assert json.loads((run_dir / "exit.json").read_text(encoding="utf-8"))["exitCode"] == 1
+
+
 def seeded_git_repo(root: Path) -> str:
     """A one-commit repository, so `sourceIdentity` can be asserted against a known HEAD."""
     root.mkdir(parents=True, exist_ok=True)

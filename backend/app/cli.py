@@ -17,7 +17,7 @@ from app.agent.model import QwenSettings
 from app.agent.orchestrator import Harness, RunOutcome
 from app.agent.specialists import AgentsSdkSpecialistRunner
 from app.agent.tools import ArxivClient, LuupTools
-from app.domain.runs import utc_stamp
+from app.domain.runs import replace_text, utc_stamp
 from app.services.launch import FileRunLock, RunInProgress
 
 
@@ -117,7 +117,7 @@ def _write_cli_start(run_dir: Path, question: str, question_id: int | None, memo
     if question_id is not None:
         meta["questionId"] = question_id
     meta["memoryArm"] = "on" if memory else "off"
-    meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    replace_text(meta_path, json.dumps(meta, ensure_ascii=False, indent=2) + "\n")
     settled = meta.get("questionId")
     return settled if isinstance(settled, int) and not isinstance(settled, bool) else None
 
@@ -148,14 +148,11 @@ def _write_cli_complete(run_dir: Path, exit_code: int, classification: str | Non
     if classification is not None:
         exit_fact["classification"] = classification
     exit_fact["sourceIdentity"] = _source_identity(repo_root)
-    (run_dir / "exit.json").write_text(
-        json.dumps(exit_fact, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    replace_text(run_dir / "exit.json", json.dumps(exit_fact, ensure_ascii=False, indent=2) + "\n")
     meta_path = run_dir / "meta.json"
     meta = _read_mapping(meta_path)
     meta.update({"finishedAt": finished, "exitCode": exit_code})
-    meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    replace_text(meta_path, json.dumps(meta, ensure_ascii=False, indent=2) + "\n")
 
 
 def _read_mapping(path: Path) -> dict[str, object]:

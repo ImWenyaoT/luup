@@ -12,11 +12,10 @@ from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 from threading import Thread
 from typing import Protocol
 
-from app.domain.runs import render_failed, utc_stamp
+from app.domain.runs import render_failed, replace_text, utc_stamp
 from app.domain.science125 import Science125Question
 
 
@@ -50,14 +49,6 @@ def _read_mapping(path: Path) -> dict[str, object]:
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return {}
     return raw if isinstance(raw, dict) else {}
-
-
-def _replace_text(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as handle:
-        handle.write(content)
-        temp_name = handle.name
-    os.replace(temp_name, path)
 
 
 @dataclass(frozen=True)
@@ -128,7 +119,7 @@ class FileRunLock:
 
     @staticmethod
     def write_raw(path: Path, holder: LockHolder, token: str) -> None:
-        _replace_text(
+        replace_text(
             path,
             json.dumps(
                 {"runId": holder.run_id, "pid": holder.pid, "startedAt": holder.started_at, "token": token},
@@ -275,11 +266,11 @@ class RunLauncher:
 
     @staticmethod
     def _write_initial_artifacts(run_dir: Path, text: str, question_id: int | None) -> None:
-        _replace_text(run_dir / "question.md", text + "\n")
+        replace_text(run_dir / "question.md", text + "\n")
         meta: dict[str, object] = {"startedAt": _now()}
         if question_id is not None:
             meta["questionId"] = question_id
-        _replace_text(run_dir / "meta.json", json.dumps(meta, ensure_ascii=False, indent=2) + "\n")
+        replace_text(run_dir / "meta.json", json.dumps(meta, ensure_ascii=False, indent=2) + "\n")
 
     def _wait(self, child: ChildProcess, lock: HeldRunLock, run_dir: Path, question_id: int | None) -> None:
         try:
@@ -314,21 +305,35 @@ class RunLauncher:
         failure: str | None,
         classification: str | None = None,
     ) -> None:
+        """Settle the run by *merging* into exit.json and meta.json, never by rewriting them.
+
+        Both files are co-written: `app.cli` writes them from inside the pipeline, this
+        parent writes them again once it has watched the child exit. The parent's authority
+        is exactly the fields it observed itself — `exitCode` and `endedAt`/`finishedAt`,
+        plus `questionId` when it reserved the run and `classification` when the child left
+        none. Everything else already on disk is the child's fact and is preserved.
+        """
         finished = _now()
-        # `app.cli` classifies its own pipeline failures; the parent only fills the gap.
-        previous = _read_mapping(run_dir / "exit.json").get("classification")
+        # Merge, never rebuild. The child (`app.cli`) writes facts the parent cannot know —
+        # `sourceIdentity` above all — and a from-scratch exit.json silently dropped every one
+        # of them. The parent overwrites exactly the two fields it decided itself, `exitCode`
+        # and `endedAt` (it is the process that watched the child end), plus `classification`
+        # when it has one of its own; `app.cli` classifies its own pipeline failures, so the
+        # parent's label only fills a gap. Every other key the child wrote survives untouched.
+        exit_fact = _read_mapping(run_dir / "exit.json")
+        previous = exit_fact.get("classification")
         label = classification or (previous if isinstance(previous, str) else None)
-        exit_fact: dict[str, object] = {"exitCode": exit_code, "endedAt": finished}
+        exit_fact.update({"exitCode": exit_code, "endedAt": finished})
         if label is not None:
             exit_fact["classification"] = label
-        _replace_text(run_dir / "exit.json", json.dumps(exit_fact, ensure_ascii=False, indent=2) + "\n")
+        replace_text(run_dir / "exit.json", json.dumps(exit_fact, ensure_ascii=False, indent=2) + "\n")
         meta = _read_mapping(run_dir / "meta.json")
         if question_id is not None:
             meta["questionId"] = question_id
         meta.update({"finishedAt": finished, "exitCode": exit_code})
-        _replace_text(run_dir / "meta.json", json.dumps(meta, ensure_ascii=False, indent=2) + "\n")
+        replace_text(run_dir / "meta.json", json.dumps(meta, ensure_ascii=False, indent=2) + "\n")
         if failure is not None and not (run_dir / "FAILED.md").exists():
-            _replace_text(run_dir / "FAILED.md", render_failed((failure,), label))
+            replace_text(run_dir / "FAILED.md", render_failed((failure,), label))
 
 
 def science125_text(question: Science125Question) -> str:
