@@ -7,6 +7,7 @@ import re
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any, Literal
 
 RUN_ID_RE = re.compile(r"^([0-9]{4})([0-9]{2})([0-9]{2})-([0-9]{2})([0-9]{2})([0-9]{2})$")
@@ -83,6 +84,19 @@ def safe_join(base: Path, *parts: str) -> Path:
     if target != resolved_base and resolved_base not in target.parents:
         raise BoundaryError("/".join(parts))
     return target
+
+
+def replace_text(path: Path, content: str) -> None:
+    """run 目录里每一次覆写的唯一原子写点：写临时文件再 `os.replace`。
+
+    `runs/<id>/` 在运行中被 HTTP 读模型并发读取；就地 `write_text` 会先把目标文件截断，
+    于是并发读者可能读到半个 JSON。原子替换让读者要么看到旧的完整字节，要么看到新的。
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as handle:
+        handle.write(content)
+        temp_name = handle.name
+    os.replace(temp_name, path)
 
 
 def render_failed(failures: Sequence[str], classification: str | None) -> str:
