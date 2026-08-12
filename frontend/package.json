@@ -12,6 +12,7 @@
     "generate:client": "cd ../backend && UV_CACHE_DIR=.cache/uv uv run python -m scripts.export_openapi && cd ../frontend && openapi-ts -i ../backend/openapi.json -o src/client -c @hey-api/client-fetch",
     "check:client": "bun run generate:client && git diff --exit-code -- ../backend/openapi.json src/client",
     "preview": "vite preview",
+    "test": "bun test --coverage",
     "test:e2e": "playwright test"
   },
   "dependencies": {

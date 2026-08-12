@@ -51,5 +51,9 @@ jobs:
       - name: Lint
         # `bun run lint` writes fixes back; CI must only report.
         run: bun run lint:ci
+      - name: Unit tests
+        # `bun test` — no test dependency involved. Scope and the coverage
+        # floor both live in frontend/bunfig.toml; Playwright is a separate job.
+        run: bun run test
       - name: Build
         run: bun run build

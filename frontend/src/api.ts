@@ -25,17 +25,66 @@ export class ApiFailure extends Error {
   }
 }
 
-async function json<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url(path), {
-    ...init,
-    headers: { accept: "application/json", ...init?.headers },
+/** 传输层失败没有 HTTP 状态码。编一个真实状态码会把断网说成服务端的错。 */
+const NO_RESPONSE = 0
+
+/** 读不出可用错误体时的兜底：至少把状态码说清楚，不要吐半页 HTML。 */
+const fallback = (status: number, code: string): ApiError => ({
+  error: `HTTP ${status}`,
+  code,
+})
+
+/** 后端的错误体是 `{error, code}`；别的形状（纯文本、数组、null）一律不认。 */
+const asApiError = (value: unknown, status: number, code: string): ApiError =>
+  typeof value === "object" && value !== null && "error" in value
+    ? (value as ApiError)
+    : fallback(status, code)
+
+/** 断网/DNS/CORS：两条路径都归到这里，用户看到的才是同一句真话。 */
+const networkFailure = (cause: unknown): ApiFailure =>
+  new ApiFailure(NO_RESPONSE, {
+    error: cause instanceof Error ? cause.message : "网络请求失败",
+    code: "network_error",
   })
-  const body = (await response.json().catch(() => ({
-    error: `HTTP ${response.status}`,
-    code: "bad_response",
-  }))) as T & ApiError
-  if (!response.ok) throw new ApiFailure(response.status, body)
-  return body
+
+/** JSON.parse 永不产出 undefined，所以拿 undefined 当「没解析出来」的哨兵是安全的。 */
+async function readJson(response: Response): Promise<unknown> {
+  try {
+    return await response.json()
+  } catch {
+    return undefined
+  }
+}
+
+async function send(request: () => Promise<Response>): Promise<Response> {
+  try {
+    return await request()
+  } catch (cause) {
+    throw networkFailure(cause)
+  }
+}
+
+async function json<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await send(() =>
+    fetch(url(path), {
+      ...init,
+      headers: { accept: "application/json", ...init?.headers },
+    }),
+  )
+  const body = await readJson(response)
+  if (!response.ok)
+    throw new ApiFailure(
+      response.status,
+      asApiError(body, response.status, "bad_response"),
+    )
+  // 2xx 但体不是 JSON：契约破了。把兜底对象当业务数据交出去，
+  // 调用方只会在读 runId 时拿到 undefined，错误要在这里就被看见。
+  if (body === undefined)
+    throw new ApiFailure(
+      response.status,
+      fallback(response.status, "bad_response"),
+    )
+  return body as T
 }
 
 export const api = {
@@ -67,18 +116,22 @@ export const api = {
       body: JSON.stringify(body),
     }),
   async artifact(id: string, file: string) {
-    const response = await fetch(
-      url(
-        `/api/runs/${encodeURIComponent(id)}?artifact=${encodeURIComponent(file)}`,
+    const response = await send(() =>
+      fetch(
+        url(
+          `/api/runs/${encodeURIComponent(id)}?artifact=${encodeURIComponent(file)}`,
+        ),
       ),
     )
-    if (!response.ok) {
-      const body = (await response.json().catch(() => ({
-        error: `HTTP ${response.status}`,
-        code: "artifact_failed",
-      }))) as ApiError
-      throw new ApiFailure(response.status, body)
-    }
+    if (!response.ok)
+      throw new ApiFailure(
+        response.status,
+        asApiError(
+          await readJson(response),
+          response.status,
+          "artifact_failed",
+        ),
+      )
     return response.text()
   },
 }
@@ -87,13 +140,18 @@ async function generated<T>(
   request: Promise<{ data?: unknown; error?: unknown; response?: Response }>,
 ): Promise<T> {
   const result = await request
-  const status = result.response?.status ?? 500
-  if (!result.response?.ok) {
-    const body = (result.error ?? {
-      error: `HTTP ${status}`,
-      code: "bad_response",
-    }) as ApiError
-    throw new ApiFailure(status, body)
-  }
+  // 生成 client 把传输失败也吞进 error，此时压根没有 response——
+  // 拿 `?? 500` 兜底就是把断网报成服务端错误。
+  if (!result.response) throw networkFailure(result.error)
+  const { status, ok } = result.response
+  if (!ok)
+    throw new ApiFailure(
+      status,
+      asApiError(result.error, status, "bad_response"),
+    )
+  // 2xx 但 data 缺失：生成 client 把 JSON.parse 失败塞进了 error、data 留空。
+  // 只看 ok 就会 resolve 出 undefined，崩在下游 `data.runs.map` 而不是 ErrorBox。
+  if (result.data === undefined)
+    throw new ApiFailure(status, fallback(status, "bad_response"))
   return result.data as T
 }
