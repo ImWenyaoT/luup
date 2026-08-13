@@ -1,25 +1,20 @@
-import { displayNodes, fmtDur, fmtTime, stateLabel } from "@/format"
+import { fmtDur, fmtTime, stateLabel } from "@/format"
 import { cn } from "@/lib/utils"
-import type { NodeState, RunNodes, SpineNode } from "@/types"
+import type { NodeState, SpineNode } from "@/types"
 
 /**
  * 状态灯是实色点，不加光晕；每个灯旁边都有文字状态，颜色不单独承载信息。
- * rejected 另有缺角形状，色盲也能读出来。
  */
 const DOT_CLASS: Record<NodeState, string> = {
   done: "bg-primary",
   active: "bg-primary animate-pulse motion-reduce:animate-none",
   pending: "border border-muted-foreground/45 bg-transparent",
-  rejected:
-    "bg-destructive [clip-path:polygon(0_0,60%_0,100%_40%,100%_100%,0_100%)]",
 }
 
 const SEGMENT_CLASS: Record<NodeState, string> = {
   done: "bg-primary",
   active: "bg-primary/45",
   pending: "bg-border",
-  rejected:
-    "bg-destructive [clip-path:polygon(0_0,60%_0,100%_40%,100%_100%,0_100%)]",
 }
 
 export function Dot({
@@ -44,16 +39,15 @@ export function Dot({
 }
 
 /** 表格与列表里的压缩形态：一格一节点，读的是「走到哪一步」。 */
-export function MiniSpine({ nodes }: { nodes: RunNodes }) {
-  const visible = displayNodes(nodes)
+export function MiniSpine({ nodes }: { nodes: SpineNode[] }) {
   return (
     <span
       className="inline-flex items-center gap-0.5 align-middle"
-      title={visible
+      title={nodes
         .map((node) => `${node.label}: ${stateLabel[node.state]}`)
         .join(" → ")}
     >
-      {visible.map((node) => (
+      {nodes.map((node) => (
         <i
           key={node.key}
           className={cn("h-3 w-1.5 rounded-[1px]", SEGMENT_CLASS[node.state])}
@@ -106,7 +100,6 @@ export function Spine({
                 <span className="text-[13px] font-medium">{node.label}</span>
                 <span className="ml-auto text-xs text-muted-foreground">
                   {stateLabel[node.state]}
-                  {node.rejects ? ` · 打回 ${node.rejects} 次` : ""}
                 </span>
               </span>
               <span className="font-mono text-xs leading-relaxed break-all text-muted-foreground">

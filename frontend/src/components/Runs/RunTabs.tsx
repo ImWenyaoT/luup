@@ -2,7 +2,6 @@ import { useQuery } from "@tanstack/react-query"
 import { CheckIcon, ExternalLinkIcon, XIcon } from "lucide-react"
 import { useState } from "react"
 import { EmptyState, ErrorBox, Loading } from "@/components/Common/States"
-import { Pill } from "@/components/Runs/StatusBadge"
 import { Input } from "@/components/ui/input"
 import {
   Table,
@@ -20,8 +19,6 @@ import type { Paper, RunDetail, VerifyReport } from "@/types"
 /** tab → 候选工件文件名，取第一个真实存在的；顺序即优先级。 */
 const TAB_ARTIFACTS: Record<string, string[]> = {
   evidence: ["evidence.md"],
-  hypotheses: ["hypotheses.md"],
-  critique: ["critique.json", "critique.md"],
   proposal: ["proposal.md", "proposal.json"],
   review: ["review.json"],
   verification: ["verification-report.md", "verification.json"],
@@ -43,20 +40,10 @@ export function TabContent({
     return (
       <Artifact id={run.id} file="FAILED.md" fallback={run.failedText ?? ""} />
     )
-  if (tab === "verdicts") return <Verdicts items={run.verdicts} />
   if (tab === "verification" && run.verify)
     return <Verification report={run.verify} />
   if (tab === "papers") return <Papers items={run.papers} runId={run.id} />
   const file = artifactForTab(tab, artifacts)
-  if (tab === "proposal" && run.proposalRejected)
-    return (
-      <div className="flex flex-col gap-3">
-        <p className="text-sm text-destructive">
-          proposal.json 未通过 10 字段契约；以下为被打回的原文。
-        </p>
-        <ArtifactText text={run.proposalRejected} file="proposal.json" />
-      </div>
-    )
   return file ? (
     <Artifact id={run.id} file={file} />
   ) : (
@@ -137,45 +124,6 @@ function Mark({ pass }: { pass: boolean }) {
       className="mt-0.5 size-3.5 shrink-0 text-destructive"
       aria-label="未通过"
     />
-  )
-}
-
-function Verdicts({ items }: { items: RunDetail["verdicts"] }) {
-  return (
-    <ol className="flex flex-col gap-6">
-      {items.map((item) => (
-        <li key={item.file} className="flex flex-col gap-2">
-          <div className="flex items-center gap-2 border-b pb-2">
-            <span className="font-mono text-[13px] font-medium">
-              {item.node}-r{item.round}
-            </span>
-            <Pill tone={item.verdict === "pass" ? "good" : "bad"}>
-              {item.verdict}
-            </Pill>
-            <span className="ml-auto font-mono text-xs text-muted-foreground">
-              verdicts/{item.file}
-            </span>
-          </div>
-          <dl className="flex flex-col gap-2">
-            {item.checks.map((check, index) => (
-              <div
-                key={index}
-                className="grid grid-cols-[16px_200px_minmax(0,1fr)] gap-x-3 text-[13px]"
-              >
-                <Mark pass={check.pass !== false} />
-                <dt className="font-medium">{check.criterion}</dt>
-                <dd className="text-muted-foreground">{check.reason}</dd>
-              </div>
-            ))}
-          </dl>
-          {item.rework ? (
-            <p className="text-[13px] text-destructive">
-              返工指令：{item.rework}
-            </p>
-          ) : null}
-        </li>
-      ))}
-    </ol>
   )
 }
 

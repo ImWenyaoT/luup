@@ -9,7 +9,7 @@ import { artifactForTab, TabContent } from "@/components/Runs/RunTabs"
 import { Spine } from "@/components/Runs/Spine"
 import { Pill, StatusPill } from "@/components/Runs/StatusBadge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { displayNodes, fmtDur, fmtTime, tabForNode } from "@/format"
+import { fmtDur, fmtTime, tabForNode } from "@/format"
 import { cn } from "@/lib/utils"
 import { runDetailQueryOptions } from "@/queries"
 import type { RunDetail } from "@/types"
@@ -64,7 +64,6 @@ function RunDetailView({
   reload: () => void
 }) {
   const artifacts = new Set(run.artifactNames)
-  const nodes = displayNodes(run.nodes)
   const [active, setActive] = useState<string>(
     run.failedText
       ? "failed"
@@ -82,7 +81,7 @@ function RunDetailView({
     {
       id: "proposal",
       label: "proposal",
-      disabled: !artifactForTab("proposal", artifacts) && !run.proposalRejected,
+      disabled: !artifactForTab("proposal", artifacts),
     },
     {
       id: "review",
@@ -95,20 +94,10 @@ function RunDetailView({
       disabled: !run.verify && !artifactForTab("verification", artifacts),
     },
     {
-      id: "verdicts",
-      label: `verdicts (${run.verdicts.length})`,
-      disabled: !run.verdicts.length,
-    },
-    {
       id: "papers",
       label: `papers (${run.papers.length})`,
       disabled: !run.papers.length,
     },
-    ...(["hypotheses", "critique"] as const).map((id) => ({
-      id,
-      label: id,
-      disabled: !artifactForTab(id, artifacts),
-    })),
   ]
   const working = run.status === "working"
 
@@ -213,7 +202,7 @@ function RunDetailView({
         ) : (
           <Spine
             className="self-start sticky top-20"
-            nodes={nodes}
+            nodes={run.nodes}
             select={(node) => {
               const tab = tabForNode(node)
               if (tab) setActive(tab)

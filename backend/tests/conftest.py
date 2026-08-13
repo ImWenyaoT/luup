@@ -17,9 +17,8 @@ interface 就是「相对路径 -> 文本」这张表，`write_run` 只做两件
   只有 `question.md` + `meta.json`，测的正是「pipeline 还没写别的」。给它们一份完整 run
   会连带塞进一份 ALL PASS 报告，悄悄改掉它们在断言什么。所以 `tests/test_batch.py` 和
   `tests/test_cli.py` 保留各自的局部写法。
-- **只描述今天的形状。** legacy（TS 时代）run 是另一套文件名——`hypotheses.md`、
-  `critique.md`、`verdicts/*.json`，且没有 `review.json`。那是正在退役的形状，谁测它谁在
-  本地把它写出来，退役时删除点就只有一处，不用从共享 fixture 里往外拆。
+- **只描述今天的形状。** TS 时代那套（`hypotheses.md` / `critique.md` / `verdicts/*.json`）
+  连同产生它的 run 一起已从 HEAD 删除，读模型不再有对应分支；要考古走 `git show`。
 - **不写 append-only 的记账流。** `usage.jsonl` / `tool-events.jsonl` / `trace.jsonl`
   在真实 run 里可有可无（一次都没烧 token 的失败不写 usage 行），而且它们的**缺席**本身
   就是被断言的事实（「成本未知记为 null」）。要它们的测试自己用 `artifacts` 给。

@@ -15,16 +15,9 @@ from typing import TypedDict
 
 from app.domain.runs import is_run_id, run_dir, runs_dir, stamp_to_ms
 
-_NESTED_DIRECTORIES = {"verdicts", "memory", "memory/papers"}
-_ARTIFACT_DENY = {"console.log"}
-_LEGACY_NODES = (
-    ("literature", "L", "文献", "evidence.md", ()),
-    ("hypothesis", "H", "假设", "hypotheses.md", ()),
-    ("critique", "C", "批判", "critique.json", ("critique.md",)),
-    ("proposal", "W", "计划", "proposal.json", ()),
-    ("verify", "✓", "验收", "verification-report.md", ()),
-)
-_PRO_NODES = (
+_NESTED_DIRECTORIES = {"memory", "memory/papers"}
+# 每个节点一行：key、mark、label、主工件名、可接受的别名。
+_NODES = (
     ("scientist", "S", "Scientist", "proposal.json", ("evidence.md",)),
     ("reviewer", "R", "Reviewer", "review.json", ()),
     ("verify", "✓", "Verify", "verification-report.md", ("verification.json",)),
@@ -33,7 +26,6 @@ _SOURCE_LINE = re.compile(r"第\s*([0-9]+)\s*题[，,]\s*([^。\n]+)。")
 _ASKED_LINE = re.compile(r"问题[:：]\s*(.+)")
 _RESULT_LINE = re.compile(r"结果:\s*(.+)")
 _ALL_PASS = re.compile(r"结果:\s*ALL PASS")
-_VERDICT_FILE = re.compile(r"^verdicts/(.+)-r([0-9]+)\.json$")
 
 
 @dataclass(frozen=True)
@@ -210,16 +202,15 @@ class RunService:
             "finishedAt": _iso(outcome["finished"]) if outcome["finished"] is not None else None,
             "durationSec": self._duration(outcome),
             "proposal": current_proposal,
-            "proposalRejected": _read_text(scan, "proposal.json.rejected.json") if current_proposal is None else None,
             "verify": self._verify_report(_read_text(scan, "verification-report.md")),
             "papers": self._papers(_read_text(scan, "memory/index.md")),
             "failedText": _read_text(scan, "FAILED.md"),
-            "artifactNames": sorted(name for name in scan.files if name not in _ARTIFACT_DENY),
+            "artifactNames": sorted(scan.files),
         }
 
     def artifact(self, identifier: str, name: str) -> str | None:
         scan = self.scan(identifier)
-        if scan is None or name in _ARTIFACT_DENY:
+        if scan is None:
             return None
         return _read_text(scan, name)
 
@@ -269,13 +260,11 @@ class RunService:
     def _status_view(self, scan: Scan) -> dict[str, object]:
         outcome = self._outcome(scan)
         status = self._status(scan, outcome)
-        verdicts = self._verdicts(scan)
-        nodes_spec = self._nodes_for(scan)
-        states = self._node_states(scan, status, verdicts)
+        states = self._node_states(scan, status)
         previous = outcome["started"]
         nodes: list[dict[str, object]] = []
-        for (key, mark, label, artifact, legacy), state in zip(nodes_spec, states):
-            found = next((name for name in (artifact, *legacy) if name in scan.files), None)
+        for (key, mark, label, artifact, aliases), state in zip(_NODES, states):
+            found = next((name for name in (artifact, *aliases) if name in scan.files), None)
             at = scan.files.get(found) if found else None
             nodes.append(
                 {
@@ -288,11 +277,6 @@ class RunService:
                     "elapsedSec": self._round_seconds(at - previous)
                     if at is not None and previous is not None
                     else None,
-                    "rejects": sum(
-                        1 + (1 if verdict["rejectedRaw"] else 0)
-                        for verdict in verdicts
-                        if verdict["node"] == key and verdict["verdict"] != "pass"
-                    ),
                 }
             )
             if at is not None:
@@ -302,7 +286,6 @@ class RunService:
             "status": status,
             "updatedAt": _iso(int(datetime.now(UTC).timestamp() * 1000)),
             "nodes": nodes,
-            "verdicts": verdicts,
         }
 
     def _outcome(self, scan: Scan) -> Outcome:
@@ -349,30 +332,21 @@ class RunService:
             return "working"
         return "passed" if outcome["phase"] == "verified" else "failed"
 
-    def _node_states(self, scan: Scan, status: str, verdicts: list[dict[str, object]] | None = None) -> list[str]:
-        known_verdicts = verdicts if verdicts is not None else self._verdicts(scan)
-        rejects = {str(verdict["node"]) for verdict in known_verdicts if verdict["verdict"] != "pass"}
+    @staticmethod
+    def _node_states(scan: Scan, status: str) -> list[str]:
         active_taken = status != "working"
         states: list[str] = []
-        for key, _, _, artifact, legacy in self._nodes_for(scan):
-            if any(name in scan.files for name in (artifact, *legacy)):
+        for _key, _, _, artifact, aliases in _NODES:
+            if any(name in scan.files for name in (artifact, *aliases)):
                 states.append("done")
             elif not active_taken:
                 states.append("active")
                 active_taken = True
             else:
-                states.append("rejected" if key in rejects else "pending")
+                states.append("pending")
         return states
 
-    @staticmethod
-    def _nodes_for(scan: Scan) -> tuple[tuple[str, str, str, str, tuple[str, ...]], ...]:
-        return _PRO_NODES if "review.json" in scan.files or "trace.jsonl" in scan.files else _LEGACY_NODES
-
     def _summary_nodes(self, scan: Scan, status: str) -> object:
-        states = self._node_states(scan, status)
-        nodes = self._nodes_for(scan)
-        if nodes is _LEGACY_NODES:
-            return {node[0]: state for node, state in zip(nodes[:4], states)}
         return [
             {
                 "key": key,
@@ -382,60 +356,9 @@ class RunService:
                 "state": state,
                 "at": None,
                 "elapsedSec": None,
-                "rejects": 0,
             }
-            for (key, mark, label, artifact, _legacy), state in zip(nodes, states)
+            for (key, mark, label, artifact, _aliases), state in zip(_NODES, self._node_states(scan, status))
         ]
-
-    def _verdicts(self, scan: Scan) -> list[dict[str, object]]:
-        verdicts: list[dict[str, object]] = []
-        for name in sorted(scan.files):
-            match = _VERDICT_FILE.fullmatch(name)
-            if not match:
-                continue
-            raw = _read_json(scan, name)
-            if not isinstance(raw, dict):
-                continue
-            checks: list[dict[str, object]] = []
-            raw_checks = raw.get("checks")
-            if isinstance(raw_checks, list):
-                for check in raw_checks:
-                    if not isinstance(check, dict):
-                        continue
-                    raw_pass = check.get("pass")
-                    passed = (
-                        raw_pass
-                        if isinstance(raw_pass, bool)
-                        else check.get("result") == "pass"
-                        if isinstance(check.get("result"), str)
-                        else None
-                    )
-                    checks.append(
-                        {
-                            "criterion": check.get("criterion")
-                            if isinstance(check.get("criterion"), str)
-                            else "(未命名判据)",
-                            "pass": passed,
-                            "reason": check.get("reason")
-                            if isinstance(check.get("reason"), str)
-                            else check.get("detail")
-                            if isinstance(check.get("detail"), str)
-                            else "",
-                        }
-                    )
-            file = name.removeprefix("verdicts/")
-            verdicts.append(
-                {
-                    "file": file,
-                    "node": raw.get("node") if isinstance(raw.get("node"), str) else match.group(1),
-                    "round": int(match.group(2)),
-                    "verdict": raw.get("verdict") if isinstance(raw.get("verdict"), str) else "reject",
-                    "checks": checks,
-                    "rework": raw.get("rework") if isinstance(raw.get("rework"), str) else None,
-                    "rejectedRaw": _read_text(scan, f"{name}.rejected.json"),
-                }
-            )
-        return verdicts
 
     @staticmethod
     def _question(text: str | None) -> dict[str, object]:

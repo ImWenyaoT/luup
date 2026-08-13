@@ -29,23 +29,9 @@ const node = (key: string): SpineNode => ({
   state: "done",
   at: null,
   elapsedSec: null,
-  rejects: 0,
 })
 
 describe("artifactForTab 优先级", () => {
-  it("critique 两个候选都在时选 critique.json", () => {
-    // 后端节点表把 critique.json 记为主名、critique.md 记为兼容名。
-    expect(
-      artifactForTab("critique", new Set(["critique.json", "critique.md"])),
-    ).toBe("critique.json")
-  })
-
-  it("critique 只剩兼容名时回落到 critique.md", () => {
-    expect(artifactForTab("critique", new Set(["critique.md"]))).toBe(
-      "critique.md",
-    )
-  })
-
   it("verification 两个候选都在时选 verification-report.md", () => {
     // 后端 Verify 节点同样以 verification-report.md 为主名。
     expect(artifactForTab("verification", PRO_RUN)).toBe(
@@ -72,23 +58,23 @@ describe("artifactForTab 优先级", () => {
   it("单候选 tab 命中即返回该文件", () => {
     expect(artifactForTab("evidence", PRO_RUN)).toBe("evidence.md")
     expect(artifactForTab("review", PRO_RUN)).toBe("review.json")
-    expect(artifactForTab("hypotheses", new Set(["hypotheses.md"]))).toBe(
-      "hypotheses.md",
-    )
   })
 })
 
 describe("artifactForTab 缺失路径", () => {
   it("候选一个都不存在时返回 undefined，调用方据此把 tab 置灰", () => {
     expect(artifactForTab("evidence", new Set(["proposal.md"]))).toBeUndefined()
-    expect(artifactForTab("critique", PRO_RUN)).toBeUndefined()
-    expect(artifactForTab("hypotheses", PRO_RUN)).toBeUndefined()
+    expect(artifactForTab("review", new Set(["proposal.md"]))).toBeUndefined()
   })
 
   it("没有候选表的 tab 返回 undefined 而不是抛错", () => {
-    // failed / verdicts / papers 由 TabContent 特判，不走工件表。
-    expect(artifactForTab("verdicts", PRO_RUN)).toBeUndefined()
+    // failed / papers 由 TabContent 特判，不走工件表；退役的 hypotheses / critique
+    // 连候选表都没有了。
     expect(artifactForTab("papers", PRO_RUN)).toBeUndefined()
+    expect(
+      artifactForTab("hypotheses", new Set(["hypotheses.md"])),
+    ).toBeUndefined()
+    expect(artifactForTab("critique", new Set(["critique.md"]))).toBeUndefined()
     expect(artifactForTab("", PRO_RUN)).toBeUndefined()
   })
 
