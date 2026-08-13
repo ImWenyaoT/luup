@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { compactIds, summarizeBatch } from "./batch"
+import { batchEstimate, compactIds, summarizeBatch } from "./batch"
 import type { RunSummary, Science125 } from "./types"
 
 /**
@@ -70,6 +70,23 @@ describe("compactIds", () => {
     expect(compactIds(Array.from({ length: 125 }, (_, i) => i + 1))).toBe(
       "1-125",
     )
+  })
+})
+
+describe("batchEstimate", () => {
+  it("两小时以内用分钟报，读者不用自己换算", () => {
+    expect(batchEstimate(2)).toBe("38–52 分钟")
+  })
+
+  it("跨过两小时改用小时——「2375 分钟」没人读得出那是两天", () => {
+    expect(batchEstimate(125)).toBe("40–54 小时")
+  })
+
+  it("边界按下界跨过 120 分钟算，不是按上界", () => {
+    // 6 题下界 114 分钟仍报分钟；7 题下界 133 分钟改报小时。上界先过 120 的那几档
+    // 若也切成小时，会出现「2–3 小时」这种把 95 分钟说成 2 小时的虚胖。
+    expect(batchEstimate(6)).toBe("114–156 分钟")
+    expect(batchEstimate(7)).toBe("2–3 小时")
   })
 })
 

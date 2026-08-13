@@ -16,7 +16,14 @@ export const Route = createFileRoute("/_layout/batch")({
  */
 function BatchPage() {
   const science = useQuery(science125QueryOptions)
-  const runs = useQuery(runsQueryOptions)
+  // 批次要跑几十小时，这一页是它唯一的观察窗，所以定时重取——不是新状态，
+  // 只是把同一个只读端点多读几次。固定间隔而不是「有活跃 run 才轮询」：
+  // 批次在两题之间没有活跃 run，那样会在第一次间隙里停下来再也不醒。
+  const runs = useQuery({
+    ...runsQueryOptions,
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
+  })
   const overview = useMemo(
     () =>
       science.data && runs.data

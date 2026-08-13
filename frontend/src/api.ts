@@ -115,6 +115,16 @@ export const api = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     }),
+  /**
+   * 发起一次串行批跑。响应只回被受理的题号与它们压出来的 `--ids`——
+   * 批次没有 id，也没有进度端点：进度是 /batch 页从 runs/ 派生出来的。
+   */
+  startBatch: (ids: readonly number[]) =>
+    json<{ ids: number[]; idsSpec: string }>("/api/batch", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ids }),
+    }),
   async artifact(id: string, file: string) {
     const response = await send(() =>
       fetch(

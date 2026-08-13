@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { RunApiRunsIdentifierGetData, RunApiRunsIdentifierGetErrors, RunApiRunsIdentifierGetResponses, RunsApiRunsGetData, RunsApiRunsGetErrors, RunsApiRunsGetResponses, Science125ApiScience125GetData, Science125ApiScience125GetResponses, StartRunApiRunsPostData, StartRunApiRunsPostResponses } from './types.gen';
+import type { RunApiRunsIdentifierGetData, RunApiRunsIdentifierGetErrors, RunApiRunsIdentifierGetResponses, RunsApiRunsGetData, RunsApiRunsGetErrors, RunsApiRunsGetResponses, Science125ApiScience125GetData, Science125ApiScience125GetResponses, StartBatchApiBatchPostData, StartBatchApiBatchPostResponses, StartRunApiRunsPostData, StartRunApiRunsPostResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -32,6 +32,17 @@ export const runsApiRunsGet = <ThrowOnError extends boolean = false>(options?: O
  * Start Run
  */
 export const startRunApiRunsPost = <ThrowOnError extends boolean = false>(options?: Options<StartRunApiRunsPostData, ThrowOnError>): RequestResult<StartRunApiRunsPostResponses, unknown, ThrowOnError> => (options?.client ?? client).post<StartRunApiRunsPostResponses, unknown, ThrowOnError>({ url: '/api/runs', ...options });
+
+/**
+ * Start Batch
+ *
+ * 发起一次串行批跑。
+ *
+ * 单写者锁保证同时最多一个可变 run，所以「跑多题」只能是一个串行任务，不是并发。
+ * 这里把网页上的多选交给既有的 `app.batch`（断点续跑、熔断、分类 tally 都在那边），
+ * 自己不记任何批次状态：进度由 `/batch` 页从 runs/ 派生。
+ */
+export const startBatchApiBatchPost = <ThrowOnError extends boolean = false>(options?: Options<StartBatchApiBatchPostData, ThrowOnError>): RequestResult<StartBatchApiBatchPostResponses, unknown, ThrowOnError> => (options?.client ?? client).post<StartBatchApiBatchPostResponses, unknown, ThrowOnError>({ url: '/api/batch', ...options });
 
 /**
  * Run

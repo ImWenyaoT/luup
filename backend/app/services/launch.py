@@ -7,7 +7,7 @@ import os
 import subprocess
 import sys
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -153,9 +153,15 @@ class FileRunLock:
             return True
         return True
 
-    def active_run_id(self) -> str | None:
+    def live_holder(self) -> LockHolder | None:
+        """持锁者，仅当它的进程还活着。刚抢到锁、还没写 runId 时 run_id 是 None——
+        那也是「有人在跑」，只有守门的调用方要分辨这一刻，读 run id 的不必。"""
         holder = self.holder(self.read_raw(self.path))
-        return holder.run_id if self._alive(holder.pid) else None
+        return holder if self._alive(holder.pid) else None
+
+    def active_run_id(self) -> str | None:
+        holder = self.live_holder()
+        return holder.run_id if holder is not None else None
 
     def acquire(self) -> HeldRunLock:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -198,6 +204,36 @@ class LaunchReceipt:
     run_dir: Path
 
 
+@dataclass(frozen=True)
+class BatchReceipt:
+    ids: tuple[int, ...]
+    spec: str
+    pid: int
+
+
+def compact_ids(ids: Sequence[int]) -> str:
+    """题号列表压回 `app.batch --ids` 认的写法；三个以上的连号才压成区间。
+
+    语法的权威是 `app.batch.parse_ids`，但本模块不能 import 它——`app.batch` 反过来
+    依赖本模块的 `science125_text`。往返一致由 tests 里的 round-trip 断言钉住。
+    规则与前端 `src/batch.ts` 的 `compactIds` 相同：网页上给人看的续跑命令与网页自己
+    发起的批次，`--ids` 必须逐字符一致，否则没人能把两者对上。
+    """
+    ordered = sorted(set(ids))
+    parts: list[str] = []
+    start = 0
+    while start < len(ordered):
+        end = start
+        while end + 1 < len(ordered) and ordered[end + 1] == ordered[end] + 1:
+            end += 1
+        if end - start + 1 >= 3:
+            parts.append(f"{ordered[start]}-{ordered[end]}")
+        else:
+            parts.extend(str(ordered[index]) for index in range(start, end + 1))
+        start = end + 1
+    return ",".join(parts)
+
+
 class RunLauncher:
     def __init__(
         self,
@@ -209,6 +245,11 @@ class RunLauncher:
         self._lock = FileRunLock(runs_root)
         self._process_factory = process_factory
         self._timeout_seconds = timeout_seconds
+        # 批次子进程的句柄。它不是「批次状态」——进度只有 runs/ 说了算，这里只回答
+        # 「刚才那个批次还活着吗」，用来守住两次点击之间的空窗：批次在两题之间不持锁，
+        # 单看 runs/.active.json 会把那一瞬当成空闲，于是第二次点击就多烧一份 API 费。
+        self._batch: ChildProcess | None = None
+        self._batch_started = ""
 
     @property
     def active_run_id(self) -> str | None:
@@ -218,7 +259,61 @@ class RunLauncher:
     def timeout_seconds(self) -> float:
         return self._timeout_seconds
 
+    def _batch_holder(self) -> LockHolder | None:
+        child = self._batch
+        return None if child is None else LockHolder(run_id=None, pid=child.pid, started_at=self._batch_started)
+
+    def start_batch(self, question_ids: Sequence[int]) -> BatchReceipt:
+        """把 `python -m app.batch` 起成一个脱离本会话的长子进程。
+
+        这里**不持锁**：锁归每一题各自的 run（`app.cli` 自己抢、自己放）。一个跑几十
+        小时的批次若在 HTTP 进程里握着 `runs/.active.json`，第一题就会被批次自己挡住。
+        所以本方法只做守门——有活跃 run 或活跃批次就拒绝，其余交给子进程。
+        """
+        holder = self._lock.live_holder() or self._batch_holder()
+        if holder is not None:
+            raise RunInProgress(holder)
+        spec = compact_ids(question_ids)
+        try:
+            child = self._process_factory(
+                [
+                    sys.executable,
+                    "-m",
+                    "app.batch",
+                    "--ids",
+                    spec,
+                    "--repo-root",
+                    str(self._runs_root.parent),
+                ],
+                cwd=Path(__file__).resolve().parents[2],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                # 单题十几分钟可以跟着 uvicorn 生灭，125 题几十小时不行：关掉浏览器、
+                # 重启 uvicorn、退出登录都会把同会话的子进程一起带走。批次自己开一个
+                # 会话与进程组，从此只对 runs/ 负责。
+                start_new_session=True,
+            )
+        except Exception as exc:
+            raise SpawnFailure(str(exc)) from exc
+        self._batch = child
+        self._batch_started = _now()
+        Thread(target=self._await_batch, args=(child,), daemon=True).start()
+        return BatchReceipt(ids=tuple(sorted(set(question_ids))), spec=spec, pid=child.pid)
+
+    def _await_batch(self, child: ChildProcess) -> None:
+        """回收子进程并清掉守门用的句柄。批次的进度不经过这里——它在 runs/ 里。"""
+        with suppress(Exception):
+            child.wait()
+        if self._batch is child:
+            self._batch = None
+
     def start(self, text: str, question_id: int | None) -> LaunchReceipt:
+        # 批次在两题之间不持锁，那一瞬 acquire() 会成功；单题就此插队，把批次的下一题
+        # 顶成 exit 2，连吃两次即触发熔断停批。守门放在抢锁之前。
+        batch = self._batch_holder()
+        if batch is not None:
+            raise RunInProgress(batch)
         lock = self._lock.acquire()
         run_id = ""
         run_dir = self._runs_root
