@@ -32,6 +32,6 @@ bun run test:e2e       # Playwright E2E，须先 build；只读已提交 runs/�
 ```
 
 验收锚点：`docs/design/criteria.md`；架构：`docs/design/architecture.md`；迁移记录：
-`docs/design/fastapi-template-migration.md`。
+`docs/design/fastapi-template-migration.md`；已定案、不再重提的决策见 `docs/adr/`。
 
 Issue 与领域文档见 `docs/agents/`。
