@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import json
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock
@@ -8,7 +10,9 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app import batch as batch_module
+from app.agent.orchestrator import RunOutcome
 from app.batch import main, parse_ids, passed_question_runs, run_batch
+from app.cli import run_cli as real_run_cli
 
 
 def write_run(runs_root: Path, run_id: str, *, question_id: int | None, exit_code: int | None) -> Path:
@@ -231,6 +235,154 @@ async def test_one_question_raising_never_takes_down_the_rest_of_the_batch(
     assert attempted == [3, 4]
     assert [(row.question_id, row.status) for row in outcomes] == [(3, "error"), (4, "passed")]
     assert "TimeoutError" in outcomes[0].detail and "arXiv" in outcomes[0].detail
+
+
+class HangingHarness:
+    """The failure the deadline exists for: a model call that never comes back."""
+
+    async def run(self, question: str, run_dir: Path, prior_attempts: Sequence[str] = ()) -> RunOutcome:
+        await asyncio.sleep(3600)
+        raise AssertionError("unreachable")  # pragma: no cover
+
+
+def stub_hanging_runner(monkeypatch: pytest.MonkeyPatch, hangs: set[int]) -> list[int]:
+    """Hung questions go through the *real* `run_cli` — real lock, real run dir.
+
+    Stubbing `run_cli` itself would prove nothing about the two facts this is here for:
+    that the cancelled question gives `runs/.active.json` back, and that the run dir it
+    left half-written gets settled. Every other question stays a stub, because two real
+    runs a fraction of a second apart would land on one `utc_stamp` directory.
+    """
+    attempted: list[int] = []
+
+    async def fake_run_cli(question: str, repo_root: Path, run_dir: Path | None = None, **options: Any) -> int:
+        question_id = options["question_id"]
+        attempted.append(question_id)
+        if question_id not in hangs:
+            return 0
+        return await real_run_cli(question, repo_root, run_dir, harness=HangingHarness(), **options)
+
+    monkeypatch.setattr(batch_module, "run_cli", fake_run_cli)
+    return attempted
+
+
+async def test_a_hung_question_is_cancelled_settled_as_infra_timeout_and_the_batch_goes_on(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`app.batch` awaits the pipeline in-process, so nothing else can ever time it out.
+
+    Without the deadline an unattended overnight batch stops dead at the first hung
+    question: it is neither a success nor a failure, so the circuit breaker never sees it.
+    """
+    runs_root = tmp_path / "runs"
+    attempted = stub_hanging_runner(monkeypatch, {3})
+
+    outcomes = await run_batch([3, 4], tmp_path, timeout_seconds=0.25)
+
+    assert attempted == [3, 4]
+    assert [(row.status, row.classification) for row in outcomes] == [("failed", "infra_timeout"), ("passed", None)]
+    assert "0.25s" in outcomes[0].detail
+    # The lock is the batch's throat: a question that kept it would exit-2 every later one.
+    assert not (runs_root / ".active.json").exists()
+    (hung,) = list(runs_root.iterdir())
+    exit_fact = json.loads((hung / "exit.json").read_text(encoding="utf-8"))
+    assert exit_fact == {"exitCode": -1, "endedAt": exit_fact["endedAt"], "classification": "infra_timeout"}
+    meta = json.loads((hung / "meta.json").read_text(encoding="utf-8"))
+    assert (meta["questionId"], meta["exitCode"]) == (3, -1)
+    assert "infra_timeout" in (hung / "FAILED.md").read_text(encoding="utf-8")
+    # Settled but not deliverable: a resumed batch must pick this question up again.
+    assert passed_question_runs(runs_root) == {}
+
+
+async def test_two_consecutive_timeouts_stop_the_batch_like_any_other_outage(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Hanging twice in a row is the environment, not the question; the other 123 would hang too."""
+    attempted = stub_hanging_runner(monkeypatch, {1, 2, 3, 4, 5})
+
+    outcomes = await run_batch([1, 2, 3, 4, 5], tmp_path, timeout_seconds=0.25)
+
+    assert attempted == [1, 2]
+    assert [row.classification for row in outcomes] == ["infra_timeout", "infra_timeout"]
+    stop = next(line for line in capsys.readouterr().out.splitlines() if "熔断" in line)
+    assert "infra_timeout" in stop and "3,4,5" in stop
+
+
+async def test_a_cancellation_that_never_lands_still_releases_the_batch(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`asyncio.wait_for` would wait out the cancellation it just requested — forever, here.
+
+    A pipeline that swallows CancelledError is the same overnight stall by another name, so
+    the wait after the cancel is bounded too and the run says so in its own FAILED.md.
+    """
+    runs_root = tmp_path / "runs"
+    monkeypatch.setattr(batch_module, "CANCEL_GRACE_SECONDS", 0.05)
+
+    async def stubborn_run_cli(question: str, repo_root: Path, run_dir: Path | None = None, **options: Any) -> int:
+        run = runs_root / "20260811-000003"
+        run.mkdir(parents=True)
+        (run / "meta.json").write_text(json.dumps({"questionId": options["question_id"]}), encoding="utf-8")
+        try:
+            await asyncio.sleep(60)
+        except asyncio.CancelledError:
+            await asyncio.sleep(0.2)
+        return 1
+
+    monkeypatch.setattr(batch_module, "run_cli", stubborn_run_cli)
+
+    outcomes = await run_batch([3], tmp_path, timeout_seconds=0.05)
+
+    assert [(row.status, row.classification) for row in outcomes] == [("failed", "infra_timeout")]
+    failed = (runs_root / "20260811-000003" / "FAILED.md").read_text(encoding="utf-8")
+    assert "取消未在 0.05s 内完成" in failed
+    await asyncio.sleep(0.3)  # Let the stubborn task finish so the loop closes with nothing pending.
+
+
+async def test_a_question_that_hangs_before_reserving_a_run_settles_no_stranger(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The batch settles the run its cancelled question left behind — never somebody else's.
+
+    `runs/` is immutable after terminal state, so an earlier attempt at the same question
+    keeps its own verdict, and another question's live run is nobody's business here.
+    """
+    runs_root = tmp_path / "runs"
+    write_run(runs_root, "20260810-000001", question_id=3, exit_code=1)
+    write_run(runs_root, "20260810-000002", question_id=9, exit_code=None)
+    settled = (runs_root / "20260810-000001" / "exit.json").read_text(encoding="utf-8")
+
+    async def hanging_run_cli(question: str, repo_root: Path, run_dir: Path | None = None, **options: Any) -> int:
+        await asyncio.sleep(60)
+        raise AssertionError("unreachable")  # pragma: no cover
+
+    monkeypatch.setattr(batch_module, "run_cli", hanging_run_cli)
+
+    # q3 hung on top of its own settled run; q4 hung without ever reserving one.
+    outcomes = await run_batch([3, 4], tmp_path, timeout_seconds=0.05)
+
+    assert [row.classification for row in outcomes] == ["infra_timeout", "infra_timeout"]
+    assert (runs_root / "20260810-000001" / "exit.json").read_text(encoding="utf-8") == settled
+    assert not (runs_root / "20260810-000002" / "exit.json").exists()
+    assert [run.name for run in sorted(runs_root.iterdir()) if (run / "FAILED.md").exists()] == []
+
+
+class Abort(BaseException):
+    """Shaped like KeyboardInterrupt: an operator or a runtime ending the process, not an outage."""
+
+
+async def test_an_interrupt_ends_the_batch_instead_of_being_filed_as_one_question_failing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`except Exception` never caught these; awaiting the question through a task must not either."""
+
+    async def interrupted_run_cli(question: str, repo_root: Path, run_dir: Path | None = None, **options: Any) -> int:
+        raise Abort
+
+    monkeypatch.setattr(batch_module, "run_cli", interrupted_run_cli)
+
+    with pytest.raises(Abort):
+        await run_batch([3, 4], tmp_path)
 
 
 def stub_classified_runner(

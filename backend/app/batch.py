@@ -4,10 +4,11 @@ Criteria G5 asks for the whole Science-125 set with resumption. That is a loop a
 the existing composition root, not a second pipeline: every question goes through
 `cli.run_cli`, so a batch run and a single run produce byte-identical artifacts.
 
-Three properties make a many-hour production run survivable:
+Four properties make a many-hour production run survivable:
 resumption (a question whose settled run already exited 0 is never paid for twice),
-isolation (one question's outage is recorded and the batch continues), and
-serialization (Bailian rate-limits, so questions run one at a time, in a fixed order).
+isolation (one question's outage is recorded and the batch continues),
+serialization (Bailian rate-limits, so questions run one at a time, in a fixed order),
+and a deadline (a question that hangs is cancelled instead of stalling the night).
 """
 
 from __future__ import annotations
@@ -19,13 +20,14 @@ import re
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
 from app.cli import run_cli
-from app.domain.runs import is_run_id
+from app.domain.runs import is_run_id, render_failed, replace_text
 from app.domain.science125 import find_question
-from app.services.launch import science125_text
+from app.services.launch import RUN_TIMEOUT_SECONDS, science125_text
 
 Status = Literal["passed", "failed", "skipped", "error", "missing", "planned"]
 
@@ -39,6 +41,14 @@ OUTAGE_STOP = 2
 """Two outages in a row is credentials, network, or quota — the other 123 would fail identically."""
 
 OUTAGE_CLASSES = frozenset({"infra_error", "infra_timeout"})
+
+CANCEL_GRACE_SECONDS = 30.0
+"""How long a cancelled question gets to unwind before the batch stops waiting for it.
+
+`launch.RunLauncher` can `kill(2)` its hung child; a batch awaits the pipeline in its own
+process and can only cancel it. A coroutine that swallows the cancellation would hang the
+batch just as badly as the hang it was meant to cure, so the wait is bounded too.
+"""
 
 _RANGE = re.compile(r"(\d+)-(\d+)")
 _SINGLE = re.compile(r"\d+")
@@ -133,6 +143,7 @@ async def run_batch(
     runs_root: Path | None = None,
     dry_run: bool = False,
     memory: bool = True,
+    timeout_seconds: float = RUN_TIMEOUT_SECONDS,
 ) -> list[QuestionOutcome]:
     root = repo_root.resolve()
     runs = runs_root or root / "runs"
@@ -140,7 +151,9 @@ async def run_batch(
     outcomes: list[QuestionOutcome] = []
     cause, streak = "", 0
     for index, question_id in enumerate(question_ids, start=1):
-        outcome = await _run_one(question_id, root, already, runs, dry_run=dry_run, memory=memory)
+        outcome = await _run_one(
+            question_id, root, already, runs, dry_run=dry_run, memory=memory, timeout_seconds=timeout_seconds
+        )
         print(
             f"[batch] {index}/{len(question_ids)} q{outcome.question_id} | {outcome.status} | "
             f"{outcome.seconds:.1f}s{f' | {outcome.detail}' if outcome.detail else ''}",
@@ -166,7 +179,14 @@ async def run_batch(
 
 
 async def _run_one(
-    question_id: int, root: Path, already: dict[int, str], runs_root: Path, *, dry_run: bool, memory: bool
+    question_id: int,
+    root: Path,
+    already: dict[int, str],
+    runs_root: Path,
+    *,
+    dry_run: bool,
+    memory: bool,
+    timeout_seconds: float = RUN_TIMEOUT_SECONDS,
 ) -> QuestionOutcome:
     if question_id in already:
         return QuestionOutcome(question_id, "skipped", 0.0, f"已有终态 passed 的 run {already[question_id]}")
@@ -176,11 +196,30 @@ async def _run_one(
     if dry_run:
         return QuestionOutcome(question_id, "planned", 0.0, question.question[:60])
     started = time.monotonic()
-    try:
-        code = await run_cli(science125_text(question), root, question_id=question_id, memory=memory)
-    except Exception as exc:  # One question's outage must not cost the other 124.
-        detail = f"{type(exc).__name__}: {exc}"
+    # The deadline is `launch.RUN_TIMEOUT_SECONDS` itself, not a second number: a pipeline
+    # that has not settled in 40 minutes is hung whoever started it. `asyncio.wait` rather
+    # than `wait_for`, because the batch must also survive the pathological case where the
+    # cancellation itself does not land — `wait_for` would then wait for it forever.
+    attempt = asyncio.ensure_future(run_cli(science125_text(question), root, question_id=question_id, memory=memory))
+    settled, _ = await asyncio.wait({attempt}, timeout=timeout_seconds)
+    if not settled:
+        attempt.cancel()
+        await asyncio.wait({attempt}, timeout=CANCEL_GRACE_SECONDS)
+        detail = f"单题超过 {timeout_seconds:g}s 未终态，已取消"
+        stuck = (
+            ()
+            if attempt.done()
+            else (f"取消未在 {CANCEL_GRACE_SECONDS:g}s 内完成，该题可能仍在写这个 run 或持有 runs/.active.json",)
+        )
+        _settle_timeout(runs_root, question_id, (detail, *stuck))
+        return QuestionOutcome(question_id, "failed", time.monotonic() - started, detail, "infra_timeout")
+    failure = attempt.exception()
+    if failure is not None:  # One question's outage must not cost the other 124.
+        if not isinstance(failure, Exception):
+            raise failure  # KeyboardInterrupt and friends end the batch, as they always did.
+        detail = f"{type(failure).__name__}: {failure}"
         return QuestionOutcome(question_id, "error", time.monotonic() - started, detail, "infra_error")
+    code = attempt.result()
     elapsed = time.monotonic() - started
     if code == 0:
         return QuestionOutcome(question_id, "passed", elapsed)
@@ -189,6 +228,48 @@ async def _run_one(
     # it settles no run to read a class off, so the environment is named here instead.
     classification = _failure_class(runs_root, question_id) or ("infra_error" if code == 2 else None)
     return QuestionOutcome(question_id, "failed", elapsed, f"app.cli exit {code}", classification)
+
+
+def _settle_timeout(runs_root: Path, question_id: int, failures: Sequence[str]) -> None:
+    """Give the cancelled question the same terminal evidence the HTTP timeout path writes.
+
+    A cancelled `run_cli` unwinds through its own `finally` and releases `runs/.active.json`,
+    but it never reaches `_write_cli_complete`: the run dir is left with a `meta.json` and no
+    verdict. Nobody else will ever come back to it, so the batch — the only surviving witness —
+    settles it here, in the shape `RunLauncher._complete` uses: merge into `exit.json`, mirror
+    into `meta.json`, render `FAILED.md`. Merging matters because the child already wrote facts
+    (`sourceIdentity` above all) that a from-scratch file would silently drop.
+    """
+    run = _unsettled_run(runs_root, question_id)
+    if run is None:  # The question never got as far as reserving a run dir.
+        return
+    finished = _now()
+    exit_fact = _read_mapping(run / "exit.json")
+    exit_fact.update({"exitCode": -1, "endedAt": finished, "classification": "infra_timeout"})
+    replace_text(run / "exit.json", json.dumps(exit_fact, ensure_ascii=False, indent=2) + "\n")
+    meta = _read_mapping(run / "meta.json")
+    meta.update({"finishedAt": finished, "exitCode": -1})
+    replace_text(run / "meta.json", json.dumps(meta, ensure_ascii=False, indent=2) + "\n")
+    if not (run / "FAILED.md").exists():
+        replace_text(run / "FAILED.md", render_failed(failures, "infra_timeout"))
+
+
+def _unsettled_run(runs_root: Path, question_id: int) -> Path | None:
+    """The newest run carrying this question, and only while it has no verdict of its own.
+
+    `run_cli` writes `meta.questionId` before the pipeline starts, which is what makes the
+    interrupted run findable at all. A run that already settled is somebody else's fact and
+    `runs/` is immutable after terminal state, so it is never rewritten from here.
+    """
+    for run in reversed(_run_dirs(runs_root)):
+        if _int(_read_mapping(run / "meta.json").get("questionId")) != question_id:
+            continue
+        return None if _int(_read_mapping(run / "exit.json").get("exitCode")) is not None else run
+    return None
+
+
+def _now() -> str:
+    return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 def _tally(outcomes: Sequence[QuestionOutcome]) -> list[tuple[str, int]]:
