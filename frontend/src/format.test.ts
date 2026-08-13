@@ -1,19 +1,12 @@
 import { describe, expect, it } from "bun:test"
-import {
-  displayNodes,
-  fmtDur,
-  fmtTime,
-  stateLabel,
-  statusLabel,
-  tabForNode,
-} from "./format"
+import { fmtDur, fmtTime, stateLabel, statusLabel, tabForNode } from "./format"
 import type { SpineNode } from "./types"
 
 /**
  * 期望值的语义来源，不从实现输出反推：
  * - 时间/时长：`backend/app/services/runs.py` 的 `_iso()` 发 UTC ISO，
  *   `_round_seconds()` 发整数秒（可为负，因为它是两个 mtime 相减）。
- * - 节点拓扑与工件名：同文件的 `_LEGACY_NODES` / `_PRO_NODES`。
+ * - 节点拓扑与工件名：同文件的 `_NODES`。
  * - 状态字面量：同文件的 `_status()` 与 `_node_states()`。
  */
 
@@ -24,7 +17,6 @@ const node = (over: Partial<SpineNode> & { key: string }): SpineNode => ({
   state: "done",
   at: null,
   elapsedSec: null,
-  rejects: 0,
   ...over,
 })
 
@@ -84,13 +76,12 @@ describe("fmtDur", () => {
 })
 
 describe("标签表", () => {
-  it("覆盖后端 _node_states 能发出的全部四种节点状态", () => {
+  it("覆盖后端 _node_states 能发出的全部三种节点状态", () => {
     // 少一个 key，Spine 就会把 undefined 直接渲染进页面。
     expect(Object.keys(stateLabel).sort()).toEqual([
       "active",
       "done",
       "pending",
-      "rejected",
     ])
     expect(Object.values(stateLabel).every((text) => text.length > 0)).toBe(
       true,
@@ -106,116 +97,6 @@ describe("标签表", () => {
     expect(Object.values(statusLabel).every((text) => text.length > 0)).toBe(
       true,
     )
-  })
-})
-
-describe("displayNodes", () => {
-  it("新 API 的有序数组原样透传，不做二次映射", () => {
-    // 拓扑归 Harness 所有：前端多改一次就是多一处会过期的知识。
-    const nodes = [node({ key: "scientist", mark: "S", label: "Scientist" })]
-    expect(displayNodes(nodes)).toBe(nodes)
-  })
-
-  it("旧 L/H/C/W 映射按固定顺序展开，与输入 key 顺序无关", () => {
-    const result = displayNodes({
-      proposal: "pending",
-      literature: "done",
-      critique: "pending",
-      hypothesis: "active",
-    })
-    expect(result.map((item) => item.key)).toEqual([
-      "literature",
-      "hypothesis",
-      "critique",
-      "proposal",
-    ])
-    expect(result.map((item) => item.mark)).toEqual(["L", "H", "C", "W"])
-    expect(result.map((item) => item.state)).toEqual([
-      "done",
-      "active",
-      "pending",
-      "pending",
-    ])
-  })
-
-  it("映射形态没有时间信息，时间字段一律为空而不是伪造", () => {
-    const [first] = displayNodes({ literature: "done" })
-    expect(first?.at).toBeNull()
-    expect(first?.elapsedSec).toBeNull()
-    expect(first?.rejects).toBe(0)
-  })
-
-  it("含 verify 的 Pro 映射按 S/R/✓ 展开，不被误判成旧 L/H/C/W 拓扑", () => {
-    // verify 同时是新旧两张表的 key，所以「判新旧」只能看旧表独有的 key。
-    // 用「命中任一旧表 key」判，任何含 verify 的 Pro 映射都会翻到旧拓扑：
-    // 顺序退化成插入序、scientist/reviewer 掉进未知节点占位、verify 拿到中文「验收」。
-    const result = displayNodes({
-      verify: "pending",
-      reviewer: "active",
-      scientist: "done",
-    })
-    expect(result.map((item) => item.key)).toEqual([
-      "scientist",
-      "reviewer",
-      "verify",
-    ])
-    expect(result.map((item) => item.mark)).toEqual(["S", "R", "✓"])
-    expect(result.map((item) => item.label)).toEqual([
-      "Scientist",
-      "Reviewer",
-      "Verify",
-    ])
-    expect(result.map((item) => item.state)).toEqual([
-      "done",
-      "active",
-      "pending",
-    ])
-  })
-
-  it("映射形态不自称知道工件名：那是 API 随有序数组下发的知识", () => {
-    // 前端存过 verify → verification.json，而后端 Pro 主名是 verification-report.md；
-    // 旧表里 proposal 存的是 proposal.md，后端主名是 proposal.json。存一份就会过期。
-    expect(
-      displayNodes({ literature: "done", proposal: "pending" }).map(
-        (item) => item.artifact,
-      ),
-    ).toEqual(["—", "—"])
-    expect(
-      displayNodes({ scientist: "done", verify: "pending" }).map(
-        (item) => item.artifact,
-      ),
-    ).toEqual(["—", "—"])
-  })
-
-  it("未知节点排在已知节点之后，并降级成可读占位而不是崩掉", () => {
-    // Harness 加节点时前端不该先挂；显示成 key 本身好过丢掉这一格。
-    const result = displayNodes({ literature: "done", newnode: "active" })
-    expect(result.map((item) => item.key)).toEqual(["literature", "newnode"])
-    const extra = result[1]
-    expect(extra?.mark).toBe("N")
-    expect(extra?.label).toBe("newnode")
-    expect(extra?.artifact).toBe("—")
-    expect(extra?.state).toBe("active")
-  })
-
-  it("空映射产出空列表而不是塞一套默认拓扑", () => {
-    expect(displayNodes({})).toEqual([])
-  })
-
-  it("原型链上的名字走未知节点降级，不会展开成缺字段的空节点", () => {
-    // `known[key]` 在普通对象上查表会命中 Object.prototype 的继承属性。
-    // 占位字段写在展开之前、查表结果覆盖在后，命中函数时展开为空、占位便留住了。
-    for (const [key, mark] of [
-      ["constructor", "C"],
-      ["toString", "T"],
-    ]) {
-      const [only] = displayNodes({ [key]: "done" })
-      expect(only?.key).toBe(key)
-      expect(only?.mark).toBe(mark)
-      expect(only?.label).toBe(key)
-      expect(only?.artifact).toBe("—")
-      expect(only?.state).toBe("done")
-    }
   })
 })
 
@@ -237,14 +118,17 @@ describe("tabForNode", () => {
     expect(tabForNode(node({ key: "verify" }))).toBe("verification")
   })
 
-  it("旧 L/H/C/W 节点仍能映射到对应 tab", () => {
-    expect(tabForNode(node({ key: "literature" }))).toBe("evidence")
-    expect(tabForNode(node({ key: "hypothesis" }))).toBe("hypotheses")
-    expect(tabForNode(node({ key: "critique" }))).toBe("critique")
-    expect(tabForNode(node({ key: "proposal" }))).toBe("proposal")
+  it("未知节点不返回 tab，点击时不跳到任意 tab", () => {
+    // Harness 加节点时前端不该乱跳；退役的 L/H/C/W 也走这一条。
+    expect(tabForNode(node({ key: "newnode" }))).toBeUndefined()
+    expect(tabForNode(node({ key: "hypothesis" }))).toBeUndefined()
+    expect(tabForNode(node({ key: "critique" }))).toBeUndefined()
   })
 
-  it("未知节点不返回 tab，点击时不跳到任意 tab", () => {
-    expect(tabForNode(node({ key: "newnode" }))).toBeUndefined()
+  it("原型链上的名字不算命中查表", () => {
+    // 普通对象查 `["constructor"]` 会命中 Object.prototype 的继承属性，
+    // 把一个函数当 tab 名返回；查表用 Map 就没有这条通路。
+    expect(tabForNode(node({ key: "constructor" }))).toBeUndefined()
+    expect(tabForNode(node({ key: "toString" }))).toBeUndefined()
   })
 })

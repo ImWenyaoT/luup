@@ -1,22 +1,22 @@
 import { expect, test } from "@playwright/test"
 
 /**
- * fixture 是仓里已提交的 `runs/`：20 个 run 里有 10 个带 `meta.questionId`，覆盖
- * 第 1 / 54 / 61 / 125 四题（第 61 题一题就跑了 6 次）；54 / 61 / 125 的最新终态是
- * passed，第 1 题只跑过一次且以 `contract_violation` 失败（20260813-062746，也是
- * 唯一带 `sourceIdentity` 的 run）。其余 10 个是自由输入的 run，没有题号，只能进
- * 「不计入覆盖率」那一栏。整套用例零 LLM 调用、零 POST。
+ * fixture 是仓里已提交的 `runs/`：10 个 run 里有 4 个带 `meta.questionId`，覆盖
+ * 第 1 / 61 两题（第 61 题一题就跑了 3 次）；第 61 题的最新终态是 passed
+ * （20260810-052412），第 1 题只跑过一次且以 `contract_violation` 失败
+ * （20260813-062746，也是唯一带 `sourceIdentity` 的 run）。其余 6 个是自由输入的
+ * run，没有题号，只能进「不计入覆盖率」那一栏。整套用例零 LLM 调用、零 POST。
  */
-const ATTEMPTED = 4
-const PASSED = 3
+const ATTEMPTED = 2
+const PASSED = 1
 const FAILED = 1
-const NOT_RUN = 121
+const NOT_RUN = 123
 /**
- * 第 1 题跑过但一次都没通过，`app.batch` 不会跳过它，所以欠账 = 未跑 121 题 + 第 1 题。
- * 125 题去掉 54 / 61 / 125 之后压出来的区间写法，`app.batch` 的 parse_ids 认这一串。
+ * 第 1 题跑过但一次都没通过，`app.batch` 不会跳过它，所以欠账 = 未跑 123 题 + 第 1 题。
+ * 125 题去掉第 61 题之后压出来的区间写法，`app.batch` 的 parse_ids 认这一串。
  */
 const OWED = NOT_RUN + FAILED
-const RESUME_IDS = "1-53,55-60,62-124"
+const RESUME_IDS = "1-60,62-125"
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/batch")
@@ -37,7 +37,7 @@ test("覆盖进度按题号去重，未跑题数是题库减去已跑", async ({
   await expect(page.getByTestId("batch-attempted")).toHaveText(
     String(ATTEMPTED),
   )
-  // 10 个自由输入的 run 一个都不许被算进已跑题数。
+  // 6 个自由输入的 run 一个都不许被算进已跑题数。
   await expect(page.getByText("次运行没有题号（自由输入）")).toBeVisible()
   await expect(page.getByTestId("batch-progress")).toHaveAttribute(
     "aria-label",
@@ -72,7 +72,7 @@ test("续跑命令复制的是 batch 的欠账集合，按钮自报它包含什�
   )
 })
 
-test("已提交语料里三题通过、第 1 题以 contract_violation 失败", async ({
+test("已提交语料里第 61 题通过、第 1 题以 contract_violation 失败", async ({
   page,
 }) => {
   const bars = page.getByTestId("batch-distribution").getByTestId("batch-bar")
@@ -102,7 +102,7 @@ test("cohort 区块把记录了 commit 的那题与未记录的分开，并对�
     "1 题",
   )
   await expect(cohorts.filter({ hasText: "终态未记录 commit" })).toContainText(
-    "3 题",
+    "1 题",
   )
   // 语料里现在真的混了两个 cohort，这份进度不能当成一个系统的数字读。
   await expect(page.getByTestId("batch-cohort-warning")).toContainText(

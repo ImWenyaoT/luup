@@ -73,7 +73,7 @@
 
 | 层 | 指标 | 定义/数据源 | 翻盘什么决定 |
 |---|------|------------|-------------|
-| Tier0 | 现状保留 | B1–B4 验收器、eval 脚本（eval:smoke / eval:full）、verdicts | 单 run 通过性 |
+| Tier0 | 现状保留 | B1–B4 验收器、eval 脚本（eval:smoke / eval:full）、`review.json`（旧 `verdicts/` 已随 TS 栈退役） | 单 run 通过性 |
 | Tier1（零 LLM 派生） | M4 交付率 | deliverable runs / 总 runs（runOutcome），带二项标准误 √(p(1-p)/n)；环境性失败单列一档 | 战役节奏 |
 | | M5 Pass^2 | 同题按时间序相邻两次 run 均 deliverable 的比例 | 可靠性口径（替代单次快照） |
 | | M6 成本会计 | usage.jsonl 聚合：token/题、¥/题、按节点分解 | 重跑预算、模型分档 |
@@ -83,7 +83,7 @@
 | | ~~M10 judge 校准~~ | **2026-08-11 退役**，见下 | —— |
 | Tier3 | M11 配对版本比较 | 同题多版本 McNemar 精确二项：`firstVsLatest`（首末，非受控）+ `memoryArms`（按 `meta.memoryArm` 两臂配对，受控） | 改动是否真的更好 |
 
-- **M9/M10 退役裁决（2026-08-11）**：两者随 TypeScript 栈退役，不重建。理由是事实而非偏好——生产者（score/calibration 的写入侧）随栈删除，且仓库里唯一一份校准报告 `runs/20260808-134046/calibration.md` 的变异体检出率为 0/4（逆序 1），即使重建生产者，M9 也一天都没有取得过排序授权。处置：`evaluation.py` 不再读 `score.json` / `calibration.md`，版本择优链变为 **gate → refs 数 → token 成本 → run id**（全确定性）；报告输出结构里 M9 相关字段直接消失，不留空壳。旧 `runs/*/score.json` 与 `calibration.md` 降为历史工件，只作为"曾经试过、没通过校准"的证据保留，任何报告不得引用其分数。
+- **M9/M10 退役裁决（2026-08-11）**：两者随 TypeScript 栈退役，不重建。理由是事实而非偏好——生产者（score/calibration 的写入侧）随栈删除，且仓库里唯一一份校准报告（`runs/20260808-134046/calibration.md`）的变异体检出率为 0/4（逆序 1），即使重建生产者，M9 也一天都没有取得过排序授权。该 run 已随 TS 栈语料一并从 HEAD 删除，这份数字只存于 git 历史（`git show`），任何报告不得再把它当现行证据引用。处置：`evaluation.py` 不再读 `score.json` / `calibration.md`，版本择优链变为 **gate → refs 数 → token 成本 → run id**（全确定性）；报告输出结构里 M9 相关字段直接消失，不留空壳。残留的 `runs/*/score.json` 是无人读取的历史字节，任何报告不得引用其分数。
 - **同族 judge 诚实条款**（退役后仍为判据）：judge 也是 Qwen（D1 锁死），无法消解自评偏置。这正是 M9 退役而不是降权重建的理由：一个自评的分数，校准不过就没有资格排序，也没有资格进报告的"成绩"栏。
 - **自进化闭环**（全自动）：run → 确定性交付 gate → 题页 memory（**只回传事实不回传分数**：胜出假设、被拒原因、检索有效性）→ 重跑消费 → 版本择优纯函数（gate → refs 数 → token 成本 → run id，字典序）。
 - **ablation 白捡项**：memory/ 可删除性 = 现成的记忆贡献量化开关（技术报告实验素材，抽样跑）。

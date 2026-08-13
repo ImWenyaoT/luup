@@ -1,6 +1,6 @@
-/** 后端拓扑由 Harness 决定；旧 L/H/C/W 仅是历史 run 的一种形状。 */
+/** 拓扑由 Harness 决定：API 发按顺序排好的节点数组，前端不存第二份节点表。 */
 export type NodeKey = string
-export type NodeState = "done" | "active" | "rejected" | "pending"
+export type NodeState = "done" | "active" | "pending"
 export type RunStatus = "working" | "passed" | "failed"
 
 export type SpineNode = {
@@ -11,24 +11,10 @@ export type SpineNode = {
   state: NodeState
   at: string | null
   elapsedSec: number | null
-  rejects: number
   /** API 可选提供；前端不从节点名猜 tab。 */
   tabId?: string
 }
 
-/** 新 API 返回按 Harness 顺序的数组；旧 API 是 key → state 映射。 */
-export type RunNodes = SpineNode[] | Record<string, NodeState>
-
-export type VerdictCheck = { criterion: string; reason: string; pass?: boolean }
-export type Verdict = {
-  file: string
-  node: string
-  round: number
-  verdict: "pass" | "reject"
-  checks: VerdictCheck[]
-  rework: string | null
-  rejectedRaw: string | null
-}
 export type VerifyCheck = {
   id: string
   group: string
@@ -73,7 +59,7 @@ export type RunSummary = {
   /** 终态自报的失败分类（`FailureClass`）；通过的 run 与未分类的旧 run 都是 null。 */
   classification: string | null
   sourceIdentity: SourceIdentity | null
-  nodes: RunNodes
+  nodes: SpineNode[]
 }
 
 export type RunStatusView = {
@@ -81,7 +67,6 @@ export type RunStatusView = {
   status: RunStatus
   updatedAt: string
   nodes: SpineNode[]
-  verdicts: Verdict[]
 }
 export type RunDetail = RunStatusView & {
   questionText: string
@@ -91,7 +76,6 @@ export type RunDetail = RunStatusView & {
   finishedAt: string | null
   durationSec: number | null
   proposal: Proposal | null
-  proposalRejected: string | null
   verify: VerifyReport | null
   papers: Paper[]
   failedText: string | null

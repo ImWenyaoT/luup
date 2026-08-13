@@ -12,7 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-import { displayNodes, fmtDur, fmtTime, statusLabel } from "@/format"
+import { fmtDur, fmtTime, statusLabel } from "@/format"
 import { cn } from "@/lib/utils"
 import type { RunStatus, RunSummary } from "@/types"
 
@@ -51,7 +51,7 @@ export function RunsTable({ runs }: { runs: RunSummary[] }) {
   const arrow = (key: keyof RunSummary) =>
     sort === key ? (desc ? "↓" : "↑") : ""
   // 表头的拓扑列名跟着当前 run 的节点走，加节点不用改前端。
-  const topology = displayNodes(shown[0]?.nodes ?? runs[0].nodes)
+  const topology = (shown[0]?.nodes ?? runs[0].nodes)
     .map((node) => node.mark)
     .join(" ")
 

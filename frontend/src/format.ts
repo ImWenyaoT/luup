@@ -1,4 +1,4 @@
-import type { NodeState, RunNodes, RunStatus, SpineNode } from "./types"
+import type { NodeState, RunStatus, SpineNode } from "./types"
 
 const p2 = (n: number) => String(n).padStart(2, "0")
 export const fmtTime = (value: string | null) => {
@@ -23,89 +23,26 @@ export const statusLabel: Record<RunStatus, string> = {
 export const stateLabel: Record<NodeState, string> = {
   done: "已产出",
   active: "进行中",
-  rejected: "未产出",
   pending: "待执行",
 }
-/**
- * 映射形态下前端还需要自己知道的：顺序、mark、label、tabId。
- * 工件名不在其中——那是 Harness 的知识，由 API 随有序数组下发；前端存一份只会过期
- * （历史上旧表存过 proposal.md 而后端主名是 proposal.json，
- * 新表存过 verification.json 而后端主名是 verification-report.md）。
- */
-type NodeIdentity = Omit<
-  SpineNode,
-  "state" | "at" | "elapsedSec" | "rejects" | "artifact"
->
-
-/** 旧拓扑的顺序；同时是「判新旧」的判据——只有这四个是旧表独有的。 */
-const LEGACY_ORDER = ["literature", "hypothesis", "critique", "proposal"]
-const PRO_ORDER = ["scientist", "reviewer", "verify"]
-
-const LEGACY_NODES: Record<string, NodeIdentity> = {
-  literature: {
-    key: "literature",
-    mark: "L",
-    label: "文献",
-    tabId: "evidence",
-  },
-  hypothesis: {
-    key: "hypothesis",
-    mark: "H",
-    label: "假设",
-    tabId: "hypotheses",
-  },
-  critique: { key: "critique", mark: "C", label: "批判", tabId: "critique" },
-  proposal: { key: "proposal", mark: "W", label: "计划", tabId: "proposal" },
-  verify: { key: "verify", mark: "✓", label: "验收", tabId: "verification" },
-}
-
-const PRO_NODES: Record<string, NodeIdentity> = {
-  scientist: {
-    key: "scientist",
-    mark: "S",
-    label: "Scientist",
-    tabId: "evidence",
-  },
-  reviewer: { key: "reviewer", mark: "R", label: "Reviewer", tabId: "review" },
-  verify: { key: "verify", mark: "✓", label: "Verify", tabId: "verification" },
-}
 
 /**
- * 兼容边界只在这里：新 run 直接渲染 API 传来的有序数组；旧映射才回退 L/H/C/W。
- * 因此新 Harness 加节点时不需要先改前端类型或列表列名。
- *
- * 判新旧只能看 LEGACY_ORDER 里那四个旧表独有的 key：`verify` 两张表都有，
- * 拿「命中任一旧表 key」去判，任何含 verify 的 Pro 映射都会被翻成旧拓扑。
+ * 节点 key → 工件阅读入口。这是前端对拓扑仅有的一份知识，且只是「点哪一格看哪一页」；
+ * 顺序、mark、label、工件名全部随 API 的有序数组下发——前端各存一份只会过期
+ * （历史上旧表存过 proposal.md 而后端主名是 proposal.json）。
  */
-export function displayNodes(nodes: RunNodes): SpineNode[] {
-  if (Array.isArray(nodes)) return nodes
-  const legacy = Object.keys(nodes).some((key) => LEGACY_ORDER.includes(key))
-  const known = legacy ? LEGACY_NODES : PRO_NODES
-  const order = legacy ? LEGACY_ORDER : PRO_ORDER
-  const keys = [
-    ...order.filter((key) => key in nodes),
-    ...Object.keys(nodes).filter((key) => !order.includes(key)),
-  ]
-  return keys.map((key) => {
-    // 查表可能落空（Harness 新增的节点），所以按 Partial 读。占位字段写在展开之前
-    // 而不是之后，落空时降级形态就自动留住，不需要再写一遍 fallback 对象。
-    const identity: Partial<NodeIdentity> = known[key] ?? {}
-    return {
-      key,
-      mark: key.slice(0, 1).toUpperCase(),
-      label: key,
-      artifact: "—",
-      ...identity,
-      state: nodes[key],
-      at: null,
-      elapsedSec: null,
-      rejects: 0,
-    }
-  })
-}
+const NODE_TABS = new Map([
+  ["scientist", "evidence"],
+  ["reviewer", "review"],
+  ["verify", "verification"],
+])
 
-/** Scientist / Reviewer / Verify 有稳定的工件阅读入口，旧节点仅作兼容映射。 */
+/**
+ * API 显式给的 tabId 优先；否则按 key 查表，未知节点不给 tab。
+ * 查表用 Map 而不是普通对象：`{}["constructor"]` 会命中 Object.prototype 的继承属性，
+ * 把一个函数当成 tab 名返回出去。
+ */
 export function tabForNode(node: SpineNode): string | undefined {
   if (node.tabId) return node.tabId
-  return PRO_NODES[node.key]?.tabId ?? LEGACY_NODES[node.key]?.tabId
+  return NODE_TABS.get(node.key)
 }

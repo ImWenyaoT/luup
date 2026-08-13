@@ -72,7 +72,7 @@ def test_parse_ids_rejects_a_spec_it_cannot_read_exactly(spec: str) -> None:
 
 
 def write_legacy_run(runs_root: Path, run_id: str, *, question_id: int, all_pass: bool = True) -> Path:
-    """A committed q54/q61/q125-shaped run: meta.questionId, ALL PASS, and no exit.json."""
+    """A run shaped like the committed q61 ones: meta.questionId, ALL PASS, and no exit.json."""
     run = runs_root / run_id
     run.mkdir(parents=True)
     (run / "meta.json").write_text(json.dumps({"questionId": question_id}), encoding="utf-8")
@@ -99,17 +99,17 @@ def test_a_missing_runs_root_simply_has_no_completed_questions(tmp_path: Path) -
 
 
 def test_a_legacy_all_pass_run_without_exit_json_still_counts_as_completed(tmp_path: Path) -> None:
-    """The committed q54/q61/q125 runs predate exit.json; a 125-question batch must not re-pay for them."""
+    """已提交的 q61 run 早于 exit.json；跑 125 题的批次不能为它们再付一次钱。"""
     runs_root = tmp_path / "runs"
-    write_legacy_run(runs_root, "20260808-065103", question_id=54)
-    write_legacy_run(runs_root, "20260808-062829", question_id=61)
-    write_legacy_run(runs_root, "20260808-071315", question_id=125)
-    write_legacy_run(runs_root, "20260808-093646", question_id=7, all_pass=False)
+    write_legacy_run(runs_root, "20260810-000011", question_id=54)
+    write_legacy_run(runs_root, "20260810-000012", question_id=61)
+    write_legacy_run(runs_root, "20260810-000013", question_id=125)
+    write_legacy_run(runs_root, "20260810-000014", question_id=7, all_pass=False)
 
     assert passed_question_runs(runs_root) == {
-        54: "20260808-065103",
-        61: "20260808-062829",
-        125: "20260808-071315",
+        54: "20260810-000011",
+        61: "20260810-000012",
+        125: "20260810-000013",
     }
 
 
@@ -134,14 +134,14 @@ def test_a_settled_failure_is_never_rescued_by_a_stale_all_pass_report(tmp_path:
 async def test_a_legacy_completed_question_is_skipped_by_the_batch(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    write_legacy_run(tmp_path / "runs", "20260808-062829", question_id=61)
+    write_legacy_run(tmp_path / "runs", "20260810-000012", question_id=61)
     calls = stub_runner(monkeypatch)
 
     outcomes = await run_batch([61], tmp_path)
 
     assert calls == []
     assert outcomes[0].status == "skipped"
-    assert "20260808-062829" in outcomes[0].detail
+    assert "20260810-000012" in outcomes[0].detail
 
 
 async def test_a_question_with_a_passed_run_is_skipped_and_a_failed_one_is_rerun(

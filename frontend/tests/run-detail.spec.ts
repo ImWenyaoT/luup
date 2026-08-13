@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test"
-import { PASSED_RUN_ID, PASSED_RUN_PAPER_TITLE } from "./config"
+import { FAILED_RUN_ID, PASSED_RUN_ID, PASSED_RUN_PAPER_TITLE } from "./config"
 
 test.beforeEach(async ({ page }) => {
   await page.goto(`/runs/${PASSED_RUN_ID}`)
@@ -75,9 +75,22 @@ test("点 spine 节点把 tab 切到对应工件", async ({ page }) => {
 })
 
 test("没有工件的节点其 tab 是禁用的", async ({ page }) => {
-  // 本 run 没跑旧 L/H/C/W 拓扑，hypotheses / critique 应灰显而不是给空页面。
-  await expect(page.getByRole("tab", { name: "hypotheses" })).toBeDisabled()
-  await expect(page.getByRole("tab", { name: "critique" })).toBeDisabled()
+  // 半途死掉的 run 只落了 FAILED.md 与 memory/：这两个 tab 可用，其余灰显而不是空页面。
+  await page.goto(`/runs/${FAILED_RUN_ID}`)
+  await expect(page.getByTestId("run-detail")).toBeVisible()
+
+  await expect(page.getByRole("tab", { name: "FAILED" })).toBeEnabled()
+  await expect(page.getByRole("tab", { name: /^papers/ })).toBeEnabled()
+  await expect(page.getByRole("tab", { name: "evidence" })).toBeDisabled()
+  await expect(page.getByRole("tab", { name: "proposal" })).toBeDisabled()
+  await expect(page.getByRole("tab", { name: "review" })).toBeDisabled()
+  await expect(page.getByRole("tab", { name: "verification" })).toBeDisabled()
+
+  // 完整的 run 反过来：四个 tab 全部可用。
+  await page.goto(`/runs/${PASSED_RUN_ID}`)
+  await expect(page.getByRole("tab", { name: "evidence" })).toBeEnabled()
+  await expect(page.getByRole("tab", { name: "review" })).toBeEnabled()
+  await expect(page.getByRole("tab", { name: "verification" })).toBeEnabled()
   await expect(page.getByRole("tab", { name: /^papers/ })).toBeEnabled()
 })
 

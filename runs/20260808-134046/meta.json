@@ -1,7 +1,0 @@
-{
-  "questionId": 61,
-  "question": "来源：《Science》125 前沿科学问题（fixtures/science125.json）第 61 题，Astronomy。\n\n问题：How are pulsars formed?\n\n任务：围绕该问题识别当前研究的具体知识缺口，生成可验证的科学假设，并给出完整研究计划（10 标准字段）。",
-  "startedAt": "2026-08-08T13:40:46.350Z",
-  "finishedAt": "2026-08-08T13:59:41.266Z",
-  "exitCode": 0
-}
