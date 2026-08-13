@@ -51,7 +51,7 @@ question → Scientist → verify → Reviewer → 最多一次返修 → final 
 - Literature 是否值得成为独立 Agent：比较“Scientist 自搜”与“Researcher 移交证据包”；
 - 跨 run memory 是否提高交付率或证据质量；
 - Reviewer 的收益：必须以独立检索、反例或工具验证带来的缺陷检出衡量；
-- LLM judge：校准不合格时只作诊断，不参与晋级。
+- ~~LLM judge：校准不合格时只作诊断，不参与晋级。~~ **实验已结束，结论是不做**：M9/M10 于 2026-08-11 退役且不重建（裁决见 [criteria.md](criteria.md) H 节）。现状是 A1/A2 由 **schema 必填 + 维护者人工终审**核验；后果是**方案的实质性质量（论证是否空泛）不再有任何自动化覆盖，只有引用真实性 B1–B4 仍被机器逐条核验**。
 
 ### 删除或合并候选
 

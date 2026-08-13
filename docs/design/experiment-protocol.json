@@ -108,6 +108,12 @@
     "reported_anyway": "evaluation.py 仍会输出 p 与 significant 字段（既有实现，不改），但本轮报告与 PPT 不得引用这两个字段。它们留在 JSON 里是为了将来样本足够时可以直接复用同一条链路。",
     "excluded_pairs": "ablationEffective=false 的 off run、缺题号的自由问题 run、只跑了一臂的题，都不进 2×2 表，单列计数。"
   },
+  "declarations": {
+    "note": "三条读数口径，与 phase_b_subset 同批在 Phase A 开跑前冻结。看到结果之后再补写的声明不成其为预注册，所以它们必须在这里、在任何 run 之前。",
+    "pass_squared": "Pass^2 口径：passSquared 的「两次」是**同题时间相邻的两条既有 run**（evaluation.py 的 `_by_question` 按 run id 即 UTC 时间戳排序后取相邻对），属**机会样本**——两条 run 之间可能隔着 harness 改动、题库无关的时间漂移与不同的记忆状态。它**不是**设计的 k=2 独立重复采样，本轮也不做重复采样（见 statistics.not_doing）。报告与 PPT 引用 M5 时必须带上这句口径。依据：ai-agent-book chapter6 明文要求评估报告写清 k 次尝试的口径——是同一任务的 k 次独立采样，还是生产流水线上连续 k 个任务。",
+    "verifier": "验证器口径：B1/B3/B4 由 `verify_offline_references` 纯离线判定，**B4 的作者真值取自本 run 落盘的论文卡片**（`memory/papers/`，即 agent 自己检索时存下的那份），不是验收时向 arXiv 实时反查——卡片错则 B4 一起错，这条通路不独立于 agent。**B2 是全部检查里唯一走网络的独立通路**（`ArxivClient.get_many` 逐条 resolve id 后比标题），因此引用真实性的独立证据面等于 B2 一条；B2 因 arXiv 不可达而失败时记 `infraError=true`，属环境性失败不属造假。`TITLE_OVERLAP_THRESHOLD=0.8`（`app/domain/references.py`）是**未经校准的自由参数**：它既没有标注语料也没有 ROC，其假阴/假阳率未知，B2 通过率的精度上界只能由后续人工抽检确定。在抽检出数之前，报告不得把 B2 通过率当作引用真实性的精确测量，只能当作下界筛子。",
+    "failure_classes": "失败分类口径：**7 类 / 3 桶**，权威定义是 `backend/app/domain/runs.py` 的 `FailureClass`，3 桶归属（quality / infrastructure / unclassified）同样以该文件与 `evaluation.py` 的 `INFRASTRUCTURE_CLASSES` 为准，`agent_budget_exhausted` 属 quality 不属 infrastructure。7 类都有生成路径，但路径不同，报告须一并说明：`orchestrator.py` 的 `_classify` 只从异常映射出 4 类（reviewer_no_new_evidence / contract_violation / agent_budget_exhausted / infra_error），`verifier_refs` 与 `revision_no_change` 由 Harness 主流程直接判定，而 **`infra_timeout` 只由 `app/services/launch.py` 的 `RunLauncher._wait` 子进程超时路径写出**——那是 HTTP 触发单 run 的路径，Phase A/B 的 `python -m app.batch` 走 `run_cli` 不经过它。因此本轮批跑里 `infra_timeout` 计数**预期为 0，这是路径事实而不是数据缺失**，不得读成「没有超时发生」。"
+  },
   "interpretation": "这是对已记录架构取舍的证据，不是普适优越性主张。结论的形状只能是「在这一条 harness commit、这一个题库、这一条串行顺序下，跨 run 记忆让交付率朝某个方向动了多少」，不能读成「记忆机制优于无记忆」或反过来。Do not claim superiority from one successful trace, one direction, or an unpriced token count.",
   "provenance": {
     "method_source": "ai-agent-book chapter8 / chapter10",

@@ -11,8 +11,8 @@
 
 | # | 字段 | 核验方式 |
 |---|------|---------|
-| A1 | Problem Statement（明确领域具体局限） | schema 必填 + judge |
-| A2 | Rationale（推导链条，非空泛） | schema 必填 + judge |
+| A1 | Problem Statement（明确领域具体局限） | schema 必填 + 维护者人工终审 |
+| A2 | Rationale（推导链条，非空泛） | schema 必填 + 维护者人工终审 |
 | A3 | Technical Details(验证所需具体技术栈) | schema 必填 |
 | A4 | Datasets（真实合规数据集，含 Source/Target 两项） | schema 必填 |
 | A5 | Paper Title | schema 必填 |
@@ -21,6 +21,8 @@
 | A8 | Experiments（含 Baselines 与 Metrics） | schema 必填，两子项均非空 |
 | A9 | Results（公式推导或实际执行的可行性论证） | schema 必填 |
 | A10 | References（真实文献列表） | 见 B |
+
+**A1/A2 的自动化覆盖缺口（M9/M10 退役的后果，必须写在这里）**：judge 退役后，A1/A2 只剩「字段非空且符合 schema」这一条机器检查，**方案的实质性质量——问题陈述是否真的指向一个具体局限、推导链条是否空泛——不再有任何自动化覆盖**，只由维护者人工终审兜。全流程唯一仍被机器逐条核验的实质属性是**引用真实性**（B1–B4）。所以本项目可自动验证的成绩边界是「引用不造假 + 字段齐全」，不是「科学质量达标」；技术报告与 PPT 引用 A1/A2 时必须照此表述，不得把 schema 通过率说成质量通过率。
 
 ## B. 引用真实性（严禁虚构 —— 一票否决）
 
@@ -83,8 +85,10 @@
 | | ~~M10 judge 校准~~ | **2026-08-11 退役**，见下 | —— |
 | Tier3 | M11 配对版本比较 | 同题多版本 McNemar 精确二项：`firstVsLatest`（首末，非受控）+ `memoryArms`（按 `meta.memoryArm` 两臂配对，受控） | 改动是否真的更好 |
 
-- **失败分类口径（7 类 / 3 桶）**：权威定义是 `backend/app/domain/runs.py` 的 `FailureClass`，**7 类**——`reviewer_no_new_evidence`、`verifier_refs`、`revision_no_change`、`contract_violation`、`agent_budget_exhausted`、`infra_timeout`、`infra_error`。`evaluation.py` 把它们分**3 桶**报：quality（前五类）、infrastructure（后两类）、unclassified（终态没写分类的历史 run）。`agent_budget_exhausted` 属 quality 不属 infrastructure，见 `runs.py` 的裁决说明。任何文档、报告或 PPT 引用失败分类时以此为准，不得另立数目。
-- **M9/M10 退役裁决（2026-08-11）**：两者随 TypeScript 栈退役，不重建。理由是事实而非偏好——生产者（score/calibration 的写入侧）随栈删除，且仓库里唯一一份校准报告（`runs/20260808-134046/calibration.md`）的变异体检出率为 0/4（逆序 1），即使重建生产者，M9 也一天都没有取得过排序授权。该 run 已随 TS 栈语料一并从 HEAD 删除，这份数字只存于 git 历史（`git show`），任何报告不得再把它当现行证据引用。处置：`evaluation.py` 不再读 `score.json` / `calibration.md`，版本择优链变为 **gate → refs 数 → token 成本 → run id**（全确定性）；报告输出结构里 M9 相关字段直接消失，不留空壳。残留的 `runs/*/score.json` 是无人读取的历史字节，任何报告不得引用其分数。
+- **失败分类口径（7 类 / 3 桶）**：权威定义是 `backend/app/domain/runs.py` 的 `FailureClass`，**7 类**——`reviewer_no_new_evidence`、`verifier_refs`、`revision_no_change`、`contract_violation`、`agent_budget_exhausted`、`infra_timeout`、`infra_error`。`evaluation.py` 把它们分**3 桶**报：quality（前五类）、infrastructure（后两类）、unclassified（终态没写分类的历史 run）。`agent_budget_exhausted` 属 quality 不属 infrastructure，见 `runs.py` 的裁决说明。任何文档、报告或 PPT 引用失败分类时以此为准，不得另立数目。7 类各自的**产生路径不同**，报告须一并说明：`orchestrator.py` 的 `_classify` 只从异常映射出 4 类（`reviewer_no_new_evidence` / `contract_violation` / `agent_budget_exhausted` / `infra_error`），`verifier_refs` 与 `revision_no_change` 由 Harness 主流程直接判定，而 **`infra_timeout` 只由 `app/services/launch.py` 的 `RunLauncher._wait` 子进程超时路径写出**——那条路径属 HTTP 触发的单 run，`python -m app.batch` 走 `run_cli` 不经过它。因此批跑 cohort 里 `infra_timeout` 计数为 0 是**路径事实而非数据缺失**，不得读成「没有超时发生」。
+- **终态判定的单一事实源**：一个 run 是否通过验收，读 `verification.json` 的布尔 `ok`（`services/runs.py` 的 `_verified`、`batch.py` 的 `_is_deliverable` 同源）。`verification-report.md` 里那行 `结果: ALL PASS` 是**渲染物**，只对 2026-08-10 之前那批没写 `verification.json` 的已提交 run 作兜底；两者矛盾时以 JSON 为准。理由见 `loop-upgrade.md`：把 markdown 当结构化状态载体是本项目自列的「最贵的错误」，它让报告模板的一次改动就能翻转一个 run 的成败——书 ch6 所说「评分器 bug 把正确答案判为失败」的经典形态。
+- **M9/M10 退役裁决（2026-08-11）**：两者随 TypeScript 栈退役，不重建。理由是事实而非偏好——生产者（score/calibration 的写入侧）随栈删除，且仓库里唯一一份校准报告（`runs/20260808-134046/calibration.md`）的变异体检出率为 0/4（逆序 1），即使重建生产者，M9 也一天都没有取得过排序授权。该 run 已随 TS 栈语料一并从 HEAD 删除，这份数字只存于 git 历史（`git show`），任何报告不得再把它当现行证据引用。处置：`evaluation.py` 不再读 `score.json` / `calibration.md`，版本择优链变为 **gate → refs 数 → token 成本 → run id**（全确定性）；报告输出结构里 M9 相关字段直接消失，不留空壳。残留的 `runs/*/score.json` 是无人读取的历史字节，任何报告不得引用其分数。**点名**：HEAD 里仅存的一份是 `runs/20260810-052412/score.json`，其中的 `rubricVersion` / `judgeModel` / 分数字段全部是退役前的历史字节。终态 run 不可变，所以这些字节**保持原样不清理**；但它们是**不可引用的**——没有任何代码读它，没有任何结论建立在它上面，报告、PPT 与技术方案一律不得引用。
+- **A1/A2 的自动化覆盖缺口**：见 A 节表下的加粗段。M9/M10 退役后，方案实质性质量不再有自动化覆盖，只有引用真实性（B1–B4）仍被机器逐条核验。这句话是判据的一部分，技术报告要原样引用。
 - **同族 judge 诚实条款**（退役后仍为判据）：judge 也是 Qwen（D1 锁死），无法消解自评偏置。这正是 M9 退役而不是降权重建的理由：一个自评的分数，校准不过就没有资格排序，也没有资格进报告的"成绩"栏。
 - **自进化闭环**（全自动）：run → 确定性交付 gate → 题页 memory（**只回传事实不回传分数**：胜出假设、被拒原因、检索有效性）→ 重跑消费 → 版本择优纯函数（gate → refs 数 → token 成本 → run id，字典序）。
 - **ablation 白捡项**：memory/ 可删除性 = 现成的记忆贡献量化开关（技术报告实验素材，抽样跑）。抽哪 30 题、按什么规则抽、允许下什么结论，由**开跑前**落盘的预注册协议 `experiment-protocol.json` 定死；该协议声明本轮是 bounded comparison，只报方向、cell 计数与效应量，不做显著性主张。
@@ -92,4 +96,4 @@
 
 ## 终审流程
 
-维护者逐项核对 A–E：机器可验项跑脚本，judge 项亲自读产物。任何一项不过 → 定位责任层 → 打回对应实现 → 重跑。全过后才允许宣布 MVP 达成。
+维护者逐项核对 A–E：机器可验项跑脚本，A1/A2 这类无自动化覆盖的实质性判据亲自读产物终审。任何一项不过 → 定位责任层 → 打回对应实现 → 重跑。全过后才允许宣布 MVP 达成。

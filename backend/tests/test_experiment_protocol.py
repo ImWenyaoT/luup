@@ -118,6 +118,23 @@ def test_the_protocol_refuses_significance_claims_up_front(protocol: dict[str, A
     assert "0.0625" in statistics["reason"]
 
 
+def test_the_reading_declarations_are_registered_before_any_result_exists(protocol: dict[str, Any]) -> None:
+    """三条口径声明与子集同批冻结；事后补写的声明不成其为预注册，所以少一条就红。
+
+    钉的是它们**在**且各自说到了那句要害话，不是逐字比对——措辞可以改，口径不能消失。
+    """
+    declarations = protocol["declarations"]
+
+    assert {"pass_squared", "verifier", "failure_classes"} <= set(declarations)
+    assert "机会样本" in declarations["pass_squared"]
+    assert "k=2" in declarations["pass_squared"]
+    assert "TITLE_OVERLAP_THRESHOLD=0.8" in declarations["verifier"]
+    assert "未经校准的自由参数" in declarations["verifier"]
+    assert "B2" in declarations["verifier"]
+    assert "infra_timeout" in declarations["failure_classes"]
+    assert "domain/runs.py" in declarations["failure_classes"]
+
+
 def test_the_metrics_keep_mechanism_and_outcome_apart(protocol: dict[str, Any]) -> None:
     mechanism, outcome = protocol["metrics"]["mechanism"], protocol["metrics"]["outcome"]
 

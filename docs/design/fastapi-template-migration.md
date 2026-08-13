@@ -114,7 +114,7 @@ GET  /api/runs/{runId} -> working | passed | failed + 可用工件
 - 工件写入采用临时文件 + 原子替换，同一逻辑步骤只有一次有效副作用；
 - Reviewer 返修只携带上一版方案和 `requiredChanges`，不得重新从零探索；
 - 超预算、结构错误、引用失败或进程异常都诚实写 `FAILED.md`，不进入人工续跑；
-- rubric 不进入 Agent prompt；确定性 gate 与 M9/M10/M11 自动评估继续分权；
+- rubric 不进入 Agent prompt；确定性 gate 与自动评估继续分权（迁移当时写的是 M9/M10/M11；**M9/M10 已于 2026-08-11 退役且不重建**，评估链里已无 judge，A1/A2 改由 schema 必填 + 维护者人工终审核验，代价是方案实质性质量失去自动化覆盖，只剩引用真实性 B1–B4 有。裁决见 [criteria.md](criteria.md) H 节）；
 - 文件 memory 继续作为可删除、可做消融实验的能力，不引入向量数据库。
 
 “Pro”在这里表示更少的运行时机制、更硬的确定性边界，不表示增加一个通用工作流框架。
