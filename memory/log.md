@@ -68,3 +68,6 @@
 
 ## [2026-08-10] run | q- | SUCCESS
 - runs/20260810-165229｜Disentangling Geometric and Social Drivers of Urban Superlinear Scaling: Does Transport Network Fractal Dimension Determine the Scaling Exponent?｜引用 1210.5215, 2011.06287, 1503.04795, 2603.30021, 2001.00311, 2503.00550, 1211.5124
+
+## [2026-08-13] run | q1 | FAILED
+- runs/20260813-062746｜Spectral Symmetry and the Quantum Nature of Prime Distribution: A Computational Investigation into the Riemann Zeta Function's Hidden Operator｜引用 2305.18794, 2109.09366, 2204.05689, 2001.08890, 2308.01234
