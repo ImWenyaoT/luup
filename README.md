@@ -113,7 +113,5 @@ bun run test:e2e       # Playwright 打真实单进程交付形态；首次先 b
 - 产品契约：`docs/design/product-contract.md`
 - 当前架构：`docs/design/architecture.md`
 - 验收标准：`docs/design/criteria.md`
-- 迁移设计与完成记录：`docs/design/fastapi-template-migration.md`
-- Python 目录与依赖边界：`docs/design/python-project-structure.md`
-- Vercel/FastAPI 部署兼容性：`docs/design/vercel-fastapi-readiness.md`
+- 已定案决策：`docs/adr/`
 - 赛题原文：`docs/specs/`
