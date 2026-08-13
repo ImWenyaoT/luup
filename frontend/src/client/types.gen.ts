@@ -98,6 +98,20 @@ export type StartRunApiRunsPostResponses = {
     200: unknown;
 };
 
+export type StartBatchApiBatchPostData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/batch';
+};
+
+export type StartBatchApiBatchPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
 export type RunApiRunsIdentifierGetData = {
     body?: never;
     path: {

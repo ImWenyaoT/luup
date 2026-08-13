@@ -70,6 +70,31 @@ describe("手写 json() 路径", () => {
     expect(calls[0]?.init?.body).toBe('{"question":"q"}')
   })
 
+  it("startBatch：题号进 /api/batch 的 ids 字段，不复用单题的 body 形状", async () => {
+    serve(() => jsonBody(202, { ids: [1, 2, 3], idsSpec: "1-3" }))
+    await expect(api.startBatch([1, 2, 3])).resolves.toEqual({
+      ids: [1, 2, 3],
+      idsSpec: "1-3",
+    })
+    expect(calls[0]?.url).toBe("/api/batch")
+    expect(calls[0]?.init?.method).toBe("POST")
+    expect(calls[0]?.init?.body).toBe('{"ids":[1,2,3]}')
+  })
+
+  it("startBatch：批次与单题共用同一个 409 形状，UI 只需一套处理", async () => {
+    serve(() =>
+      jsonBody(409, {
+        error: "已有运行中的 run，pipeline 串行执行",
+        code: "run_in_progress",
+        activeRunId: "20260810-092300",
+      }),
+    )
+    const error = (await rejection(api.startBatch([1, 2]))) as ApiFailure
+    expect(error.status).toBe(409)
+    expect(error.body.code).toBe("run_in_progress")
+    expect(error.body.activeRunId).toBe("20260810-092300")
+  })
+
   it("非 2xx + JSON 体：抛 ApiFailure，状态码与后端的 error/code 全部保留", async () => {
     // 409 携带 activeRunId 是「已有 run 在跑」的契约，UI 要能读到它。
     serve(() =>

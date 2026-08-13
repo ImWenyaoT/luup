@@ -66,7 +66,8 @@ test("Science-125 选题器有真实题库数据", async ({ page }) => {
 test("选题只改本地选中态，不触发 pipeline", async ({ page }) => {
   const first = page.getByTestId("science125-question").first()
   await first.click()
-  await expect(first).toHaveAttribute("aria-pressed", "true")
+  // 选题器是多选的，题目行的语义是勾选框（aria-checked），不是切换按钮（aria-pressed）。
+  await expect(first).toHaveAttribute("aria-checked", "true")
   // 触发按钮此时可用，但本套用例一律不点：POST /api/runs 会真的调模型。
   await expect(
     page.getByRole("button", { name: "触发 pipeline" }),

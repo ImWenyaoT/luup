@@ -117,6 +117,27 @@ export function compactIds(ids: readonly number[]): string {
 }
 
 /**
+ * 单题耗时的实测区间（分钟），取自仓内已提交、带题号且通过的那几次 run：
+ * 20260808-134046 约 19 分钟、20260810-052412 约 23 分钟、20260810-032527 约 26 分钟。
+ * 自由输入的 OOD run 快得多（实测 2–8 分钟），但批跑跑的是 Science-125，
+ * 用后者估算才不会把「几十小时」说成「几小时」。这是样本，不是承诺。
+ */
+export const MINUTES_PER_QUESTION = { low: 19, high: 26 } as const
+
+/**
+ * 批次耗时的粗略区间。它只用来回答确认框里那一个问题——「我这一下要占掉多久」，
+ * 所以超过两小时就换成小时：没人能从「2375 分钟」读出那是两天。
+ * 实际会更短：已有 passed run 的题会被 app.batch 直接跳过。
+ */
+export function batchEstimate(count: number): string {
+  const low = count * MINUTES_PER_QUESTION.low
+  const high = count * MINUTES_PER_QUESTION.high
+  return low >= 120
+    ? `${Math.round(low / 60)}–${Math.round(high / 60)} 小时`
+    : `${low}–${high} 分钟`
+}
+
+/**
  * run id 形如 `20260810-165229`，字典序即时间序（后端 `list_ids` 也这么排）。
  * 用它而不是 `startedAt`：回填的旧 run 会把 startedAt 写成同一秒，排不出先后。
  */
