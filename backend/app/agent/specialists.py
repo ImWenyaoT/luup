@@ -164,19 +164,26 @@ class AgentsSdkSpecialistRunner:
     def _parse(
         value: Any, model_type: type[ScientistOutput] | type[Review], usage: Mapping[str, Any] | None = None
     ) -> ScientistOutput | Review:
+        """Take the first complete JSON value and ignore whatever follows it.
+
+        `raw_decode` stops at the end of that value, so a second concatenated object or a
+        sentence of trailing prose no longer condemns an answer that was already valid —
+        run 20260813-062746 lost a good ScientistOutput to exactly that. What it cannot
+        parse or cannot validate still raises `ContractViolationError`: unreadable is
+        still a quality failure, and this only stops us from inventing one.
+        """
         if isinstance(value, model_type):
             return value
         if not isinstance(value, str):
             value = json.dumps(value, ensure_ascii=False)
         stripped = value.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-        if not stripped.startswith("{") or not stripped.endswith("}"):
-            start = stripped.find("{")
-            end = stripped.rfind("}")
-            if start >= 0 and end > start:
-                stripped = stripped[start : end + 1]
+        start = stripped.find("{")
         try:
-            return model_type.model_validate_json(stripped)
-        except ValidationError as exc:
+            if start < 0:
+                raise json.JSONDecodeError("Expecting a JSON object", stripped, 0)
+            payload, _ = json.JSONDecoder().raw_decode(stripped, start)
+            return model_type.model_validate(payload)
+        except (json.JSONDecodeError, ValidationError) as exc:
             raise ContractViolationError(f"模型返回未通过契约校验：{exc}", usage) from exc
 
 

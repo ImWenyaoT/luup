@@ -177,6 +177,14 @@ def test_parse_accepts_sdk_validated_model_instance() -> None:
     assert parsed is output
 
 
+def test_parse_accepts_non_string_output_by_serialising_it_first() -> None:
+    """The SDK may hand back a dict; that branch must keep working untouched."""
+    parsed = AgentsSdkSpecialistRunner._parse(_review_payload(), Review)
+
+    assert isinstance(parsed, Review)
+    assert parsed.verdict == "pass"
+
+
 def test_parse_accepts_bailian_preface_and_markdown_fence() -> None:
     output = Review(
         verdict="pass",
@@ -188,6 +196,66 @@ def test_parse_accepts_bailian_preface_and_markdown_fence() -> None:
     parsed = AgentsSdkSpecialistRunner._parse(f"I have completed the tools.\n```json\n{payload}\n```", Review)
 
     assert parsed == output
+
+
+def test_parse_takes_the_first_object_when_the_model_concatenates_two() -> None:
+    """run 20260813-062746 died here: two valid objects glued together read as one bad string.
+
+    The old guard (`starts with { and ends with }`) matched the concatenation exactly,
+    so it went straight to `model_validate_json` and got `trailing characters`.
+    """
+    first = json.dumps(_review_payload())
+    second = json.dumps({"verdict": "revise", "findings": _review_payload()["findings"], "requiredChanges": ["redo"]})
+
+    parsed = AgentsSdkSpecialistRunner._parse(f"{first}\n{second}", Review)
+
+    assert isinstance(parsed, Review)
+    assert parsed.verdict == "pass"
+    assert parsed.required_changes == []
+
+
+def test_parse_ignores_trailing_prose_that_ends_with_a_brace() -> None:
+    """A closing brace inside the trailing prose is what made `rfind('}')` produce garbage too."""
+    payload = json.dumps(_review_payload())
+
+    parsed = AgentsSdkSpecialistRunner._parse(f"{payload}\n以上是审稿结果，格式为 {{verdict, findings}}", Review)
+
+    assert isinstance(parsed, Review)
+    assert parsed.verdict == "pass"
+
+
+def test_parse_ignores_a_preface_before_the_object() -> None:
+    payload = json.dumps(_scientist_payload())
+
+    parsed = AgentsSdkSpecialistRunner._parse(f"这是结果：\n{payload}", ScientistOutput)
+
+    assert isinstance(parsed, ScientistOutput)
+    assert len(parsed.evidence) == 5
+
+
+def test_parse_still_rejects_json_it_cannot_read_at_all() -> None:
+    """Salvaging a complete value must not turn a broken answer into a passing one."""
+    with pytest.raises(ContractViolationError) as raised:
+        AgentsSdkSpecialistRunner._parse('{"verdict": "pass", "findings":', Review, {"total_tokens": 7})
+
+    assert str(raised.value).startswith("模型返回未通过契约校验：")
+    assert raised.value.usage == {"total_tokens": 7}
+
+
+def test_parse_still_rejects_a_complete_object_that_breaks_the_contract() -> None:
+    with pytest.raises(ContractViolationError) as raised:
+        AgentsSdkSpecialistRunner._parse('{"verdict": "pass", "findings": []}', Review, {"total_tokens": 9})
+
+    assert str(raised.value).startswith("模型返回未通过契约校验：")
+    assert raised.value.usage == {"total_tokens": 9}
+
+
+def test_parse_still_rejects_an_answer_with_no_object_in_it() -> None:
+    with pytest.raises(ContractViolationError) as raised:
+        AgentsSdkSpecialistRunner._parse("抱歉，我无法完成这个任务。", Review, {"total_tokens": 3})
+
+    assert str(raised.value).startswith("模型返回未通过契约校验：")
+    assert raised.value.usage == {"total_tokens": 3}
 
 
 async def test_scientist_run_happens_inside_the_scientist_scope_and_backfills_saved_cards(

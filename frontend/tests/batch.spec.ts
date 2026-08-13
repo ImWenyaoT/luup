@@ -1,17 +1,21 @@
 import { expect, test } from "@playwright/test"
 
 /**
- * fixture 是仓里已提交的 `runs/`：19 个 run 里有 9 个带 `meta.questionId`，只覆盖
- * 第 54 / 61 / 125 三题（第 61 题一题就跑了 6 次），且三题的最新终态都是 passed；
- * 其余 10 个是自由输入的 run，没有题号，只能进「不计入覆盖率」那一栏。
- * 整套用例零 LLM 调用、零 POST。
+ * fixture 是仓里已提交的 `runs/`：20 个 run 里有 10 个带 `meta.questionId`，覆盖
+ * 第 1 / 54 / 61 / 125 四题（第 61 题一题就跑了 6 次）；54 / 61 / 125 的最新终态是
+ * passed，第 1 题只跑过一次且以 `contract_violation` 失败（20260813-062746，也是
+ * 唯一带 `sourceIdentity` 的 run）。其余 10 个是自由输入的 run，没有题号，只能进
+ * 「不计入覆盖率」那一栏。整套用例零 LLM 调用、零 POST。
  */
-const ATTEMPTED = 3
-const NOT_RUN = 122
+const ATTEMPTED = 4
+const PASSED = 3
+const FAILED = 1
+const NOT_RUN = 121
 /**
- * 三题都有过 passed run，所以 `app.batch` 会跳过它们，欠账集合恰好等于未跑集合。
+ * 第 1 题跑过但一次都没通过，`app.batch` 不会跳过它，所以欠账 = 未跑 121 题 + 第 1 题。
  * 125 题去掉 54 / 61 / 125 之后压出来的区间写法，`app.batch` 的 parse_ids 认这一串。
  */
+const OWED = NOT_RUN + FAILED
 const RESUME_IDS = "1-53,55-60,62-124"
 
 test.beforeEach(async ({ page }) => {
@@ -37,7 +41,7 @@ test("覆盖进度按题号去重，未跑题数是题库减去已跑", async ({
   await expect(page.getByText("次运行没有题号（自由输入）")).toBeVisible()
   await expect(page.getByTestId("batch-progress")).toHaveAttribute(
     "aria-label",
-    `125 题中通过 ${ATTEMPTED}、失败 0、未跑 ${NOT_RUN}`,
+    `125 题中通过 ${PASSED}、失败 ${FAILED}、未跑 ${NOT_RUN}`,
   )
 })
 
@@ -49,10 +53,12 @@ test("续跑命令复制的是 batch 的欠账集合，按钮自报它包含什�
   const command = page.getByTestId("batch-resume-command")
   // 按钮文案必须带题数，否则会被读成「只含未跑的」。
   await expect(command.getByRole("button")).toHaveText(
-    `复制续跑命令（${NOT_RUN} 题）`,
+    `复制续跑命令（${OWED} 题）`,
   )
   await expect(
-    page.getByText(`接着跑还欠 ${NOT_RUN} 题——未跑过 ${NOT_RUN} 题`),
+    page.getByText(
+      `接着跑还欠 ${OWED} 题——未跑过 ${NOT_RUN} 题，加上跑过但一次都没通过的 ${FAILED} 题`,
+    ),
   ).toBeVisible()
   await expect(command).toContainText(
     `uv run python -m app.batch --ids ${RESUME_IDS}`,
@@ -66,30 +72,49 @@ test("续跑命令复制的是 batch 的欠账集合，按钮自报它包含什�
   )
 })
 
-test("已提交语料里三题都通过，失败清单与失败分组为空", async ({ page }) => {
+test("已提交语料里三题通过、第 1 题以 contract_violation 失败", async ({
+  page,
+}) => {
   const bars = page.getByTestId("batch-distribution").getByTestId("batch-bar")
-  await expect(bars).toHaveCount(1)
+  // 通过验收一条，加上唯一一类失败分类一条。
+  await expect(bars).toHaveCount(2)
   await expect(bars.first()).toContainText("通过验收")
-  await expect(page.getByTestId("batch-kind")).toHaveCount(0)
-  await expect(page.getByTestId("batch-failures")).toHaveCount(0)
-  await expect(page.getByText("没有最新终态为失败的题")).toBeVisible()
+  const kinds = page.getByTestId("batch-kind")
+  await expect(kinds).toHaveCount(1)
+  await expect(kinds.first()).toContainText("质量性结果")
+  await expect(kinds.first()).toContainText("contract_violation")
+
+  const rows = page
+    .getByTestId("batch-failures")
+    .getByTestId("batch-failure-row")
+  await expect(rows).toHaveCount(FAILED)
+  await expect(rows.first()).toHaveAttribute("data-question-id", "1")
+  await rows.first().click()
+  await expect(page).toHaveURL(/\/runs\/20260813-062746$/)
 })
 
-test("cohort 区块报出终态未记录 commit，且单一 cohort 不报警", async ({
+test("cohort 区块把记录了 commit 的那题与未记录的分开，并对混 cohort 报警", async ({
   page,
 }) => {
   const cohorts = page.getByTestId("batch-cohort")
-  await expect(cohorts).toHaveCount(1)
-  await expect(cohorts.first()).toContainText("终态未记录 commit")
-  await expect(cohorts.first()).toContainText("3 题")
-  await expect(page.getByTestId("batch-cohort-warning")).toHaveCount(0)
+  await expect(cohorts).toHaveCount(2)
+  await expect(cohorts.filter({ hasText: "774a42b1b927" })).toContainText(
+    "1 题",
+  )
+  await expect(cohorts.filter({ hasText: "终态未记录 commit" })).toContainText(
+    "3 题",
+  )
+  // 语料里现在真的混了两个 cohort，这份进度不能当成一个系统的数字读。
+  await expect(page.getByTestId("batch-cohort-warning")).toContainText(
+    "这些数字不是同一个系统产生的",
+  )
 })
 
 /**
- * 已提交语料里带 `classification` 的那 5 个 run 恰好都没有题号，所以「环境性 vs 质量性」
- * 和「混 cohort 警告」这两处渲染在真实 fixture 下不可达。它们是本页最有价值的两块信息，
- * 不能只靠单测的返回值担保，所以这一条把 `/api/runs` 换成一份合成响应——仍然零 LLM、
- * 零后端状态，换掉的只是读模型的输出。聚合语义本身由 `src/batch.test.ts` 把关。
+ * 已提交语料里只有质量性失败，所以「环境性与质量性同时呈现」和「三个 cohort」这两处
+ * 渲染在真实 fixture 下仍不可达。它们是本页最有价值的两块信息，不能只靠单测的返回值
+ * 担保，所以这一条把 `/api/runs` 换成一份合成响应——仍然零 LLM、零后端状态，换掉的
+ * 只是读模型的输出。聚合语义本身由 `src/batch.test.ts` 把关。
  */
 test("失败按环境性/质量性分开呈现，混 cohort 时显眼提示", async ({ page }) => {
   const run = (
