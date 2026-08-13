@@ -43,6 +43,10 @@ FastAPI 只做输入防护、单写锁、子进程启动和只读工件投影。
 Vite/React 只通过 HTTP 读取 Science-125、run 列表、详情、状态和工件。前端不得直接推断文件状态；
 后端 OpenAPI 快照生成 `frontend/src/client/`。
 
+TypeScript 锁 6.0.3（package.json 无 caret）：`@hey-api/openapi-ts@0.99` 读 TS programmatic API，
+2026-08-10 实测升 7.0.2 后生成客户端在 `ts.SyntaxKind.AnyKeyword` 崩溃。解锁条件是 Hey API 宣布支持 TS 7
+并重跑 `bun run generate:client && bun run build`。前端栈的其余边界见 `../adr/`。
+
 代码：`frontend/`。
 
 ## Agent 流程
@@ -60,6 +64,8 @@ Vite/React 只通过 HTTP 读取 Science-125、run 列表、详情、状态和�
 - `backend/app/data/science125.json`：冻结的 125 题输入源。
 - 数据库：当前不需要。未来只有在文件 interface 无法满足真实查询/并发需求时，才在 SQLite、PostgreSQL、MongoDB 中选择。
 - `.active.json`、索引、缓存、依赖和构建目录：均为可重建派生物，不提交。
+- 写入方式：除 append 的 `usage.jsonl` 外，工件一律临时文件 + 原子替换，同一逻辑步骤只有一次有效副作用；
+  查询进程不会读到半截 JSON。
 
 ## 运行与并发
 
@@ -75,4 +81,5 @@ M11 出 `firstVsLatest` 与 `memoryArms` 两种 McNemar 精确配对。评估不
 `backend/app/batch.py` 是 125 题的交付载具：按题号串行调用 `cli.run_cli` 这一个组合根，
 已有终态 passed 的题跳过，单题异常记录后继续。
 
-验收细则见 `criteria.md`，迁移设计与完成记录见 `fastapi-template-migration.md`。
+验收细则见 `criteria.md`；已定案、不再重提的决策见 `../adr/`。2026-08-10 从 TypeScript 全栈迁到
+Full Stack FastAPI Template 的调研与迁移记录已从 HEAD 删除，只存于 git 历史。
