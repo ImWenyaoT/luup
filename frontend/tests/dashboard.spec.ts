@@ -4,16 +4,25 @@ test.beforeEach(async ({ page }) => {
   await page.goto("/")
 })
 
-test("topbar 渲染品牌与三条导航", async ({ page }) => {
+test("topbar 渲染品牌与四条导航", async ({ page }) => {
   const topbar = page.getByTestId("topbar")
   await expect(topbar).toBeVisible()
   await expect(page.getByTestId("topbar-brand")).toContainText("luup")
 
   const nav = page.getByTestId("topbar-nav")
-  await expect(nav.getByRole("link")).toHaveText(["仪表台", "历史", "API"])
+  await expect(nav.getByRole("link")).toHaveText([
+    "仪表台",
+    "批次",
+    "历史",
+    "API",
+  ])
   await expect(nav.getByRole("link", { name: "历史" })).toHaveAttribute(
     "href",
     "/runs",
+  )
+  await expect(nav.getByRole("link", { name: "批次" })).toHaveAttribute(
+    "href",
+    "/batch",
   )
 })
 
