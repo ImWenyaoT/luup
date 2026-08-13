@@ -33,6 +33,9 @@ function Layout() {
             <Link to="/" activeOptions={{ exact: true }} className={NAV_LINK}>
               仪表台
             </Link>
+            <Link to="/batch" className={NAV_LINK}>
+              批次
+            </Link>
             <Link to="/runs" className={NAV_LINK}>
               历史
             </Link>

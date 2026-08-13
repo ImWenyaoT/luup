@@ -114,6 +114,54 @@ def test_a_failed_run_that_saved_no_paper_still_renders_its_detail_view(
     assert "memory/index.md" not in detail["artifactNames"]
 
 
+def test_the_list_projection_carries_the_batch_cohort_facts(tmp_path: Path, write_run: Callable[..., Path]) -> None:
+    """批次概览按 (questionId, classification, gitCommit) 读列表，所以这三样必须在列表里。
+
+    它们全部来自 `exit.json`——这个投影不新增状态，只是把已经落盘的终态事实换个视角发出去。
+    """
+    write_run(
+        tmp_path,
+        "20260810-000002",
+        question_id=61,
+        passed=False,
+        artifacts={
+            "exit.json": json.dumps(
+                {
+                    "exitCode": 1,
+                    "classification": "infra_timeout",
+                    "sourceIdentity": {"gitCommit": "abc1234", "treeDirty": True},
+                }
+            )
+        },
+    )
+
+    listed = client_for(tmp_path).get("/api/runs").json()["runs"][0]
+
+    assert listed["science125Id"] == 61
+    assert listed["status"] == "failed"
+    assert listed["classification"] == "infra_timeout"
+    assert listed["sourceIdentity"] == {"gitCommit": "abc1234", "treeDirty": True}
+
+
+def test_the_list_projection_reports_missing_cohort_facts_as_null(
+    tmp_path: Path, write_run: Callable[..., Path]
+) -> None:
+    """已提交的旧 run 要么没有 `exit.json`，要么写的是 `sourceIdentity: null`——两者都不能编。"""
+    write_run(tmp_path, "20260810-000003", artifacts={"exit.json": None})
+    write_run(tmp_path, "20260810-000004")  # fixture 默认就是 `sourceIdentity: null`
+    write_run(
+        tmp_path,
+        "20260810-000005",
+        artifacts={"exit.json": json.dumps({"exitCode": 0, "sourceIdentity": {"treeDirty": False}})},
+    )
+
+    runs = {run["id"]: run for run in client_for(tmp_path).get("/api/runs").json()["runs"]}
+
+    assert [runs[key]["classification"] for key in sorted(runs)] == [None, None, None]
+    # 没有 commit 的身份对象无法定位代码，等于没有身份；不能只凭 treeDirty 就发一个空 commit。
+    assert [runs[key]["sourceIdentity"] for key in sorted(runs)] == [None, None, None]
+
+
 def test_read_api_preserves_legacy_error_codes(tmp_path: Path) -> None:
     client = client_for(tmp_path)
 

@@ -50,6 +50,15 @@ export type Paper = {
 export type Reference = { arxivId: string }
 export type Proposal = { paperTitle: string; references: Reference[] }
 
+/**
+ * `exit.json` 的 cohort 身份：产出这次 run 的那份代码是哪一份。
+ * 旧 run 没有它（发 null）——那本身就是「这批数字不可归因」的事实，不能补一个假 commit。
+ */
+export type SourceIdentity = {
+  gitCommit: string
+  treeDirty: boolean | null
+}
+
 export type RunSummary = {
   id: string
   startedAt: string
@@ -61,6 +70,9 @@ export type RunSummary = {
   refs: number | null
   verify: "pass" | "fail" | null
   durationSec: number | null
+  /** 终态自报的失败分类（`FailureClass`）；通过的 run 与未分类的旧 run 都是 null。 */
+  classification: string | null
+  sourceIdentity: SourceIdentity | null
   nodes: RunNodes
 }
 

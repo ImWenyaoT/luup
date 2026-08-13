@@ -230,6 +230,8 @@ class RunService:
         proposal = _read_json(scan, "proposal.json")
         references = proposal.get("references") if isinstance(proposal, dict) else None
         verify = self._verify_report(_read_text(scan, "verification-report.md"))
+        exit_fact = _read_json(scan, "exit.json")
+        exit_data = exit_fact if isinstance(exit_fact, dict) else {}
         return {
             "id": scan.identifier,
             "startedAt": _iso(outcome["started"] or 0),
@@ -241,8 +243,28 @@ class RunService:
             "refs": len(references) if isinstance(references, list) else None,
             "verify": "pass" if verify and verify["pass"] else "fail" if verify else None,
             "durationSec": self._duration(outcome),
+            "classification": self._classification(exit_data),
+            "sourceIdentity": self._source_identity(exit_data),
             "nodes": self._summary_nodes(scan, status),
         }
+
+    @staticmethod
+    def _classification(exit_data: dict[str, object]) -> str | None:
+        """终态自报的失败分类；旧 run 的 `exit.json` 没有这个键，缺席就是 `None`。"""
+        value = exit_data.get("classification")
+        return value if isinstance(value, str) and value else None
+
+    @staticmethod
+    def _source_identity(exit_data: dict[str, object]) -> dict[str, object] | None:
+        """`app.cli` 写的 cohort 身份。git 不可用时它写的就是 `null`，不能编一个假 commit 出来。"""
+        source = exit_data.get("sourceIdentity")
+        if not isinstance(source, dict):
+            return None
+        commit = source.get("gitCommit")
+        if not isinstance(commit, str) or not commit:
+            return None
+        dirty = source.get("treeDirty")
+        return {"gitCommit": commit, "treeDirty": dirty if isinstance(dirty, bool) else None}
 
     def _status_view(self, scan: Scan) -> dict[str, object]:
         outcome = self._outcome(scan)

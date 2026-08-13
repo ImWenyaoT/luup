@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as LayoutRouteImport } from './routes/_layout'
 import { Route as LayoutIndexRouteImport } from './routes/_layout/index'
+import { Route as LayoutBatchRouteImport } from './routes/_layout/batch'
 import { Route as LayoutRunsIndexRouteImport } from './routes/_layout/runs.index'
 import { Route as LayoutRunsRunIdRouteImport } from './routes/_layout/runs.$runId'
 
@@ -21,6 +22,11 @@ const LayoutRoute = LayoutRouteImport.update({
 const LayoutIndexRoute = LayoutIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutBatchRoute = LayoutBatchRouteImport.update({
+  id: '/batch',
+  path: '/batch',
   getParentRoute: () => LayoutRoute,
 } as any)
 const LayoutRunsIndexRoute = LayoutRunsIndexRouteImport.update({
@@ -36,10 +42,12 @@ const LayoutRunsRunIdRoute = LayoutRunsRunIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof LayoutIndexRoute
+  '/batch': typeof LayoutBatchRoute
   '/runs/$runId': typeof LayoutRunsRunIdRoute
   '/runs/': typeof LayoutRunsIndexRoute
 }
 export interface FileRoutesByTo {
+  '/batch': typeof LayoutBatchRoute
   '/': typeof LayoutIndexRoute
   '/runs/$runId': typeof LayoutRunsRunIdRoute
   '/runs': typeof LayoutRunsIndexRoute
@@ -47,18 +55,20 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_layout': typeof LayoutRouteWithChildren
+  '/_layout/batch': typeof LayoutBatchRoute
   '/_layout/': typeof LayoutIndexRoute
   '/_layout/runs/$runId': typeof LayoutRunsRunIdRoute
   '/_layout/runs/': typeof LayoutRunsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/runs/$runId' | '/runs/'
+  fullPaths: '/' | '/batch' | '/runs/$runId' | '/runs/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/runs/$runId' | '/runs'
+  to: '/batch' | '/' | '/runs/$runId' | '/runs'
   id:
     | '__root__'
     | '/_layout'
+    | '/_layout/batch'
     | '/_layout/'
     | '/_layout/runs/$runId'
     | '/_layout/runs/'
@@ -84,6 +94,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutIndexRouteImport
       parentRoute: typeof LayoutRoute
     }
+    '/_layout/batch': {
+      id: '/_layout/batch'
+      path: '/batch'
+      fullPath: '/batch'
+      preLoaderRoute: typeof LayoutBatchRouteImport
+      parentRoute: typeof LayoutRoute
+    }
     '/_layout/runs/': {
       id: '/_layout/runs/'
       path: '/runs'
@@ -102,12 +119,14 @@ declare module '@tanstack/react-router' {
 }
 
 interface LayoutRouteChildren {
+  LayoutBatchRoute: typeof LayoutBatchRoute
   LayoutIndexRoute: typeof LayoutIndexRoute
   LayoutRunsRunIdRoute: typeof LayoutRunsRunIdRoute
   LayoutRunsIndexRoute: typeof LayoutRunsIndexRoute
 }
 
 const LayoutRouteChildren: LayoutRouteChildren = {
+  LayoutBatchRoute: LayoutBatchRoute,
   LayoutIndexRoute: LayoutIndexRoute,
   LayoutRunsRunIdRoute: LayoutRunsRunIdRoute,
   LayoutRunsIndexRoute: LayoutRunsIndexRoute,
