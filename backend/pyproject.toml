@@ -8,6 +8,8 @@ dependencies = [
   "fastapi>=0.141.1",
   "openai-agents>=0.9.0",
   "pydantic>=2.11.0",
+  # QwenSettings 读仓根 .env；已随 openai-agents 传递进 lock，提为直接依赖只是把它写实
+  "pydantic-settings>=2.2.1",
 ]
 
 [dependency-groups]

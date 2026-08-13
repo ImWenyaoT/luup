@@ -70,6 +70,8 @@ def stamp_to_ms(value: Any) -> int | None:
 
 
 def repo_root() -> Path:
+    # 这里必须直读 os.getenv，不能走 QwenSettings 那套 pydantic-settings：仓根是**找到 `.env`
+    # 的前提**，而 `.env` 又要靠仓根才能定位。让它走 Settings 就成了环。
     override = os.getenv("LUUP_REPO_ROOT")
     return Path(override).resolve() if override else Path(__file__).resolve().parents[3]
 

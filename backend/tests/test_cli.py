@@ -51,6 +51,9 @@ def with_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 async def test_cli_refuses_to_start_without_qwen_credentials(monkeypatch, tmp_path, capsys) -> None:
+    # 仓根指到一个没有 .env 的空目录，否则开发机上真实的仓根 .env 会把凭据补回来，
+    # 这条用例只在 CI（无 .env）成立。
+    monkeypatch.setenv("LUUP_REPO_ROOT", str(tmp_path))
     monkeypatch.delenv("QWEN_BASE_URL", raising=False)
     monkeypatch.delenv("QWEN_API_KEY", raising=False)
 

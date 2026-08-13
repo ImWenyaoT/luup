@@ -6,6 +6,9 @@ Agent 代码位于 `backend/app/agent/`，平铺同 eve——harness 是运行�
 `model.py`/`specialists.py`/`prompts/` 是 agent 配置面；模型接线唯一事实源是
 `backend/app/agent/model.py`。修改模型或 Agent 前先查
 <https://openai.github.io/openai-agents-python/>，不得回退到默认 OpenAI 客户端。
+`QWEN_*` / `LUUP_MODEL_ID` 由 `model.py` 的 `QwenSettings`（pydantic-settings）读取：
+系统环境变量优先于仓根 `.env`，`.env` 缺席照常工作；`LUUP_REPO_ROOT` 例外，它是定位 `.env`
+的前提，只能直读 `os.getenv`。
 
 ## 仓库布局
 

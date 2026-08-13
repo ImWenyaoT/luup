@@ -25,11 +25,24 @@ memory/    跨 run 的战役记忆（事实数据）
 
 ## 本地运行
 
+凭据二选一。写进仓根 `.env`（自动读取，无需 export；路径按仓根解析，与 cwd 无关）：
+
+```sh
+cp .env.example .env   # 填 QWEN_API_KEY / QWEN_BASE_URL
+```
+
+或直接 export 系统环境变量——同名时**系统环境变量优先**，`.env` 只是兜底：
+
+```sh
+export QWEN_API_KEY='your-key'
+export QWEN_BASE_URL='your-openai-compatible-base-url'
+```
+
+起服务：
+
 ```sh
 cd backend
 uv sync
-export QWEN_API_KEY='your-key'
-export QWEN_BASE_URL='your-openai-compatible-base-url'
 UV_CACHE_DIR=.cache/uv uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
@@ -42,11 +55,13 @@ bun run generate:client
 bun run dev                    # http://127.0.0.1:5173，/api 代理到 8000
 ```
 
-单进程交付（无需前端 dev server）：
+单进程交付（无需前端 dev server）：**必须先 build 再起 uvicorn**——进程只在启动时检查
+`backend/app/frontend` 是否存在，先起服务后构建的话 `/` 一直 404，得重启一次（`/api` 不受影响）。
 
 ```sh
 cd frontend && bun run build   # 产物写入 backend/app/frontend
-# 重启 uvicorn 后，页面与 API 同端口：http://127.0.0.1:8000
+cd ../backend && UV_CACHE_DIR=.cache/uv uv run uvicorn app.main:app --port 8000
+# 页面与 API 同端口：http://127.0.0.1:8000
 ```
 
 直接跑题：
