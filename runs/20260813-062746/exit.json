@@ -1,0 +1,9 @@
+{
+  "exitCode": 1,
+  "endedAt": "2026-08-13T06:31:34.780Z",
+  "classification": "contract_violation",
+  "sourceIdentity": {
+    "gitCommit": "774a42b1b92716e1c022a120adb74d480be7c370",
+    "treeDirty": false
+  }
+}
