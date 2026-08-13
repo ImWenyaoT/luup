@@ -73,7 +73,7 @@
 
 | 层 | 指标 | 定义/数据源 | 翻盘什么决定 |
 |---|------|------------|-------------|
-| Tier0 | 现状保留 | B1–B4 验收器、eval 脚本（eval:smoke / eval:full）、`review.json`（旧 `verdicts/` 已随 TS 栈退役） | 单 run 通过性 |
+| Tier0 | 现状保留 | B1–B4 验收器、`review.json`（旧 `verdicts/` 已随 TS 栈退役）；验证命令是 AGENTS.md 验证节那套（backend `uv run pytest` / `ruff` / `ty`，frontend `bun run check:client` / `test` / `test:e2e`），旧 `eval:smoke` / `eval:full` npm script 已随 TS 栈删除 | 单 run 通过性 |
 | Tier1（零 LLM 派生） | M4 交付率 | deliverable runs / 总 runs（runOutcome），带二项标准误 √(p(1-p)/n)；环境性失败单列一档 | 战役节奏 |
 | | M5 Pass^2 | 同题按时间序相邻两次 run 均 deliverable 的比例 | 可靠性口径（替代单次快照） |
 | | M6 成本会计 | usage.jsonl 聚合：token/题、¥/题、按节点分解 | 重跑预算、模型分档 |
@@ -83,10 +83,11 @@
 | | ~~M10 judge 校准~~ | **2026-08-11 退役**，见下 | —— |
 | Tier3 | M11 配对版本比较 | 同题多版本 McNemar 精确二项：`firstVsLatest`（首末，非受控）+ `memoryArms`（按 `meta.memoryArm` 两臂配对，受控） | 改动是否真的更好 |
 
+- **失败分类口径（7 类 / 3 桶）**：权威定义是 `backend/app/domain/runs.py` 的 `FailureClass`，**7 类**——`reviewer_no_new_evidence`、`verifier_refs`、`revision_no_change`、`contract_violation`、`agent_budget_exhausted`、`infra_timeout`、`infra_error`。`evaluation.py` 把它们分**3 桶**报：quality（前五类）、infrastructure（后两类）、unclassified（终态没写分类的历史 run）。`agent_budget_exhausted` 属 quality 不属 infrastructure，见 `runs.py` 的裁决说明。任何文档、报告或 PPT 引用失败分类时以此为准，不得另立数目。
 - **M9/M10 退役裁决（2026-08-11）**：两者随 TypeScript 栈退役，不重建。理由是事实而非偏好——生产者（score/calibration 的写入侧）随栈删除，且仓库里唯一一份校准报告（`runs/20260808-134046/calibration.md`）的变异体检出率为 0/4（逆序 1），即使重建生产者，M9 也一天都没有取得过排序授权。该 run 已随 TS 栈语料一并从 HEAD 删除，这份数字只存于 git 历史（`git show`），任何报告不得再把它当现行证据引用。处置：`evaluation.py` 不再读 `score.json` / `calibration.md`，版本择优链变为 **gate → refs 数 → token 成本 → run id**（全确定性）；报告输出结构里 M9 相关字段直接消失，不留空壳。残留的 `runs/*/score.json` 是无人读取的历史字节，任何报告不得引用其分数。
 - **同族 judge 诚实条款**（退役后仍为判据）：judge 也是 Qwen（D1 锁死），无法消解自评偏置。这正是 M9 退役而不是降权重建的理由：一个自评的分数，校准不过就没有资格排序，也没有资格进报告的"成绩"栏。
 - **自进化闭环**（全自动）：run → 确定性交付 gate → 题页 memory（**只回传事实不回传分数**：胜出假设、被拒原因、检索有效性）→ 重跑消费 → 版本择优纯函数（gate → refs 数 → token 成本 → run id，字典序）。
-- **ablation 白捡项**：memory/ 可删除性 = 现成的记忆贡献量化开关（技术报告实验素材，抽样跑）。
+- **ablation 白捡项**：memory/ 可删除性 = 现成的记忆贡献量化开关（技术报告实验素材，抽样跑）。抽哪 30 题、按什么规则抽、允许下什么结论，由**开跑前**落盘的预注册协议 `experiment-protocol.json` 定死；该协议声明本轮是 bounded comparison，只报方向、cell 计数与效应量，不做显著性主张。
 - 不做清单（防巨无霸，理由存 backlog）：Elo、用户模拟、人工反馈环（赛题"或"字裁决）、仿真环境、统一 trace、参数化防泄漏。
 
 ## 终审流程

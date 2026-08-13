@@ -52,6 +52,21 @@ class RunFacts:
     searches: int = 0
     deduplicated_searches: int = 0
     new_information_searches: int = 0
+    memory_searches: int = 0
+    memory_hits: int = 0
+    memory_reads: int = 0
+
+    @property
+    def ablation_effective(self) -> bool:
+        """Did the ``off`` arm actually lose its memory? An arm that kept it is not a control.
+
+        ``memory_reads`` counts the ``memory_search`` events that reached the campaign memory
+        (``enabled`` true, or a hit came back). The off arm still *sees* the tool — it returns
+        ``enabled=false`` — so a bare call count would condemn a perfectly ablated run; only a
+        read proves the wiring leaked. Mirrors ``reflection_ablation_effective`` in the book's
+        generative-agents campaign validator: the ablated mechanism must show zero output.
+        """
+        return self.memory_arm != "off" or self.memory_reads == 0
 
 
 def select_version(candidates: Sequence[RunFacts]) -> dict[str, Any]:
@@ -154,6 +169,27 @@ def search_health(facts: Sequence[RunFacts]) -> dict[str, Any]:
     }
 
 
+def memory_leakage(facts: Sequence[RunFacts]) -> dict[str, Any]:
+    """How much one question's run learned from another's — the independence claim, quantified.
+
+    The campaign treats the 125 questions as near-independent trials; that is what lets M4 be
+    read as "can it solve *a* question". Every campaign-memory hit is a channel between two
+    questions, so the honest version of the claim is a number: with ``memorySearchHits`` at 0 the
+    runs are independent by construction, and above 0 the report has to say how much leaked.
+    ``ablationIneffectiveRuns`` is the same measurement pointed at the ablation arm.
+    """
+    calls = sum(item.memory_searches for item in facts)
+    hits = sum(item.memory_hits for item in facts)
+    return {
+        "memorySearchCalls": calls,
+        "memorySearchHits": hits,
+        "memorySearchReads": sum(item.memory_reads for item in facts),
+        "runsWithMemoryHits": sum(1 for item in facts if item.memory_hits),
+        "hitsPerCall": _ratio(hits, calls),
+        "ablationIneffectiveRuns": [item.run_id for item in facts if not item.ablation_effective],
+    }
+
+
 def failure_classes(facts: Sequence[RunFacts]) -> dict[str, Any]:
     """Failed runs grouped by the classification the Harness wrote, outages kept apart."""
     failed = [item for item in facts if not item.deliverable]
@@ -204,6 +240,7 @@ def evaluate_runs(runs_root: Path) -> dict[str, Any]:
             "passSquared": pass_squared(identified),
             "revision": revision_rate(facts),
             "searchHealth": search_health(facts),
+            "memoryLeakage": memory_leakage(facts),
             "failureClasses": failure_classes(facts),
             "sourceIdentity": commit_cohorts(facts),
         },
@@ -220,7 +257,9 @@ def _load_facts(service: RunService, run_id: str) -> RunFacts | None:
     review = _json_mapping(service.artifact(run_id, "review.json")) or {}
     exit_fact = _json_mapping(service.artifact(run_id, "exit.json")) or {}
     meta = _json_mapping(service.artifact(run_id, "meta.json")) or {}
-    searches, deduplicated, fresh = _search_events(service.artifact(run_id, "tool-events.jsonl"))
+    events = service.artifact(run_id, "tool-events.jsonl")
+    searches, deduplicated, fresh = _search_events(events)
+    memory_searches, memory_hits, memory_reads = _memory_events(events)
     source = exit_fact.get("sourceIdentity")
     source = source if isinstance(source, Mapping) else {}
     dirty = source.get("treeDirty")
@@ -239,6 +278,9 @@ def _load_facts(service: RunService, run_id: str) -> RunFacts | None:
         searches=searches,
         deduplicated_searches=deduplicated,
         new_information_searches=fresh,
+        memory_searches=memory_searches,
+        memory_hits=memory_hits,
+        memory_reads=memory_reads,
     )
 
 
@@ -300,11 +342,21 @@ def _first_vs_latest(facts: Sequence[RunFacts]) -> dict[str, Any]:
 
 
 def _memory_arms(facts: Sequence[RunFacts]) -> dict[str, Any] | None:
-    """One pair per question that ran both arms: the newest off-run against the newest on-run."""
+    """One pair per question that ran both arms: the newest off-run against the newest on-run.
+
+    An off-run that still read campaign memory was never ablated, so it is dropped rather than
+    paired: a leaked control would answer a question nobody asked.
+    """
     rows: list[dict[str, Any]] = []
     outcomes: list[tuple[bool, bool]] = []
+    excluded: list[dict[str, Any]] = []
     for question_id, group in _by_question(facts):
-        off = [item for item in group if item.memory_arm == "off"]
+        off = [item for item in group if item.memory_arm == "off" and item.ablation_effective]
+        excluded += [
+            {"questionId": question_id, "runId": item.run_id, "reason": "消融失效：off 臂仍读到跨 run 记忆"}
+            for item in group
+            if item.memory_arm == "off" and not item.ablation_effective
+        ]
         on = [item for item in group if item.memory_arm == "on"]
         if not off or not on:
             continue
@@ -318,7 +370,9 @@ def _memory_arms(facts: Sequence[RunFacts]) -> dict[str, Any] | None:
             }
         )
         outcomes.append((off[-1].deliverable, on[-1].deliverable))
-    return _mcnemar(rows, outcomes) if rows else None
+    if not rows and not excluded:
+        return None
+    return {**_mcnemar(rows, outcomes), "excludedRuns": excluded}
 
 
 def _mcnemar(rows: list[dict[str, Any]], outcomes: Sequence[tuple[bool, bool]]) -> dict[str, Any]:
@@ -331,6 +385,7 @@ def _mcnemar(rows: list[dict[str, Any]], outcomes: Sequence[tuple[bool, bool]]) 
         p = min(1.0, 2 * tail * 0.5**discordant)
     else:
         p = 1.0
+    concordant_pass = sum(baseline and treatment for baseline, treatment in outcomes)
     return {
         "questions": rows,
         "b": b,
@@ -338,8 +393,11 @@ def _mcnemar(rows: list[dict[str, Any]], outcomes: Sequence[tuple[bool, bool]]) 
         "discordant": discordant,
         "p": p,
         "significant": p < 0.05,
-        "concordantPass": sum(baseline and treatment for baseline, treatment in outcomes),
+        "concordantPass": concordant_pass,
         "concordantFail": sum(not baseline and not treatment for baseline, treatment in outcomes),
+        # "没变差" is the easier claim to defend than "变好": of the questions the baseline
+        # already delivered, the share the treatment broke. Null when the baseline delivered none.
+        "regressionRate": _ratio(c, concordant_pass + c),
     }
 
 
@@ -375,6 +433,21 @@ def _search_events(text: str | None) -> tuple[int, int, int]:
         new_count = row.get("newCount")
         fresh += isinstance(new_count, int) and not isinstance(new_count, bool) and new_count > 0
     return searches, deduplicated, fresh
+
+
+def _memory_events(text: str | None) -> tuple[int, int, int]:
+    """(calls, hits, reads-that-reached-memory) over the ``memory_search`` tool events."""
+    calls = hits = reads = 0
+    for line in (text or "").splitlines():
+        row = _json_mapping(line)
+        if not row or row.get("tool") != "memory_search":
+            continue
+        calls += 1
+        count = row.get("hitCount")
+        count = count if isinstance(count, int) and not isinstance(count, bool) and count > 0 else 0
+        hits += count
+        reads += row.get("enabled") is True or count > 0
+    return calls, hits, reads
 
 
 def _nullable(left: float | int | None, right: float | int | None, *, descending: bool) -> int:

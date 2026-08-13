@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "experiment": "science125-memory-ablation",
+  "status": "pre_registered_protocol",
+  "registered_at": "2026-08-13",
+  "registered_commit": "fe417584605716f71ef4e101c2ea4b55cbee19cf",
+  "question": "跨 run 战役记忆（memory/）对 Science-125 单题交付率有没有可观测的方向性影响？关掉它，同一批题的交付会变差、持平，还是变好？",
+  "estimand": "Architecture-path trade-off under one fixed serial batch order; not a pure memory causal effect, for four reasons this protocol records before any run starts. (1) 顺序依赖：ON 臂的记忆随批次累积，第 120 题读到的 memory/ 与第 1 题不是同一个对象，因此 ON 臂内部 125 个 run 不独立，估计的是「这一条特定串行顺序下的记忆机制」，不是「记忆」本身。(2) 时间错位：Phase B 在 Phase A 之后跑，harness commit 钉死，但 arXiv 语料与外部 API 状态会漂移。(3) tool visibility differs：memory_search 工具在两臂都对 agent 可见，OFF 臂只是让它返回 enabled=false，所以两臂的工具面相同而工具效用不同——被消融的是数据不是接口，agent 仍可能把一次空调用花在它上面。(4) 单臂单次：每题每臂只跑一次，run 内随机性与臂间差异不可分离，本协议不做重复采样（见 statistics）。",
+  "arms": {
+    "phase_a": {
+      "name": "memory_on_full",
+      "memory_arm": "on",
+      "questions": "1-125（全量）",
+      "command": "uv run python -m app.batch --ids 1-125",
+      "semantics": "跨 run 记忆读 + 写回全开；meta.memoryArm=on",
+      "role": "主交付。M4/M5/M7/M8 与 7 类失败分布的全量证据来源。"
+    },
+    "phase_b": {
+      "name": "memory_off_subset",
+      "memory_arm": "off",
+      "questions": "phase_b_subset.question_ids（30 题分层子集）",
+      "command": "uv run python -m app.batch --ids <phase_b_subset> --no-memory",
+      "semantics": "无跨 run 记忆读、无写回；memory_search 返回 enabled=false；meta.memoryArm=off",
+      "role": "受控配对臂。只与 Phase A 中同题的 run 配对进 McNemar 2×2 表。"
+    }
+  },
+  "controls": {
+    "model": "qwen3.7-plus（LUUP_MODEL_ID 默认值），两臂同模型同端点",
+    "harness_commit": "两臂共用同一个 commit；开跑前 harness 定版，跑完不改码。每个 run 的 exit.json.sourceIdentity{gitCommit,treeDirty} 自证，评估按 cohort 分组，dirty tree 单独成 cohort。",
+    "question_bank": "backend/app/data/science125.json（retrievedAt 2026-08-08），两臂同题库同题干",
+    "tool_implementations": "两臂同一份 tools/（arxiv_search / arxiv_save / paper_index_read / memory_search），唯一差异是 memory_dir 是否为 None",
+    "turn_budget": {"scientist_max_turns": 22, "reviewer_max_turns": 19},
+    "execution": "串行，一次一题，固定题号升序（百炼有速率限制；并发会把 429 混进失败分类）",
+    "resumption": "已 exit 0 的题不重跑；断点续跑不改变题序",
+    "batch_circuit_breakers": {
+      "same_class_streak_stop": 5,
+      "outage_streak_stop": 2,
+      "outage_classes": ["infra_error", "infra_timeout"],
+      "rationale": "批量的价值建立在「每题独立」上；连续同类失败正是该假设被证伪的信号，此时每多跑一题信息增益趋近 0 而成本不变。熔断触发即停批并记录，不得手动越过继续跑，否则本协议的 cohort 声明失效。"
+    },
+    "no_retry": "无隐式重试。契约不合格不重试是锁定契约；重试会把「一次做对」偷换成「多试几次总有一次对」。"
+  },
+  "phase_b_subset": {
+    "fixed_before_phase_a": true,
+    "note": "本子集在 Phase A 开跑前确定并落盘。事后按结果挑子集会把随机波动读成效应，这是本协议存在的首要理由。",
+    "size": 30,
+    "method": "deterministic_stratified_sampling",
+    "seed": "luup-science125-phaseB-v1",
+    "rule": [
+      "1. 分层键 = science125.json 的 domain 字段，共 12 层，层大小合计 125。",
+      "2. 比例分配：n_h = floor(N_h * 30 / 125)；若结果为 0 则抬到 1（保证每层至少一题，抬升过的层记为 raised）。",
+      "3. 余额分配：k = 30 - sum(n_h)；在**未被抬升**的层里按 (N_h * 30 / 125) 的小数部分降序、同分按 domain 名升序，取前 k 层各 +1。raised 层已拿到超过比例份额，不参与二次分配。",
+      "4. 层内挑选：把该层的题号按 sha256(f\"{seed}:{id}\") 的十六进制串升序排序，取前 n_h 个。",
+      "5. 最终子集 = 各层所选题号并集，升序输出。"
+    ],
+    "allocation": {
+      "Artificial Intelligence": {"stratum_size": 8, "allocated": 2, "ids": [120, 121]},
+      "Astronomy": {"stratum_size": 23, "allocated": 5, "ids": [46, 49, 50, 55, 64]},
+      "Biology": {"stratum_size": 22, "allocated": 5, "ids": [27, 28, 32, 35, 40]},
+      "Chemistry": {"stratum_size": 9, "allocated": 2, "ids": [8, 12]},
+      "Ecology": {"stratum_size": 8, "allocated": 2, "ids": [107, 110]},
+      "Energy Science": {"stratum_size": 3, "allocated": 1, "ids": [117]},
+      "Engineering & Materials Science": {"stratum_size": 4, "allocated": 1, "ids": [90]},
+      "Information Science": {"stratum_size": 4, "allocated": 1, "ids": [91]},
+      "Mathematical Sciences": {"stratum_size": 3, "allocated": 1, "ids": [1]},
+      "Medicine & Health": {"stratum_size": 11, "allocated": 3, "ids": [16, 17, 19]},
+      "Neuroscience": {"stratum_size": 12, "allocated": 3, "ids": [95, 100, 102]},
+      "Physics": {"stratum_size": 18, "allocated": 4, "ids": [72, 77, 79, 86]}
+    },
+    "question_ids": [1, 8, 12, 16, 17, 19, 27, 28, 32, 35, 40, 46, 49, 50, 55, 64, 72, 77, 79, 86, 90, 91, 95, 100, 102, 107, 110, 117, 120, 121],
+    "commitment": {
+      "algorithm": "sha256",
+      "payload": "question_ids 按升序、JSON 紧凑序列化（separators=(\",\",\":\")）、UTF-8 编码",
+      "digest": "498002a5f4af6caac7036e6d0afa0565f0c0cce6f4dd7237ba22c81ece6ec9aa",
+      "git_commit": "fe417584605716f71ef4e101c2ea4b55cbee19cf",
+      "committed_at": "2026-08-13",
+      "note": "承诺的是子集本身而不是本文件的自哈希——文件哈希写进文件是不动点，不可实现。子集的 digest 与生成规则由 backend/tests/test_experiment_protocol.py 逐条重算钉住，改题号必然红。"
+    }
+  },
+  "metrics": {
+    "mechanism": {
+      "note": "机制指标只回答「消融是否真的发生、记忆是否真的被读到」。它们不是成绩，任何一条不成立都会让目标指标失去解释权。",
+      "newInformationRate": "arxiv_search 中至少带回一篇本 run 未见论文的比例（statistics.searchHealth）",
+      "deduplicatedRate": "同 run 缓存命中的检索占比（statistics.searchHealth）",
+      "revisionRate": "review.json verdict==revise 占已评审 run 的比例（statistics.revision）",
+      "memorySearchCalls": "全批 memory_search 调用数（statistics.memoryLeakage）",
+      "memorySearchHits": "全批 memory_search 命中行数合计（statistics.memoryLeakage）；这是「125 题近似独立」的唯一证据——命中为 0 时，M4 才能理直气壮叫「解一道题的能力」，而不是「一道题带出下一道题」",
+      "ablation_effectiveness_assertion": "memoryArm==off 的 run 必须没有任何一次真正读到记忆的 memory_search（事件里 enabled=true 或 hitCount>0 即为泄漏）。违反者标 ablationEffective=false 并**排除出配对**，在 statistics.memoryLeakage.ablationIneffectiveRuns 单列。依据：书 chapter10/generative-agents/validate_campaign.py 的 reflection_ablation_effective 门——被消融的机制必须交出零产出，否则该臂不是对照臂。"
+    },
+    "outcome": {
+      "note": "目标指标才是要比较的东西，且只在机制指标全部成立时才允许解读。",
+      "deliveryRate": "M4 交付率 ± 二项标准误 √(p(1-p)/n)；环境性失败单列一档（statistics.delivery）",
+      "failureClassDistribution": "7 类失败分类的分布，按 3 桶（quality / infrastructure / unclassified）分组（statistics.failureClasses）",
+      "passSquared": "M5 同题相邻两次 run 均交付的比例（statistics.passSquared）",
+      "mcnemar": "memoryArms 配对的 b（off 失败∧on 通过）、c（off 通过∧on 失败）、discordant、concordantPass、concordantFail",
+      "regressionRate": "c / (concordantPass + c)：在 off 已经能通过的题里，开记忆后反而挂掉的比例。分母为 0 时报 null 而不是 0。依据：hermes 消融引擎与 GAIA 的 negative_transfer_rate 都单列这个数——「没变差」比「变好」更容易站住。"
+    }
+  },
+  "statistics": {
+    "design": "bounded_comparison",
+    "claims_allowed": ["方向（b 与 c 谁大）", "2×2 表的四个 cell 计数", "效应量（率差与二项标准误、regressionRate）"],
+    "claims_forbidden": ["显著性主张", "p 值作为结论", "「记忆有效/无效」的普适断言", "从单条成功轨迹推广"],
+    "reason": "n=30 配对时，不一致对（discordant = b + c）若 ≤5，即使 5:0 的极端一边倒，精确二项双侧 p 也只有 0.0625——**设计上就不可能显著**。此时报 p 值只会制造一个注定不显著的稻草人，或诱导事后加样本去追 p<0.05。因此本轮预先声明：只报方向、cell 计数与效应量，不做显著性主张。",
+    "not_doing": {
+      "seeds_and_repeats": "不加 seed / 重复采样 / bootstrap 基础设施。每题每臂各一次。成本为零、诚实度更高的替代是在报告里声明不做显著性主张，而不是造一套撑不起统计功效的重复设施。",
+      "consequence": "run 内随机性与臂间差异不可分离，这一点写进 estimand，不靠事后免责。"
+    },
+    "reported_anyway": "evaluation.py 仍会输出 p 与 significant 字段（既有实现，不改），但本轮报告与 PPT 不得引用这两个字段。它们留在 JSON 里是为了将来样本足够时可以直接复用同一条链路。",
+    "excluded_pairs": "ablationEffective=false 的 off run、缺题号的自由问题 run、只跑了一臂的题，都不进 2×2 表，单列计数。"
+  },
+  "interpretation": "这是对已记录架构取舍的证据，不是普适优越性主张。结论的形状只能是「在这一条 harness commit、这一个题库、这一条串行顺序下，跨 run 记忆让交付率朝某个方向动了多少」，不能读成「记忆机制优于无记忆」或反过来。Do not claim superiority from one successful trace, one direction, or an unpriced token count.",
+  "provenance": {
+    "method_source": "ai-agent-book chapter8 / chapter10",
+    "protocol_shape": "chapter10/multi-role-transfer/experiment_protocol.json",
+    "ablation_gate": "chapter10/generative-agents/validate_campaign.py 的 reflection_ablation_effective",
+    "metric_split": "chapter10/multi-role-transfer/README.md 的机制指标 / 目标指标分法",
+    "repo_anchors": ["docs/design/criteria.md H 节", "docs/design/loop-upgrade.md D1-D3"]
+  }
+}
