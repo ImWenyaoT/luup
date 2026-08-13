@@ -13,6 +13,7 @@ from app.evaluation import (
     evaluate_runs,
     failure_classes,
     main,
+    memory_leakage,
     paired_comparison,
     pass_squared,
     revision_rate,
@@ -240,6 +241,54 @@ def test_two_memory_arms_on_the_same_question_are_paired_by_arm() -> None:
     assert arms["significant"] is False
 
 
+def test_an_off_arm_run_that_still_read_memory_is_dropped_from_the_pairing() -> None:
+    """A control that kept the thing being ablated is not a control; it must not enter the 2×2 table."""
+    arms = paired_comparison(
+        [
+            candidate("20260810-100001", question_id=1, deliverable=False, memory_arm="off", memory_reads=1),
+            candidate("20260810-100002", question_id=1, deliverable=True, memory_arm="on", memory_reads=3),
+            candidate("20260810-200001", question_id=2, deliverable=False, memory_arm="off"),
+            candidate("20260810-200002", question_id=2, deliverable=True, memory_arm="on", memory_reads=2),
+        ]
+    )["memoryArms"]
+
+    assert [row["questionId"] for row in arms["questions"]] == [2]  # Question 1 lost its control.
+    assert (arms["b"], arms["c"], arms["discordant"]) == (1, 0, 1)
+    assert arms["excludedRuns"] == [
+        {"questionId": 1, "runId": "20260810-100001", "reason": "消融失效：off 臂仍读到跨 run 记忆"}
+    ]
+
+
+def test_an_off_arm_run_that_merely_called_the_disabled_tool_is_still_a_valid_control() -> None:
+    """memory_search stays visible in the off arm and answers enabled=false; a call is not a leak."""
+    off = candidate("20260810-100001", memory_arm="off", memory_searches=4, memory_hits=0, memory_reads=0)
+
+    assert off.ablation_effective is True
+    arms = paired_comparison([off, candidate("20260810-100002", memory_arm="on", memory_reads=1)])["memoryArms"]
+    assert [row["questionId"] for row in arms["questions"]] == [1]
+    assert arms["excludedRuns"] == []
+
+
+def test_every_off_arm_run_leaking_leaves_the_pairing_empty_but_still_reports_why() -> None:
+    """Silence would read as "no ablation was attempted"; the excluded runs have to stay visible."""
+    arms = paired_comparison(
+        [
+            candidate("20260810-100001", memory_arm="off", memory_reads=1),
+            candidate("20260810-100002", memory_arm="on"),
+        ]
+    )["memoryArms"]
+
+    assert arms["questions"] == []
+    assert arms["discordant"] == 0
+    assert [row["runId"] for row in arms["excludedRuns"]] == ["20260810-100001"]
+
+
+def test_the_ablation_gate_only_judges_the_off_arm() -> None:
+    """Reading memory is the on arm's job; the gate must not condemn it for doing that job."""
+    assert candidate("a", memory_arm="on", memory_reads=9).ablation_effective is True
+    assert candidate("b", memory_arm=None, memory_reads=9).ablation_effective is True
+
+
 def test_a_question_that_only_ran_one_arm_contributes_no_arm_pair() -> None:
     arms = paired_comparison(
         [
@@ -252,6 +301,50 @@ def test_a_question_that_only_ran_one_arm_contributes_no_arm_pair() -> None:
 
     assert [row["questionId"] for row in arms["questions"]] == [2]
     assert arms["b"] == 1
+
+
+def test_regression_rate_is_the_share_of_baseline_passes_the_treatment_broke() -> None:
+    """"没变差" is the claim that survives review, so c needs a denominator, not just a count."""
+    paired = paired_comparison(
+        [
+            # q1: off passed, on failed -> a regression.
+            candidate("20260810-100001", question_id=1, deliverable=True, memory_arm="off"),
+            candidate("20260810-100002", question_id=1, deliverable=False, memory_arm="on"),
+            # q2, q3: both arms delivered -> the rest of the denominator.
+            candidate("20260810-200001", question_id=2, deliverable=True, memory_arm="off"),
+            candidate("20260810-200002", question_id=2, deliverable=True, memory_arm="on"),
+            candidate("20260810-300001", question_id=3, deliverable=True, memory_arm="off"),
+            candidate("20260810-300002", question_id=3, deliverable=True, memory_arm="on"),
+            # q4: off failed, on passed -> a repair, which never enters the regression denominator.
+            candidate("20260810-400001", question_id=4, deliverable=False, memory_arm="off"),
+            candidate("20260810-400002", question_id=4, deliverable=True, memory_arm="on"),
+        ]
+    )["memoryArms"]
+
+    assert (paired["b"], paired["c"], paired["concordantPass"]) == (1, 1, 2)
+    assert paired["regressionRate"] == pytest.approx(1 / 3)
+
+
+@pytest.mark.parametrize(
+    ("deliverable", "expected"),
+    [
+        pytest.param(False, None, id="baseline-never-delivered-so-there-was-nothing-to-break"),
+        pytest.param(True, 0.0, id="baseline-delivered-and-nothing-broke"),
+    ],
+)
+def test_regression_rate_is_null_rather_than_zero_when_its_denominator_is_empty(
+    deliverable: bool, expected: float | None
+) -> None:
+    """0/0 reported as 0 would read as "no regressions observed" when nothing was observable."""
+    paired = paired_comparison(
+        [
+            candidate("20260810-100001", deliverable=deliverable),
+            candidate("20260810-100002", deliverable=deliverable),
+        ]
+    )["firstVsLatest"]
+
+    assert paired["c"] == 0
+    assert paired["regressionRate"] == expected
 
 
 # --- Tier1 aggregates --------------------------------------------------------------------------
@@ -323,6 +416,44 @@ def test_search_health_reports_yield_per_search_not_per_run() -> None:
     assert health["refsMean"] == pytest.approx(5.0)
 
 
+def test_memory_leakage_counts_the_channel_between_questions() -> None:
+    """M4 means "can it solve a question" only if questions did not feed each other; that is a number."""
+    leakage = memory_leakage(
+        [
+            candidate("a", memory_arm="on", memory_searches=3, memory_hits=7, memory_reads=3),
+            candidate("b", memory_arm="on", memory_searches=1, memory_hits=0, memory_reads=1),
+            candidate("c", memory_arm="off", memory_searches=2, memory_hits=0, memory_reads=0),
+        ]
+    )
+
+    assert leakage["memorySearchCalls"] == 6
+    assert leakage["memorySearchHits"] == 7
+    assert leakage["memorySearchReads"] == 4
+    assert leakage["runsWithMemoryHits"] == 1
+    assert leakage["hitsPerCall"] == pytest.approx(7 / 6)
+    assert leakage["ablationIneffectiveRuns"] == []
+
+
+def test_a_campaign_with_no_memory_hits_reports_zero_leakage_and_no_rate() -> None:
+    """Zero hits is the strongest form of the independence claim, so it must be readable as zero."""
+    leakage = memory_leakage([candidate("a"), candidate("b", memory_arm="off")])
+
+    assert (leakage["memorySearchCalls"], leakage["memorySearchHits"]) == (0, 0)
+    assert leakage["hitsPerCall"] is None
+    assert memory_leakage([])["memorySearchCalls"] == 0
+
+
+def test_memory_leakage_names_the_runs_whose_ablation_did_not_take() -> None:
+    leakage = memory_leakage(
+        [
+            candidate("leaky", memory_arm="off", memory_searches=1, memory_hits=2, memory_reads=1),
+            candidate("clean", memory_arm="off", memory_searches=1),
+        ]
+    )
+
+    assert leakage["ablationIneffectiveRuns"] == ["leaky"]
+
+
 def test_failure_classes_keep_outages_apart_from_quality_verdicts() -> None:
     facts = [
         candidate("a", deliverable=True),
@@ -389,7 +520,40 @@ def test_the_statistics_block_is_derived_from_the_artifacts_on_disk(
     assert statistics["searchHealth"]["deduplicatedRate"] == 0.5
     assert statistics["searchHealth"]["newInformationRate"] == 0.5
     assert statistics["failureClasses"]["infrastructure"]["byClass"] == {"infra_timeout": 1}
+    # The cross-question channel is derived from the same file, with no new collection.
+    assert statistics["memoryLeakage"] == {
+        "memorySearchCalls": 1,
+        "memorySearchHits": 2,
+        "memorySearchReads": 1,
+        "runsWithMemoryHits": 1,
+        "hitsPerCall": 2.0,
+        "ablationIneffectiveRuns": [],
+    }
     assert report["pairedComparison"]["memoryArms"]["b"] == 1  # memory on passed where memory off failed
+    assert report["pairedComparison"]["memoryArms"]["regressionRate"] is None  # off delivered nothing
+
+
+def test_an_off_arm_run_whose_events_show_a_memory_read_is_excluded_on_disk(
+    tmp_path: Path, write_run: Callable[..., Path]
+) -> None:
+    """The gate has to fire off the artifacts, not off a flag the run could have written wrong."""
+    write_run(tmp_path, "20260810-000001", artifacts={"meta.json": json.dumps({"questionId": 7, "memoryArm": "on"})})
+    write_run(
+        tmp_path,
+        "20260810-000002",
+        passed=False,
+        artifacts={
+            "meta.json": json.dumps({"questionId": 7, "memoryArm": "off"}),
+            "tool-events.jsonl": json.dumps({"tool": "memory_search", "enabled": True, "hitCount": 0}) + "\n",
+        },
+    )
+
+    report = evaluate_runs(tmp_path)
+
+    assert report["statistics"]["memoryLeakage"]["ablationIneffectiveRuns"] == ["20260810-000002"]
+    arms = report["pairedComparison"]["memoryArms"]
+    assert arms["questions"] == []
+    assert [row["runId"] for row in arms["excludedRuns"]] == ["20260810-000002"]
 
 
 def test_the_statistics_say_which_code_version_produced_them(
