@@ -130,6 +130,70 @@ def test_a_half_written_json_artifact_is_skipped_instead_of_crashing_the_view(
     assert "proposal.json" in detail.json()["artifactNames"]
 
 
+FAILED_REPORT = "# 验收报告（确定性检查）\n\n结果: 1/1 FAILED\n"
+ALL_PASS_REPORT = "# 验收报告（确定性检查）\n\n结果: ALL PASS\n"
+
+
+def test_status_reads_the_structured_verdict_not_the_rendered_report(
+    tmp_path: Path, write_run: Callable[..., Path]
+) -> None:
+    """`verification.json.ok` 与报告文案矛盾时以 JSON 为准——报告是渲染物，不是状态载体。
+
+    两个方向都要钉：`ok=false` 配 ALL PASS 文案不得判通过，`ok=true` 配 FAILED 文案不得判失败。
+    否则报告模板改一个字就能翻转一个 run 的成败，正是评估口径最贵的那类 bug。
+    """
+    write_run(tmp_path, "20260810-000010", artifacts={"verification.json": json.dumps({"ok": False})})
+    write_run(
+        tmp_path,
+        "20260810-000011",
+        artifacts={"verification.json": json.dumps({"ok": True}), "verification-report.md": FAILED_REPORT},
+    )
+
+    runs = {run["id"]: run for run in client_for(tmp_path).get("/api/runs").json()["runs"]}
+
+    assert runs["20260810-000010"]["status"] == "failed"
+    assert runs["20260810-000011"]["status"] == "passed"
+
+
+def test_status_falls_back_to_the_report_for_runs_written_before_verification_json(
+    tmp_path: Path, write_run: Callable[..., Path]
+) -> None:
+    """已提交的早期 run（20260810-042825/045543/052412）没有 `verification.json`，仍须判对。"""
+    write_run(tmp_path, "20260810-000012", artifacts={"verification.json": None})
+    write_run(
+        tmp_path,
+        "20260810-000013",
+        artifacts={"verification.json": None, "verification-report.md": FAILED_REPORT},
+    )
+
+    runs = {run["id"]: run for run in client_for(tmp_path).get("/api/runs").json()["runs"]}
+
+    assert runs["20260810-000012"]["status"] == "passed"
+    assert runs["20260810-000013"]["status"] == "failed"
+
+
+def test_status_without_either_verdict_artifact_degrades_to_failed(
+    tmp_path: Path, write_run: Callable[..., Path]
+) -> None:
+    """渲染了 proposal 却两种判定都没落盘的 run 只能算没通过：缺席不是通过。"""
+    write_run(
+        tmp_path,
+        "20260810-000014",
+        artifacts={"verification.json": None, "verification-report.md": None},
+    )
+    # 结构化事实存在但不是布尔 `ok`（半截 JSON、字段改名）时退回文案，而不是当作失败。
+    write_run(
+        tmp_path,
+        "20260810-000015",
+        artifacts={"verification.json": json.dumps({"ok": "yes"}), "verification-report.md": ALL_PASS_REPORT},
+    )
+
+    runs = {run["id"]: run for run in client_for(tmp_path).get("/api/runs").json()["runs"]}
+
+    assert runs["20260810-000014"]["status"] == "failed"
+    assert runs["20260810-000015"]["status"] == "passed"
+
+
 def test_the_list_projection_carries_the_batch_cohort_facts(tmp_path: Path, write_run: Callable[..., Path]) -> None:
     """批次概览按 (questionId, classification, gitCommit) 读列表，所以这三样必须在列表里。
 

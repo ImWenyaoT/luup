@@ -300,7 +300,7 @@ class RunService:
         if "FAILED.md" in scan.files or failed_exit:
             phase = "failed"
         elif "proposal.md" in scan.files:
-            phase = "verified" if report and _ALL_PASS.search(report) else "rendered"
+            phase = "verified" if self._verified(scan, report) else "rendered"
         else:
             phase = "unsettled"
         started = (
@@ -326,6 +326,21 @@ class RunService:
             "started": started,
             "finished": (meta_finished or exit_finished or newest) if terminal else None,
         }
+
+    @staticmethod
+    def _verified(scan: Scan, report: str | None) -> bool:
+        """验收结论取自结构化事实 `verification.json.ok`，正则只兜没有它的旧 run。
+
+        `ok` 与报告里那行 `结果: ALL PASS` 是同一个判定的两种写法，但只有前者是 verifier
+        原样落盘的字段，后者是渲染出来的文案。把 markdown 当结构化状态载体，等价于让报告
+        模板的任何一次改动去改运行的成败——评分器 bug 把正确答案判为失败正是这么发生的。
+        所以只要 `verification.json` 里有布尔 `ok`，它就是权威，哪怕报告文本与它矛盾。
+        兜底只服务 2026-08-10 之前那批没写 `verification.json` 的已提交 run。
+        """
+        verification = _read_json(scan, "verification.json")
+        if isinstance(verification, dict) and isinstance(verification.get("ok"), bool):
+            return verification["ok"] is True
+        return report is not None and _ALL_PASS.search(report) is not None
 
     def _status(self, scan: Scan, outcome: Outcome) -> str:
         if self.active_run_id == scan.identifier:
