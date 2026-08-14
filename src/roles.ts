@@ -14,6 +14,7 @@ import {
   type Role,
 } from "./agent/contracts.ts";
 import { researchPlanQualityIssues, upstreamTraceabilityIssues } from "./agent/plan-quality.ts";
+import { STRUCTURED_OUTPUT_TOOL, type StructuredOutput } from "./agent/roles/structured-output.ts";
 import type { StageUsage } from "./executor.ts";
 import type { StoredInput, TaskContext } from "./store/contracts.ts";
 
@@ -45,6 +46,9 @@ const normalize = (text: string) => text.split(/\s+/).filter(Boolean).join(" ");
  * 解析失败抛 ContractError 而不是让 SyntaxError 冒上去：「输出不是合法 JSON」正是
  * 最该给一次纠错的情况，可它原本落进「不可纠错」那一类，Attempt 直接判死。
  * live 上撞到过 —— 模型在 JSON 外面多说了两句话，一次机会都没给就终止了。
+ *
+ * 带 `outputType` 的四个角色到这里已经是对象，直接放行；researcher 走合成工具上报
+ * （见 `capturedArtifact`），也不经过这条围栏剥离的路。
  */
 function parseValue(value: unknown): unknown {
   if (typeof value !== "string") return value;
@@ -275,6 +279,24 @@ function acceptFor(context: TaskContext, ledger: EvidenceLedger): (raw: unknown)
   }
 }
 
+/** 取本轮上报的产物。没上报就是合同违规 —— 模型自称完成，却没交作业。
+ *
+ * 抛 StageError 而不是 ContractError：这一类不给纠错机会，也不隐式重跑。
+ * 「你忘了调工具」这句话，模型在同一个 turn 内已经有机会听见了
+ * （工具错误会原样回灌），再花一次调用去说同一句话没有理由。
+ * 失败分类沿用既有的 `invalid_output`：它就是「模型没写出合格产物」那一类。
+ */
+function capturedArtifact(capture: StructuredOutput, role: Role): unknown {
+  const captured = capture.captured();
+  if (!captured) {
+    throw new StageError(
+      "invalid_output",
+      `${role} finished without calling ${STRUCTURED_OUTPUT_TOOL}: only the tool call counts as the final answer`,
+    );
+  }
+  return captured.value;
+}
+
 export type TaskRunResult = {
   artifact: DomainArtifact;
   corrections: number;
@@ -285,13 +307,21 @@ export type TaskRunResult = {
  *
  * 纠错不虚增 Attempt —— 它是同一个业务 Attempt 内的第二次尝试，只记在 corrections 上。
  * 执行层的 StageError（超时、provider 报错）纠错解决不了，直接往上抛。
+ *
+ * corrections 与 turn 内自我修正的分工（researcher 上报走合成工具之后仍然成立）：
+ * 工具参数校验挡的是 **schema 表达得了** 的失败，模型在同一个 turn 内看着 zod issue
+ * 自己改，不花 correction；corrections 挡的是 **schema 表达不了** 的后置约束 ——
+ * `.refine()` 的中文正文、`canonicalizeResearch` 的检索冻结门、计划质量门与可追溯性门。
+ * 后者必须先跑完整个 Attempt 才知道违没违规，只能另起一次调用把材料交还给模型。
+ * 两条通路互补，谁也替代不了谁；合成工具只是把第一类失败从 corrections 上卸下来。
  */
 export async function runTask(
   context: TaskContext,
   options: { execute: StageExecutor; ledger?: EvidenceLedger },
 ): Promise<TaskRunResult> {
   const ledger = options.ledger ?? new EvidenceLedger();
-  const agent = createRoles(ledger)[context.role];
+  const { agents, capture } = createRoles(ledger);
+  const agent = agents[context.role];
   if (context.role !== "researcher" && agent.tools.length !== 0) {
     throw new Error(`${context.role} cannot use tools`);
   }
@@ -311,6 +341,9 @@ export async function runTask(
   // 一个业务 Attempt 共用一本检索账。纠错只是修 Artifact，不要求把刚做过的搜索再做一遍。
   ledger.beginScope(context.taskId);
   for (let round = 0; round < 2; round += 1) {
+    // 台账跨纠错轮累积，上报窗口不跨：纠错轮要求模型重新交一份完整 Artifact，
+    // 上一轮捕获到的那份必须先作废，否则守卫会把第二次上报当成重复调用拒掉。
+    capture.beginRound();
     try {
       // 先存原始输出再解析：解析失败时纠错提示里也要带上模型写的那份原文，
       // 否则它只收到一句「不是合法 JSON」，无从对照着改。
@@ -318,7 +351,7 @@ export async function runTask(
       if (remaining <= 0) {
         throw new StageError("deadline_exceeded", `${context.role} exceeded the Attempt deadline`);
       }
-      candidate = await options.execute({
+      const returned = await options.execute({
         runId: context.runId,
         role: context.role,
         agent,
@@ -331,6 +364,8 @@ export async function runTask(
           correction,
         }),
       });
+      // researcher 交作业走合成工具，最终文本只是收尾回执，产物在上报窗口里。
+      candidate = context.role === "researcher" ? capturedArtifact(capture, context.role) : returned;
       return { artifact: accept(parseValue(candidate)), corrections, searches: ledger.scopedRecords() };
     } catch (error) {
       spent = addUsage(spent, (error as { usage?: StageUsage }).usage);

@@ -1,16 +1,12 @@
 import { EvidenceLedger } from "./agent/evidence.ts";
 import { classifyFailure } from "./agent/failures.ts";
 import type { EvidenceReview, Research, ResearchPlan, Review, Role } from "./agent/contracts.ts";
-import type { CampaignMemory } from "./campaign/campaign.ts";
 import type { StageUsage } from "./executor.ts";
 import { runTask, type StageExecutor } from "./roles.ts";
+import type { CampaignMemoryPort, RunStore, Verifier } from "./seams/index.ts";
 import type { StoredInput, TaskContext, UsageFacts } from "./store/contracts.ts";
-import type { SqliteStore, StoredArtifact } from "./store/store.ts";
-import {
-  createReferenceVerifier,
-  verificationFailureCode,
-  type ReferenceVerifier,
-} from "./verify/verifier.ts";
+import type { StoredArtifact } from "./store/store.ts";
+import { createReferenceVerifier, verificationFailureCode } from "./verify/verifier.ts";
 
 /** Attempt 失败时抛，用来中断五阶段流程。失败本身已经落库。 */
 class AttemptFailed extends Error {
@@ -41,21 +37,22 @@ export type RunOutcome = {
  * store 只负责记账，不参与决定顺序。
  */
 export class Harness {
-  readonly #store: SqliteStore;
+  readonly #store: RunStore;
   readonly #execute: StageExecutor;
   readonly #createLedger: (scope: { runId: string; attemptId: string }) => EvidenceLedger;
-  readonly #verifyReferences: ReferenceVerifier;
-  readonly #memory: CampaignMemory | null;
+  readonly #verifyReferences: Verifier;
+  readonly #memory: CampaignMemoryPort | null;
 
+  /** 三个可换实现的位置都以接缝类型入参，不认具体类：见 `src/seams/index.ts`。 */
   constructor(
-    store: SqliteStore,
+    store: RunStore,
     execute: StageExecutor,
     options: {
       createLedger?: (scope: { runId: string; attemptId: string }) => EvidenceLedger;
       /** 终局引用验收。默认打 arXiv 官方 API；测试与确定性运行时注入离线替身。 */
-      verifyReferences?: ReferenceVerifier;
+      verifyReferences?: Verifier;
       /** 跨 run 战役记忆。不传（或传 null）就是消融臂：既不注入也不写回。 */
-      memory?: CampaignMemory | null;
+      memory?: CampaignMemoryPort | null;
     } = {},
   ) {
     this.#store = store;

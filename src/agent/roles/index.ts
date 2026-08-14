@@ -7,14 +7,25 @@ import defineHypothesis from "./hypothesis-generation.ts";
 import definePlanner from "./research-plan.ts";
 import defineResearcher from "./researcher.ts";
 import defineReviewer from "./reviewer.ts";
+import type { StructuredOutput } from "./structured-output.ts";
 
-/** Record 强制五个角色和 Role 类型一致，漏一个会在编译期报错。 */
-export function createRoles(ledger: EvidenceLedger): Record<Role, Agent<any, any>> {
+export type Roles = {
+  /** Record 强制五个角色和 Role 类型一致，漏一个会在编译期报错。 */
+  agents: Record<Role, Agent<any, any>>;
+  /** researcher 的上报面。它与上面那个 researcher Agent 是同一份状态，不能分开创建。 */
+  capture: StructuredOutput;
+};
+
+export function createRoles(ledger: EvidenceLedger): Roles {
+  const researcher = defineResearcher(ledger);
   return {
-    "researcher": defineResearcher(ledger),
-    "hypothesis-generation": defineHypothesis(),
-    "evidence-review": defineEvidenceReview(),
-    "research-plan": definePlanner(),
-    "reviewer": defineReviewer(),
+    agents: {
+      "researcher": researcher.agent,
+      "hypothesis-generation": defineHypothesis(),
+      "evidence-review": defineEvidenceReview(),
+      "research-plan": definePlanner(),
+      "reviewer": defineReviewer(),
+    },
+    capture: researcher.capture,
   };
 }

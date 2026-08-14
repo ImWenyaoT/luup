@@ -1,6 +1,10 @@
 /** 失败分类。
  *
- * 前五个是 Attempt 级的（某个角色没写出合格 Artifact 或执行层出错），后三个是 Run 级的：
+ * `context_overflow` 是从 `provider_error` 里拆出来的一支：我们塞进去的输入超了模型容量，
+ * 既不是 provider 宕机，也不是模型写错格式。它**不算**环境故障 —— 责任在 harness，
+ * 该被质量分母看见；单列只是为了让「以后加不加压缩兜底」有一个可数的事实依据。
+ *
+ * 前六个是 Attempt 级的（某个角色没写出合格 Artifact 或执行层出错），后三个是 Run 级的：
  * 五个角色全部成功、Reviewer 也 accepted 之后，终局引用验收仍可能否掉整个 Run；
  * 而 `infra_timeout` 只可能由批跑判定 —— 一道题挂死到期限之外，只有旁观者能说出这件事。
  * `infra_error` / `infra_timeout` 单列，是为了让 arXiv 不可达不被计成引用造假，
@@ -10,6 +14,7 @@ export type FailureCode =
   | "invalid_output"
   | "deadline_exceeded"
   | "provider_error"
+  | "context_overflow"
   | "missing_credential"
   | "runtime_error"
   | "verifier_refs"

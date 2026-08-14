@@ -7,6 +7,7 @@ import test from "node:test";
 import { ArxivLookupError } from "../src/agent/arxiv.ts";
 import { EvidenceLedger, type EvidenceCitation, type EvidenceRecord } from "../src/agent/evidence.ts";
 import { StageError } from "../src/agent/failures.ts";
+import { reportStructuredOutput } from "../src/agent/roles/structured-output.ts";
 import { Harness } from "../src/harness.ts";
 import type { StageExecutor } from "../src/roles.ts";
 import { SqliteStore } from "../src/store/store.ts";
@@ -68,7 +69,7 @@ function fake(options: {
   let reviews = 0;
   let plans = 0;
 
-  const execute: StageExecutor = async ({ role, input, timeoutMs }) => {
+  const execute: StageExecutor = async ({ role, agent, input, timeoutMs }) => {
     const payload = JSON.parse(input);
     calls.push({ role, input: payload, timeoutMs });
     const inputs = (payload.input_artifacts ?? []) as Array<{ id: string; type: string; content: any }>;
@@ -112,7 +113,8 @@ function fake(options: {
       const reported = options.hidesASearch ? searches.slice(0, 1) : searches;
       const inheritedIds = ofType("research")
         .flatMap((item) => item.content.citations.map((c: any) => c.evidence_id));
-      return {
+      // 替身也走 structured_output 上报 —— 与真模型同一条通路，同一份参数 schema。
+      return await reportStructuredOutput(agent, {
         artifact_type: "research",
         question: payload.question,
         summary: "冻结证据支撑一条可审计的论断。",
@@ -140,7 +142,7 @@ function fake(options: {
           url: index === 0 ? "https://evil.example.com/other" : source.url,
         })),
         limitations: ["fixture"],
-      };
+      });
     }
 
     if (role === "hypothesis-generation") {

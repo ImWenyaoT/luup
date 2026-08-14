@@ -1,5 +1,6 @@
 import { EvidenceLedger, type EvidenceCitation } from "../agent/evidence.ts";
 import type { Research } from "../agent/contracts.ts";
+import { reportStructuredOutput } from "../agent/roles/structured-output.ts";
 import type { StageExecutor } from "../roles.ts";
 import type { SqliteStore } from "../store/store.ts";
 import { createReferenceVerifier, type ReferenceVerifier } from "../verify/verifier.ts";
@@ -89,7 +90,7 @@ export function createDeterministicRuntime(store: SqliteStore): {
     return ledger;
   };
 
-  const execute: StageExecutor = async ({ role, input }) => {
+  const execute: StageExecutor = async ({ role, agent, input }) => {
     const payload = JSON.parse(input);
     const inputs = (payload.input_artifacts ?? []) as Array<{ id: string; type: string; content: any }>;
     const ofType = (type: string) => inputs.filter((item) => item.type === type);
@@ -105,7 +106,9 @@ export function createDeterministicRuntime(store: SqliteStore): {
       });
       const inherited = ofType("research")
         .flatMap((item) => (item.content as Research).citations.map((c) => c.evidence_id));
-      return {
+      // 与真模型走同一条上报通道：产物经由 structured_output 工具提交，
+      // 所以离线运行时也要过那份参数 schema。直接 return 会绕开它。
+      return await reportStructuredOutput(agent, {
         artifact_type: "research",
         question: payload.question,
         summary: "已冻结一条可核验的来源，支撑后续假设与实验设计。",
@@ -122,7 +125,7 @@ export function createDeterministicRuntime(store: SqliteStore): {
         }],
         citations: SOURCES.map((source) => ({ evidence_id: search.evidenceId, ...source })),
         limitations: ["确定性运行时只登记一条固定来源。"],
-      };
+      });
     }
 
     if (role === "hypothesis-generation") {

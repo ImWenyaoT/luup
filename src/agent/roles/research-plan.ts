@@ -1,6 +1,6 @@
 import { Agent } from "@openai/agents";
 
-import { modelForRole, sharedModelSettings } from "../config.ts";
+import { modelForRole, sharedModelSettings } from "../../seams/index.ts";
 import { researchPlanSchema } from "../contracts.ts";
 import { instructionsFrom } from "../instructions.ts";
 

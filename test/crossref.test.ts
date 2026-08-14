@@ -78,13 +78,14 @@ test("does not fetch after its Attempt signal is cancelled", async () => {
 });
 
 test("only Researcher has a retrieval surface, and it has both sources", () => {
-  const roles = createRoles(new EvidenceLedger());
-  assert.deepEqual(roles.researcher.tools.map((item: any) => item.name).sort(),
-    ["arxiv_search", "crossref_search"]);
+  const { agents } = createRoles(new EvidenceLedger());
+  // 检索面两个源，外加一个上报面 —— structured_output 不是来源，是交作业的通道
+  assert.deepEqual(agents.researcher.tools.map((item: any) => item.name).sort(),
+    ["arxiv_search", "crossref_search", "structured_output"]);
   // 其余角色零工具 —— 这是「只有 Researcher 可检索」的落点，不靠提示词
   for (const role of ["hypothesis-generation", "evidence-review", "research-plan", "reviewer"] as const) {
-    assert.equal(roles[role].tools.length, 0, `${role} must not have tools`);
+    assert.equal(agents[role].tools.length, 0, `${role} must not have tools`);
   }
   // 不设具名 toolChoice：Qwen 挂两个工具时拒绝 required，具名又会锁死只能用一个源
-  assert.equal(roles.researcher.modelSettings.toolChoice, undefined);
+  assert.equal(agents.researcher.modelSettings.toolChoice, undefined);
 });
