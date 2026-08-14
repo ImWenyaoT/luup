@@ -26,6 +26,17 @@ const EVENT_PAYLOAD_FIELDS: Record<string, readonly string[]> = {
   "run.review_rejected": ["failure_code"],
   "run.completed": ["final_artifact_id"],
   "attempt.started": ["role", "ordinal"],
+  // 终局引用验收的计分板。逐条 checks 是数组，即使写进白名单也过不了类型闸，
+  // 明细留在库内供报告引用，界面只拿到「查了几条、过没过」。
+  "verification.references": [
+    "ok",
+    "reference_count",
+    "frozen_sources",
+    "arxiv_checked",
+    "membership_only",
+    "failed_count",
+    "infra_error",
+  ],
   // reason 不进公共投影：它是校验器的内部错误信息，只用于排障和调门槛。
   "sdk.structured_correction": ["corrections"],
   "sdk.usage": ["agent", "input_tokens", "output_tokens", "reasoning_tokens", "total_tokens"],

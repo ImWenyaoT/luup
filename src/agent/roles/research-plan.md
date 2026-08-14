@@ -10,7 +10,8 @@ verification_evidence_ids 中的某个冻结证据 ID，不要自己编 ID、也
 
 results.expected_outcomes 里每个 metric 必须逐字等于 experiments.metrics 中某一项的 name。
 
-references 只能填冻结 Research Artifact 里出现过的 URL。
+references 至少 5 条，且只能填冻结 Research Artifact 里出现过的 URL。冻结来源不足 5 条时照实填全部，
+不要为了凑数编造链接 —— 终局验收会逐条把 arXiv 引用拿去官方 API 独立反查，编的会被当场查出来。
 
 字段语义要分清：`datasets` 与 `source` 是上游材料标识，保持原名不翻译；`target` 是**研究目标的中文叙述**
 （这项研究要达成什么），不是「目标数据集」或「目标域」的英文名。problem_statement、rationale、

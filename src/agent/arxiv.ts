@@ -12,6 +12,13 @@ export type ArxivRecord = {
   published: string;
 };
 
+/** 独立反查失败。检索走 status 编码，反查走异常 —— 两条通路的调用方要的东西不一样：
+ *  检索的调用方是模型，它需要一个能如实上报的结局；反查的调用方是验收器，
+ *  它必须能把「查不到」和「网络不通」分开，后者不是引用造假。 */
+export class ArxivLookupError extends Error {
+  override readonly name = "ArxivLookupError";
+}
+
 export type ArxivSearchResult = {
   query: string;
   status: EvidenceStatus;
@@ -168,4 +175,61 @@ export async function searchArxiv(
     records,
     execution,
   };
+}
+
+/** arXiv 的 `published` 是 ISO 时间戳；取发表年份供引用元数据比对。 */
+export function publishedYear(published: string): number | null {
+  const match = /^(\d{4})-/.exec(published.trim());
+  return match ? Number(match[1]) : null;
+}
+
+/** 按 id 独立反查 arXiv 记录，用于引用验收 —— 不是检索，是核对。
+ *
+ * 与 `searchArxiv` 的两点区别都是刻意的：
+ * 1. 走 `id_list` 而不是 `search_query=all:`，命中的是**这个 id 本身**，
+ *    不是「某个字段里出现过这串数字的论文」，否则反查会被相关论文冒名顶替。
+ * 2. 任何失败都抛 ArxivLookupError。验收器据此把基础设施故障与引用造假分开，
+ *    把网络抖动编码成一条 status 会让两者混进同一个失败堆里。
+ *
+ * 反查经过与检索同一把模块级限速闸；验收发生在 Run 末尾，多等 3 秒无所谓。
+ */
+export async function fetchArxivByIds(
+  ids: readonly string[],
+  options: { fetchImpl?: typeof fetch; signal?: AbortSignal; minIntervalMs?: number } = {},
+): Promise<ArxivRecord[]> {
+  const wanted = [...new Set(ids.map((id) => id.trim()).filter(Boolean))];
+  if (wanted.length === 0) return [];
+  const doFetch = options.fetchImpl ?? fetch;
+
+  const url = new URL(ENDPOINT);
+  url.searchParams.set("id_list", wanted.join(","));
+  url.searchParams.set("max_results", String(wanted.length));
+
+  await acquire(options.minIntervalMs, options.signal);
+  let response: Response;
+  try {
+    const timeout = AbortSignal.timeout(CALL_TIMEOUT_MS);
+    response = await doFetch(url, {
+      signal: options.signal ? AbortSignal.any([options.signal, timeout]) : timeout,
+      headers: { "user-agent": "luup-agents-spike/0.1 (research prototype)" },
+    });
+  } catch (error) {
+    // 取消一路抛回调用方，不伪装成一次反查失败。
+    if (options.signal?.aborted) throw error;
+    throw new ArxivLookupError(
+      `arXiv lookup failed: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
+  }
+  if (!response.ok) throw new ArxivLookupError(`arXiv lookup returned HTTP ${response.status}`);
+
+  let entries: any[];
+  try {
+    const feed = parser.parse(await response.text())?.feed;
+    entries = Array.isArray(feed?.entry) ? feed.entry : [];
+  } catch (error) {
+    throw new ArxivLookupError("arXiv lookup returned unparsable Atom", { cause: error });
+  }
+  // 反查不到的 id 直接缺席，由验收器判成 B2 失败 —— 那正是「引用了不存在的论文」的样子。
+  return entries.map(toRecord).filter((item): item is ArxivRecord => item !== null);
 }

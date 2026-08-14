@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { createDeterministicRuntime } from "../src/executors/deterministic.ts";
+import { createDeterministicRuntime, createDeterministicVerifier } from "../src/executors/deterministic.ts";
 import { Harness } from "../src/harness.ts";
 import { createApp, persistUsage, runtimeMode } from "../src/server.ts";
 import { SqliteStore } from "../src/store/store.ts";
@@ -14,7 +14,11 @@ import { SqliteStore } from "../src/store/store.ts";
 async function listen(): Promise<{ base: string; server: Server; store: SqliteStore }> {
   const store = new SqliteStore(":memory:");
   const runtime = createDeterministicRuntime(store);
-  const harness = new Harness(store, runtime.execute, { createLedger: runtime.createLedger });
+  const harness = new Harness(store, runtime.execute, {
+    createLedger: runtime.createLedger,
+    // 与 createDefaultApp 的确定性模式同形：引用验收也不打网络。
+    verifyReferences: createDeterministicVerifier(),
+  });
   const server = createApp({ store, harness });
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
   const address = server.address() as { port: number };
@@ -188,7 +192,11 @@ test("unknown API routes stay JSON 404 when the SPA is enabled", async (t) => {
 
   const store = new SqliteStore(":memory:");
   const runtime = createDeterministicRuntime(store);
-  const harness = new Harness(store, runtime.execute, { createLedger: runtime.createLedger });
+  const harness = new Harness(store, runtime.execute, {
+    createLedger: runtime.createLedger,
+    // 与 createDefaultApp 的确定性模式同形：引用验收也不打网络。
+    verifyReferences: createDeterministicVerifier(),
+  });
   const server = createApp({ store, harness, webDist: dist });
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
   const address = server.address() as { port: number };

@@ -1,10 +1,17 @@
-/** 失败分类。 */
+/** 失败分类。
+ *
+ * 前五个是 Attempt 级的（某个角色没写出合格 Artifact 或执行层出错），后两个是 Run 级的：
+ * 五个角色全部成功、Reviewer 也 accepted 之后，终局引用验收仍可能否掉整个 Run。
+ * `infra_error` 单列，是为了让 arXiv 不可达不被计成引用造假 —— 两者在报告里不可混。
+ */
 export type FailureCode =
   | "invalid_output"
   | "deadline_exceeded"
   | "provider_error"
   | "missing_credential"
-  | "runtime_error";
+  | "runtime_error"
+  | "verifier_refs"
+  | "infra_error";
 
 export type Failure = { code: FailureCode; reason: string };
 

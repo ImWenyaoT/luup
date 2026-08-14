@@ -1,7 +1,7 @@
 import { tool } from "@openai/agents";
 import { z } from "zod";
 
-import { searchArxiv } from "../arxiv.ts";
+import { publishedYear, searchArxiv } from "../arxiv.ts";
 import type { EvidenceLedger } from "../evidence.ts";
 
 /** Researcher 唯一的检索面。
@@ -37,6 +37,9 @@ export function createArxivSearchTool(ledger: EvidenceLedger) {
           title: item.title,
           locator: `arxiv:${item.arxivId}`,
           url: item.url,
+          // 引用验收（B4）比对的就是这两个字段；模型看不到也改不动它们。
+          authors: item.authors,
+          year: publishedYear(item.published),
         })),
       });
       return {

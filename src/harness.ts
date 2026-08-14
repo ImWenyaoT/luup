@@ -1,9 +1,14 @@
 import { EvidenceLedger } from "./agent/evidence.ts";
 import { classifyFailure } from "./agent/failures.ts";
-import type { EvidenceReview, Review, Role } from "./agent/contracts.ts";
+import type { EvidenceReview, Research, ResearchPlan, Review, Role } from "./agent/contracts.ts";
 import { runTask, type StageExecutor } from "./roles.ts";
 import type { StoredInput, TaskContext } from "./store/contracts.ts";
 import type { SqliteStore, StoredArtifact } from "./store/store.ts";
+import {
+  createReferenceVerifier,
+  verificationFailureCode,
+  type ReferenceVerifier,
+} from "./verify/verifier.ts";
 
 /** Attempt 失败时抛，用来中断五阶段流程。失败本身已经落库。 */
 class AttemptFailed extends Error {
@@ -37,14 +42,20 @@ export class Harness {
   readonly #store: SqliteStore;
   readonly #execute: StageExecutor;
   readonly #createLedger: (scope: { runId: string; attemptId: string }) => EvidenceLedger;
+  readonly #verifyReferences: ReferenceVerifier;
 
   constructor(
     store: SqliteStore,
     execute: StageExecutor,
-    options: { createLedger?: (scope: { runId: string; attemptId: string }) => EvidenceLedger } = {},
+    options: {
+      createLedger?: (scope: { runId: string; attemptId: string }) => EvidenceLedger;
+      /** 终局引用验收。默认打 arXiv 官方 API；测试与确定性运行时注入离线替身。 */
+      verifyReferences?: ReferenceVerifier;
+    } = {},
   ) {
     this.#store = store;
     this.#execute = execute;
+    this.#verifyReferences = options.verifyReferences ?? createReferenceVerifier();
     this.#createLedger = options.createLedger
       ?? ((scope) => new EvidenceLedger({
         // tool_evidence.id 全库唯一，所以用完整 Attempt ID 隔离每本台账。
@@ -100,6 +111,29 @@ export class Harness {
 
         const verdict = review.content as Review;
         if (verdict.accepted) {
+          // Reviewer 说好只是另一个模型的判断。终态之前还有一道不问模型的验收：
+          // 计划引的文献必须真的存在，而且就是本 run 检索并冻结下来的那几篇。
+          const verification = await this.#verifyReferences({
+            plan: plan.content as ResearchPlan,
+            research: research.map((item) => item.content as Research),
+          });
+          this.#store.emit(runId, "verification.references", {
+            ok: verification.ok,
+            reference_count: verification.referenceCount,
+            frozen_sources: verification.frozenSources,
+            arxiv_checked: verification.arxivChecked,
+            membership_only: verification.membershipOnly,
+            failed_count: verification.failed.length,
+            infra_error: verification.infraError,
+            // 逐条证据留在库里供报告与排障引用；公共投影只放行上面那些标量。
+            checks: verification.checks,
+            failed: verification.failed,
+          });
+          if (!verification.ok) {
+            const code = verificationFailureCode(verification);
+            this.#store.finishRun(runId, "failed", { errorCode: code });
+            return { status: "failed", finalArtifactId: null, errorCode: code };
+          }
           this.#store.finishRun(runId, "completed", { finalArtifactId: plan.id });
           return { status: "completed", finalArtifactId: plan.id, errorCode: null };
         }

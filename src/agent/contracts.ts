@@ -43,6 +43,11 @@ const citationSchema = z.object({
   title: z.string().min(1),
   locator: z.string().min(1),
   url: z.string().url().nullable(),
+  // 检索台账登记的 arXiv 元数据，供终局引用验收（B4）比对。声明在这里只是为了不被
+  // zod 的 strip 丢掉 —— 值由 canonicalizeResearch 从台账整条覆写，模型写什么都不作数，
+  // 也从不出现在发给模型的任何 schema 里（researcher 角色不带 outputType）。
+  authors: z.array(z.string()).optional(),
+  year: z.number().int().nullable().optional(),
 });
 
 export const researchSchema = z.object({

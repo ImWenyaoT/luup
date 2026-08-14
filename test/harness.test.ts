@@ -4,17 +4,47 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { EvidenceLedger, type EvidenceRecord } from "../src/agent/evidence.ts";
+import { ArxivLookupError } from "../src/agent/arxiv.ts";
+import { EvidenceLedger, type EvidenceCitation, type EvidenceRecord } from "../src/agent/evidence.ts";
 import { StageError } from "../src/agent/failures.ts";
 import { Harness } from "../src/harness.ts";
 import type { StageExecutor } from "../src/roles.ts";
 import { SqliteStore } from "../src/store/store.ts";
+import { createReferenceVerifier, type ArxivLookup } from "../src/verify/verifier.ts";
 
 const citation = {
   source_type: "arxiv" as const,
   title: "Fixture source",
   locator: "arxiv:2301.00001v1",
   url: "https://arxiv.org/abs/2301.00001v1",
+  authors: ["Ada Lovelace", "Grace Hopper"],
+  year: 2023,
+};
+
+/** 五条来源，因为终局引用验收要求 references ≥5（B3）。 */
+const sources: EvidenceCitation[] = [
+  citation,
+  ...[2, 3, 4, 5].map((n) => ({
+    source_type: "arxiv" as const,
+    title: `Fixture source ${n}`,
+    locator: `arxiv:2301.0000${n}v1`,
+    url: `https://arxiv.org/abs/2301.0000${n}v1`,
+    authors: ["Ada Lovelace"],
+    year: 2023,
+  })),
+];
+
+/** arXiv 反查替身：照抄冻结来源，所以 B2/B4 在零网络下也是真的在比对。 */
+const fixtureLookup: ArxivLookup = async (ids) => {
+  const wanted = new Set(ids.map((id) => id.replace(/v\d+$/, "")));
+  return sources
+    .map((source) => ({
+      arxivId: source.locator.replace(/^arxiv:/, ""),
+      title: source.title,
+      authors: source.authors ?? [],
+      year: source.year ?? null,
+    }))
+    .filter((record) => wanted.has(record.arxivId.replace(/v\d+$/, "")));
 };
 
 function fake(options: {
@@ -29,6 +59,7 @@ function fake(options: {
   claimsUnfrozenSearch?: boolean;
   stageFails?: boolean;
   usesProviderSourceAlias?: boolean;
+  thinReferences?: boolean;
 } = {}) {
   let ledger = new EvidenceLedger();
   const calls: Array<{ role: string; input: any; timeoutMs: number }> = [];
@@ -56,7 +87,7 @@ function fake(options: {
           : `fixture query ${researchCalls}`,
         status: "succeeded",
         resultSummary: "arXiv returned 1 citable record(s)",
-        citations: [citation],
+        citations: sources,
       })];
       if (options.hidesASearch || options.claimsFailedSearch) {
         searches.push(ledger.record({
@@ -75,7 +106,7 @@ function fake(options: {
           query: "second successful search",
           status: "succeeded",
           resultSummary: "arXiv returned 1 citable record(s)",
-          citations: [citation],
+          citations: sources,
         }));
       }
       const reported = options.hidesASearch ? searches.slice(0, 1) : searches;
@@ -100,13 +131,14 @@ function fake(options: {
           status: "succeeded",
           result_summary: "模型转述的摘要",
         })),
-        citations: [{
+        // 第一条故意让模型转述并改写 URL，其余照抄 —— 代码覆写与否要在同一份产物里看得见。
+        citations: sources.map((source, index) => ({
           evidence_id: searches[0]!.evidenceId,
           source_type: options.usesProviderSourceAlias ? "crossref" : "arxiv",
-          title: "模型转述的标题",
-          locator: citation.locator,
-          url: "https://evil.example.com/other",
-        }],
+          title: index === 0 ? "模型转述的标题" : source.title,
+          locator: source.locator,
+          url: index === 0 ? "https://evil.example.com/other" : source.url,
+        })),
         limitations: ["fixture"],
       };
     }
@@ -182,7 +214,10 @@ function fake(options: {
           status: "pending_verification",
           expected_outcomes: [{ metric: "无来源引用率", statement: "证据门组的无来源引用率更低。" }],
         },
-        references: [citation.url],
+        references: options.thinReferences === true
+          ? [citation.url]
+          : [...new Set(ofType("research")
+            .flatMap((item) => item.content.citations.map((c: any) => c.url as string)))],
         input_artifact_ids: payload.input_artifacts.map((item: any) => item.id),
         verification_evidence_ids: [frozenId],
       };
@@ -207,11 +242,17 @@ function fake(options: {
   return { execute, calls, useLedger };
 }
 
-function harness(options: Parameters<typeof fake>[0] = {}) {
+function harness(options: Parameters<typeof fake>[0] & { lookupFails?: boolean } = {}) {
   const store = new SqliteStore(":memory:");
   const f = fake(options);
   // 每个 Attempt 一本新台账，且检索发生时就落库 —— 和默认实现同形
   const runner = new Harness(store, f.execute, {
+    // 生产同一个验收器，只把 arXiv 反查换成替身：零网络零 LLM，判定逻辑仍是真的。
+    verifyReferences: createReferenceVerifier({
+      lookup: options.lookupFails === true
+        ? async () => { throw new ArxivLookupError("arXiv lookup returned HTTP 503"); }
+        : fixtureLookup,
+    }),
     createLedger: (scope) => {
       const ledger = new EvidenceLedger({
         namespace: `${scope.attemptId}_`,
@@ -464,7 +505,7 @@ test("persists every search into tool_evidence as it happens", async () => {
   // 事件流里也留痕，且 result_count 是代码数出来的
   const recorded = snapshot.recent_events.filter((e: any) => e.kind === "tool.evidence_recorded");
   assert.equal(recorded.length, 1);
-  assert.equal(recorded[0]!.payload.result_count, 1);
+  assert.equal(recorded[0]!.payload.result_count, sources.length);
   store.close();
 });
 
@@ -483,6 +524,82 @@ test("keeps the searches of a failed attempt", async () => {
   assert.deepEqual(snapshot.tool_evidence.map((e: any) => e.status),
     ["succeeded", "empty", "succeeded", "empty"]);
   store.close();
+});
+
+test("records the deterministic reference verdict before completing", async () => {
+  const h = harness();
+  const runId = h.harness.createRun("q");
+  await h.harness.execute(runId);
+
+  const snapshot = h.store.snapshot(runId)!;
+  assert.equal(snapshot.status, "completed");
+  const verified = snapshot.recent_events.filter((e: any) => e.kind === "verification.references");
+  assert.equal(verified.length, 1);
+  assert.equal(verified[0]!.payload.ok, true);
+  assert.equal(verified[0]!.payload.reference_count, sources.length);
+  // 五条引用全部提得出 arXiv id，所以全部走了独立反查，没有只做归属检查的
+  assert.equal(verified[0]!.payload.arxiv_checked, sources.length);
+  assert.equal(verified[0]!.payload.membership_only, 0);
+  assert.equal(verified[0]!.payload.infra_error, false);
+  // 验收发生在终态之前：run.completed 是最后一条
+  assert.equal(snapshot.recent_events.at(-1)!.kind, "run.completed");
+  h.store.close();
+});
+
+test("fails an accepted plan whose references are too few to verify", async () => {
+  const h = harness({ thinReferences: true });
+  const runId = h.harness.createRun("q");
+  await h.harness.execute(runId);
+
+  const snapshot = h.store.snapshot(runId)!;
+  assert.equal(snapshot.status, "failed");
+  assert.equal(snapshot.error_code, "verifier_refs");
+  // Run 级的门，不是 Attempt 级的：五个角色都成功了，产物也都还在
+  assert.equal(snapshot.attempts.every((a: any) => a.status === "completed"), true);
+  assert.equal(snapshot.artifacts.length, 5);
+  assert.equal(snapshot.final_artifact_id, null);
+  const verdict = snapshot.recent_events.find((e: any) => e.kind === "verification.references")!;
+  assert.equal(verdict.payload.ok, false);
+  assert.deepEqual(verdict.payload.failed, ["B3.count"]);
+  h.store.close();
+});
+
+test("treats an arXiv outage as infra_error rather than fabricated citations", async () => {
+  const h = harness({ lookupFails: true });
+  const runId = h.harness.createRun("q");
+  await h.harness.execute(runId);
+
+  const snapshot = h.store.snapshot(runId)!;
+  assert.equal(snapshot.status, "failed");
+  assert.equal(snapshot.error_code, "infra_error");
+  const verdict = snapshot.recent_events.find((e: any) => e.kind === "verification.references")!;
+  assert.equal(verdict.payload.infra_error, true);
+  assert.equal(verdict.payload.arxiv_checked, 0);
+  // 反查不通只记一条「结论未取得」，不给每条引用扣一顶造假的帽子
+  assert.deepEqual(verdict.payload.failed, ["B2.resolve"]);
+  h.store.close();
+});
+
+test("keeps a quality failure ahead of an arXiv outage", async () => {
+  const h = harness({ thinReferences: true, lookupFails: true });
+  const runId = h.harness.createRun("q");
+  await h.harness.execute(runId);
+
+  const snapshot = h.store.snapshot(runId)!;
+  // 网络好坏改变不了 B3 的结论，失败码必须记质量失败
+  assert.equal(snapshot.error_code, "verifier_refs");
+  h.store.close();
+});
+
+test("does not verify references when the Reviewer rejects the plan", async () => {
+  const h = harness({ rejectReviews: 2 });
+  const runId = h.harness.createRun("q");
+  await h.harness.execute(runId);
+
+  const snapshot = h.store.snapshot(runId)!;
+  assert.equal(snapshot.status, "review_rejected");
+  assert.deepEqual(snapshot.recent_events.filter((e: any) => e.kind === "verification.references"), []);
+  h.store.close();
 });
 
 test("drops evidence that arrives after its Attempt has failed", () => {

@@ -1,14 +1,71 @@
-import { EvidenceLedger } from "../agent/evidence.ts";
+import { EvidenceLedger, type EvidenceCitation } from "../agent/evidence.ts";
 import type { Research } from "../agent/contracts.ts";
 import type { StageExecutor } from "../roles.ts";
 import type { SqliteStore } from "../store/store.ts";
+import { createReferenceVerifier, type ReferenceVerifier } from "../verify/verifier.ts";
 
-const SOURCE = {
-  source_type: "arxiv" as const,
-  title: "Ragas: Automated Evaluation of Retrieval Augmented Generation",
-  locator: "arxiv:2309.15217v2",
-  url: "https://arxiv.org/abs/2309.15217v2",
-};
+/** 写死的检索结果。五条而不是一条，是因为终局引用验收要求 references ≥5（B3）——
+ *  确定性运行时必须能走完包括验收在内的整条流水线，否则它验证不了自己声称验证的东西。
+ *  元数据取自真实论文，反查替身直接照抄它们，所以 B2/B4 在离线状态下也是真的在比对。 */
+const SOURCES: EvidenceCitation[] = [
+  {
+    source_type: "arxiv",
+    title: "Ragas: Automated Evaluation of Retrieval Augmented Generation",
+    locator: "arxiv:2309.15217v2",
+    url: "https://arxiv.org/abs/2309.15217v2",
+    authors: ["Shahul Es", "Jithin James", "Luis Espinosa-Anke", "Steven Schockaert"],
+    year: 2023,
+  },
+  {
+    source_type: "arxiv",
+    title: "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks",
+    locator: "arxiv:2005.11401v4",
+    url: "https://arxiv.org/abs/2005.11401v4",
+    authors: ["Patrick Lewis", "Ethan Perez", "Aleksandra Piktus"],
+    year: 2020,
+  },
+  {
+    source_type: "arxiv",
+    title: "ReAct: Synergizing Reasoning and Acting in Language Models",
+    locator: "arxiv:2210.03629v3",
+    url: "https://arxiv.org/abs/2210.03629v3",
+    authors: ["Shunyu Yao", "Jeffrey Zhao", "Dian Yu"],
+    year: 2022,
+  },
+  {
+    source_type: "arxiv",
+    title: "Chain-of-Thought Prompting Elicits Reasoning in Large Language Models",
+    locator: "arxiv:2201.11903v6",
+    url: "https://arxiv.org/abs/2201.11903v6",
+    authors: ["Jason Wei", "Xuezhi Wang", "Dale Schuurmans"],
+    year: 2022,
+  },
+  {
+    source_type: "arxiv",
+    title: "Toolformer: Language Models Can Teach Themselves to Use Tools",
+    locator: "arxiv:2302.04761v1",
+    url: "https://arxiv.org/abs/2302.04761v1",
+    authors: ["Timo Schick", "Jane Dwivedi-Yu", "Roberto Dessì"],
+    year: 2023,
+  },
+];
+
+/** 与 SOURCES 同源的反查替身：确定性运行时不打网络，验收也不例外。 */
+export function createDeterministicVerifier(): ReferenceVerifier {
+  return createReferenceVerifier({
+    lookup: async (ids) => {
+      const wanted = new Set(ids.map((id) => id.replace(/v\d+$/, "")));
+      return SOURCES
+        .map((source) => ({
+          arxivId: source.locator.replace(/^arxiv:/, ""),
+          title: source.title,
+          authors: source.authors ?? [],
+          year: source.year ?? null,
+        }))
+        .filter((record) => wanted.has(record.arxivId.replace(/v\d+$/, "")));
+    },
+  });
+}
 
 /** 不花钱的确定性运行时。
  *
@@ -43,8 +100,8 @@ export function createDeterministicRuntime(store: SqliteStore): {
         sourceType: "arxiv",
         query: "retrieval augmented generation evaluation",
         status: "succeeded",
-        resultSummary: "arXiv returned 1 citable record(s)",
-        citations: [SOURCE],
+        resultSummary: `arXiv returned ${SOURCES.length} citable record(s)`,
+        citations: SOURCES,
       });
       const inherited = ofType("research")
         .flatMap((item) => (item.content as Research).citations.map((c) => c.evidence_id));
@@ -61,9 +118,9 @@ export function createDeterministicRuntime(store: SqliteStore): {
           source_type: "arxiv",
           query: "retrieval augmented generation evaluation",
           status: "succeeded",
-          result_summary: "arXiv returned 1 citable record(s)",
+          result_summary: `arXiv returned ${SOURCES.length} citable record(s)`,
         }],
-        citations: [{ evidence_id: search.evidenceId, ...SOURCE }],
+        citations: SOURCES.map((source) => ({ evidence_id: search.evidenceId, ...source })),
         limitations: ["确定性运行时只登记一条固定来源。"],
       };
     }
@@ -101,8 +158,8 @@ export function createDeterministicRuntime(store: SqliteStore): {
     }
 
     if (role === "research-plan") {
-      const frozen = ofType("research")
-        .flatMap((item) => (item.content as Research).citations)[0]!;
+      const cited = ofType("research").flatMap((item) => (item.content as Research).citations);
+      const frozen = cited[0]!;
       return {
         artifact_type: "research-plan",
         problem_statement: "测量科研 Agent 的无来源引用率。",
@@ -132,7 +189,8 @@ export function createDeterministicRuntime(store: SqliteStore): {
             { metric: "任务完成率", statement: "证据门组不显著劣于基线。" },
           ],
         },
-        references: [frozen.url!],
+        // 去重：补证轮会把同一批来源再冻结一次，重复 URL 不该冒充更多参考文献。
+        references: [...new Set(cited.map((item) => item.url!))],
         input_artifact_ids: inputs.map((item) => item.id),
         verification_evidence_ids: [frozen.evidence_id],
       };

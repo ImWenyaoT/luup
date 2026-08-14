@@ -5,6 +5,13 @@ export type EvidenceCitation = {
   title: string;
   locator: string;
   url: string | null;
+  /** 检索当时从 arXiv 拿到的作者与发表年，只有 arXiv 通路会登记。
+   *
+   * 这两个字段是 B4 元数据比对的「本 run 冻结事实」—— 没有它们，验收器手上只剩一条
+   * URL，无从判断这条引用今天是否仍然指向同一篇论文。数据本来就在 ArxivRecord 里，
+   * 之前被丢掉了。UI 投影不放行它们（见 publicCitationSchema），只供验收器与审计使用。 */
+  authors?: string[];
+  year?: number | null;
 };
 
 /** 一次检索事件。

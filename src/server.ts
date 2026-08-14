@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { extname, join, normalize, resolve } from "node:path";
 
 import { projectArtifact, projectRunSnapshot, projectSseFrame } from "./api/projection.ts";
-import { createDeterministicRuntime } from "./executors/deterministic.ts";
+import { createDeterministicRuntime, createDeterministicVerifier } from "./executors/deterministic.ts";
 import { createQwenExecutor, type StageMetrics } from "./executor.ts";
 import { Harness } from "./harness.ts";
 import { MAX_QUESTION_LENGTH, normalizeQuestion, SqliteStore } from "./store/store.ts";
@@ -246,7 +246,10 @@ export function createDefaultApp() {
   const harness = new Harness(
     store,
     runtime ? runtime.execute : createQwenExecutor((metrics) => persistUsage(store, metrics)),
-    runtime ? { createLedger: runtime.createLedger } : {},
+    // 确定性模式连引用验收也不打网络：它的来源是写死的，反查替身与之同源。
+    runtime
+      ? { createLedger: runtime.createLedger, verifyReferences: createDeterministicVerifier() }
+      : {},
   );
   return createApp({ store, harness, webDist: process.env.LUUP_WEB_DIST || "frontend-ts/dist" });
 }
