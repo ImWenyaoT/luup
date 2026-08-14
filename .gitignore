@@ -6,6 +6,16 @@
 # 会话工具状态
 .claude/
 
+# TS 栈依赖与构建产物
+node_modules/
+/.pnpm-store/
+dist/
+*.tsbuildinfo
+/outputs/runtime/
+/outputs/playwright/
+/outputs/e2e/
+/*.db
+
 # 运行期瞬态。边界纪律（architecture.md「存储裁决」）：
 # runs/ 与 memory/ 是 source of truth，永不 ignore；
 # 只有「删掉重算即可」的瞬态才 ignore——现栈仅剩跨进程锁（backend/app/services/launch.py）。
