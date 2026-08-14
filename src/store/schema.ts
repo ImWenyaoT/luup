@@ -37,6 +37,10 @@ CREATE TABLE IF NOT EXISTS runs (
   budget_json TEXT NOT NULL DEFAULT '{}',
   error_code TEXT,
   final_artifact_id TEXT,
+  -- 这个 Run 跑的是 Science-125 第几题；自由输入为 NULL。断点续跑只认它。
+  science125_id INTEGER,
+  -- 哪个 build 产出了这个 Run（git commit + 工作树是否脏）；取不到时为 NULL。
+  source_identity_json TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -90,6 +94,20 @@ CREATE TABLE IF NOT EXISTS events (
 );
 `;
 
+/** 后加的列。`CREATE TABLE IF NOT EXISTS` 对已存在的库是空操作，只补列这一条路。 */
+const ADDED_RUN_COLUMNS: ReadonlyArray<[string, string]> = [
+  ["science125_id", "INTEGER"],
+  ["source_identity_json", "TEXT"],
+];
+
 export function createSchema(db: DatabaseSync): void {
   db.exec(DDL);
+  // 只补列、不改列、不删列：批跑要能接着跑迁移期已经建好的库，
+  // 而 runs 里已经落盘的事实不因为加了两列就重写。
+  const existing = new Set(
+    (db.prepare("PRAGMA table_info(runs)").all() as Array<{ name: string }>).map((column) => column.name),
+  );
+  for (const [name, type] of ADDED_RUN_COLUMNS) {
+    if (!existing.has(name)) db.exec(`ALTER TABLE runs ADD COLUMN ${name} ${type}`);
+  }
 }

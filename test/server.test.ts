@@ -167,6 +167,7 @@ test("persists live SDK usage as a public run event", () => {
     outputTokens: 5,
     totalTokens: 17,
     toolCalls: 2,
+    outcome: "completed",
   });
 
   assert.deepEqual(store.eventsAfter(runId, 0).at(-1), {
