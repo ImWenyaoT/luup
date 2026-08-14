@@ -5,7 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 
 import type { DomainArtifact, Role } from "../agent/contracts.ts";
 import type { EvidenceRecord } from "../agent/evidence.ts";
-import type { StoredInput } from "./contracts.ts";
+import type { SourceIdentity, StoredInput, UsageFacts } from "./contracts.ts";
 import { createSchema, nowIso, type RunStatus } from "./schema.ts";
 
 type Row = Record<string, any>;
@@ -86,42 +86,78 @@ export class SqliteStore {
 
       // 这个 MVP 只跑一个 Node 进程。数据库重新打开时仍是 running 的记录，必然属于
       // 已经退出的旧进程；明确写成失败，避免 API 和 SSE 永远等一个不会回来的任务。
-      const now = nowIso();
-      for (const run of runs) {
-        db.prepare(
-          "UPDATE attempts SET status = 'failed', failure_code = 'interrupted', "
-          + "error_type = 'ProcessRestart', finished_at = ? "
-          + "WHERE run_id = ? AND status = 'running'",
-        ).run(now, run.id);
-        db.prepare(
-          "UPDATE runs SET status = 'failed', current_role = NULL, error_code = 'interrupted', "
-          + "updated_at = ? WHERE id = ?",
-        ).run(now, run.id);
-        emitEvent(db, run.id, "run.failed", {
-          failure_code: "interrupted",
-          final_artifact_id: null,
-        });
-      }
+      for (const run of runs) failRunInPlace(db, String(run.id), "interrupted", "ProcessRestart");
     });
   }
 
-  createRun(question: string): string {
+  /** 给一个没人再会回来收尾的 Run 补一个终态。
+   *
+   * 批跑取消一道超时的题之后，那个 Run 可能停在 running 上：执行流被放弃了，
+   * 没有任何人还会走到 finishRun。批跑是唯一在场的证人，所以由它落终态。
+   *
+   * **已经终态的 Run 一律不动**（对齐 Python `_settle_timeout` 的 merge 语义）：
+   * 取消也可能正好赶上 Run 自己收尾，那份结果是它自己的事实，重写只会丢信息。
+   * 返回值表示这次调用是否真的补了终态。
+   */
+  settleAbandonedRun(runId: string, failureCode: string, errorType = "BatchTimeout"): boolean {
+    return this.#write((db) => {
+      const run = db.prepare("SELECT status FROM runs WHERE id = ?").get(runId) as Row | undefined;
+      if (run?.status !== "running") return false;
+      failRunInPlace(db, runId, failureCode, errorType);
+      return true;
+    });
+  }
+
+  /** 建 Run。题号与 sourceIdentity 是可选的**出身**信息：自由输入没有题号，
+   *  取不到 git 就写 NULL —— 记不下出身绝不能让一个花了钱的 Run 起不来。 */
+  createRun(
+    question: string,
+    origin: { science125Id?: number | null; sourceIdentity?: SourceIdentity | null } = {},
+  ): string {
     const normalized = normalizeQuestion(question);
     if (!normalized) throw new Error("question must not be empty");
     if (normalized.length > MAX_QUESTION_LENGTH) {
       throw new Error(`question must not exceed ${MAX_QUESTION_LENGTH} characters`);
+    }
+    const science125Id = origin.science125Id ?? null;
+    if (science125Id !== null && !Number.isSafeInteger(science125Id)) {
+      throw new Error("science125Id must be an integer");
     }
     return this.#write((db) => {
       const runId = shortId();
       const now = nowIso();
       db.prepare(
         "INSERT INTO runs(id, question, status, current_role, version, budget_json, error_code, "
-        + "final_artifact_id, created_at, updated_at) "
-        + "VALUES(?, ?, 'running', NULL, 0, '{}', NULL, NULL, ?, ?)",
-      ).run(runId, normalized, now, now);
+        + "final_artifact_id, science125_id, source_identity_json, created_at, updated_at) "
+        + "VALUES(?, ?, 'running', NULL, 0, '{}', NULL, NULL, ?, ?, ?, ?)",
+      ).run(
+        runId, normalized, science125Id,
+        origin.sourceIdentity ? JSON.stringify(origin.sourceIdentity) : null,
+        now, now,
+      );
       emitEvent(db, runId, "run.created", { question: normalized });
       return runId;
     });
+  }
+
+  /** 断点续跑的唯一判据：这道题是否已经有一个 completed 的 Run。
+   *
+   * 只认 `completed`。`review_rejected` 是模型没能交出可接受的计划，重跑有意义；
+   * 只有真正交付过的题才是「已经付过钱」的题。
+   */
+  completedRunForQuestion(science125Id: number): string | null {
+    const row = this.#get(
+      "SELECT id FROM runs WHERE science125_id = ? AND status = 'completed' "
+      + "ORDER BY created_at DESC, rowid DESC LIMIT 1",
+      science125Id,
+    );
+    return row ? String(row.id) : null;
+  }
+
+  sourceIdentity(runId: string): SourceIdentity | null {
+    const row = this.#get("SELECT source_identity_json FROM runs WHERE id = ?", runId);
+    if (!row?.source_identity_json) return null;
+    return JSON.parse(String(row.source_identity_json)) as SourceIdentity;
   }
 
   question(runId: string): string {
@@ -176,15 +212,30 @@ export class SqliteStore {
     });
   }
 
+  /** 失败的 Attempt 也要记账。
+   *
+   * `usage` 是这次 Attempt **已经发生**的用量：调用失败不等于没花钱，不记就等于
+   * 把失败的成本从账上抹掉，跑完 125 题算总账时差的正是这一块。拿不到就传 null，
+   * 绝不用零顶替 —— 零是「确实没花」，缺失是「不知道」。
+   */
   failAttempt(
     runId: string,
     attemptId: string,
     failure: { code: string; reason: string },
     errorType: string,
     corrections: number,
+    usage: UsageFacts | null = null,
   ): void {
     this.#write((db) => {
       const now = nowIso();
+      if (usage) {
+        emitEvent(db, runId, "sdk.usage", {
+          agent: usage.agent,
+          input_tokens: usage.inputTokens,
+          output_tokens: usage.outputTokens,
+          total_tokens: usage.totalTokens,
+        });
+      }
       db.prepare(
         "UPDATE attempts SET status = 'failed', corrections = ?, failure_code = ?, error_type = ?, "
         + "finished_at = ? WHERE id = ?",
@@ -291,6 +342,24 @@ export class SqliteStore {
       recent_events: this.eventsAfter(runId, 0),
     };
   }
+}
+
+/** 把一个还在 running 的 Run 及其 Attempt 就地判失败。
+ *
+ * 两个调用方是同一件事的两种发生方式：进程重启（旧进程不会回来）和批跑取消
+ * （执行流被放弃）。都必须留下和正常失败一样的证据，否则 API 与 SSE 会永远等下去。
+ * 调用方负责先确认 Run 确实还在 running。
+ */
+function failRunInPlace(db: DatabaseSync, runId: string, failureCode: string, errorType: string): void {
+  const now = nowIso();
+  db.prepare(
+    "UPDATE attempts SET status = 'failed', failure_code = ?, error_type = ?, finished_at = ? "
+    + "WHERE run_id = ? AND status = 'running'",
+  ).run(failureCode, errorType, now, runId);
+  db.prepare(
+    "UPDATE runs SET status = 'failed', current_role = NULL, error_code = ?, updated_at = ? WHERE id = ?",
+  ).run(failureCode, now, runId);
+  emitEvent(db, runId, "run.failed", { failure_code: failureCode, final_artifact_id: null });
 }
 
 /** 用 SQLite 自己的长事务做单写者锁；进程退出时 OS 会自动释放，不需要 PID 接管协议。 */

@@ -14,7 +14,21 @@ import {
   type Role,
 } from "./agent/contracts.ts";
 import { researchPlanQualityIssues, upstreamTraceabilityIssues } from "./agent/plan-quality.ts";
+import type { StageUsage } from "./executor.ts";
 import type { StoredInput, TaskContext } from "./store/contracts.ts";
+
+/** 两次调用的用量相加。缺失不是零：一边缺就以另一边为准，两边都缺就还是「不知道」。 */
+function addUsage(left: StageUsage | null, right: StageUsage | undefined): StageUsage | null {
+  if (!right) return left;
+  if (!left) return right;
+  return {
+    requests: left.requests + right.requests,
+    inputTokens: left.inputTokens + right.inputTokens,
+    outputTokens: left.outputTokens + right.outputTokens,
+    totalTokens: left.totalTokens + right.totalTokens,
+    toolCalls: left.toolCalls + right.toolCalls,
+  };
+}
 
 export type StageExecutor = (request: {
   runId: string;
@@ -279,6 +293,9 @@ export async function runTask(
   let candidate: unknown;
   let correction: { issue: string; candidate: unknown; frozenSearches?: EvidenceRecord[] } | undefined;
   let corrections = 0;
+  // 一个 Attempt 最多两次模型调用；失败时往上带的是这个 Attempt 的**合计**已发生用量，
+  // 只带最后一次会把纠错轮之前烧掉的 token 从账上抹掉。
+  let spent: StageUsage | null = null;
   const timeoutMs = Number(process.env.LUUP_STAGE_TIMEOUT_MS || 60_000);
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     throw new Error("LUUP_STAGE_TIMEOUT_MS must be a positive number");
@@ -308,9 +325,12 @@ export async function runTask(
       });
       return { artifact: accept(parseValue(candidate)), corrections, searches: ledger.scopedRecords() };
     } catch (error) {
+      spent = addUsage(spent, (error as { usage?: StageUsage }).usage);
       if (round === 1 || !(error instanceof ContractError || (error as Error)?.name === "ZodError")) {
         // 把纠错次数挂到异常上：失败的 Attempt 也要记准它试过几次
         (error as { corrections?: number }).corrections = corrections;
+        // 用量同理：失败的 Attempt 也花了钱，记账的一层在上面（store.failAttempt）。
+        if (spent) (error as { usage?: StageUsage }).usage = spent;
         throw error;
       }
       corrections += 1;

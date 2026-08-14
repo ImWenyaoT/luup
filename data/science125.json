@@ -1,0 +1,631 @@
+{
+  "source": "https://web.archive.org/web/20230625160744if_/https://www.science.org/do/10.1126/resource.2499249/full/sjtu-booklet.pdf",
+  "retrievedAt": "2026-08-08",
+  "questions": [
+    {
+      "id": 1,
+      "domain": "Mathematical Sciences",
+      "question": "What makes prime numbers so special?"
+    },
+    {
+      "id": 2,
+      "domain": "Mathematical Sciences",
+      "question": "Is the Riemann hypothesis true?"
+    },
+    {
+      "id": 3,
+      "domain": "Mathematical Sciences",
+      "question": "Will the Navier–Stokes problem ever be solved?"
+    },
+    {
+      "id": 4,
+      "domain": "Chemistry",
+      "question": "Are there more color pigments to discover?"
+    },
+    {
+      "id": 5,
+      "domain": "Chemistry",
+      "question": "Will the periodic table ever be complete?"
+    },
+    {
+      "id": 6,
+      "domain": "Chemistry",
+      "question": "How can we measure interface phenomena on the microscopic level?"
+    },
+    {
+      "id": 7,
+      "domain": "Chemistry",
+      "question": "What is the future for energy storage?"
+    },
+    {
+      "id": 8,
+      "domain": "Chemistry",
+      "question": "Why does life require chirality?"
+    },
+    {
+      "id": 9,
+      "domain": "Chemistry",
+      "question": "How can we better manage the world’s plastic waste?"
+    },
+    {
+      "id": 10,
+      "domain": "Chemistry",
+      "question": "Will AI redefine the future of chemistry?"
+    },
+    {
+      "id": 11,
+      "domain": "Chemistry",
+      "question": "How can matter be programmed into living materials?"
+    },
+    {
+      "id": 12,
+      "domain": "Chemistry",
+      "question": "What drives reproduction in living systems?"
+    },
+    {
+      "id": 13,
+      "domain": "Medicine & Health",
+      "question": "Can we predict the next pandemic?"
+    },
+    {
+      "id": 14,
+      "domain": "Medicine & Health",
+      "question": "Will we ever find a cure for the common cold?"
+    },
+    {
+      "id": 15,
+      "domain": "Medicine & Health",
+      "question": "Can we design and manufacture medicines customized for individual people?"
+    },
+    {
+      "id": 16,
+      "domain": "Medicine & Health",
+      "question": "Can a human tissue or organ be fully regenerated?"
+    },
+    {
+      "id": 17,
+      "domain": "Medicine & Health",
+      "question": "How is immune homeostasis maintained and regulated?"
+    },
+    {
+      "id": 18,
+      "domain": "Medicine & Health",
+      "question": "Is there a scientific basis to the Meridian System in traditional Chinese medicine?"
+    },
+    {
+      "id": 19,
+      "domain": "Medicine & Health",
+      "question": "How will the next generation of vaccines be made?"
+    },
+    {
+      "id": 20,
+      "domain": "Medicine & Health",
+      "question": "What is the etiology of autism?"
+    },
+    {
+      "id": 21,
+      "domain": "Medicine & Health",
+      "question": "Can we ever overcome antibiotic resistance?"
+    },
+    {
+      "id": 22,
+      "domain": "Medicine & Health",
+      "question": "What role does our microbiome play in health and disease?"
+    },
+    {
+      "id": 23,
+      "domain": "Medicine & Health",
+      "question": "Can xenotransplantation solve the shortage of donor organs?"
+    },
+    {
+      "id": 24,
+      "domain": "Biology",
+      "question": "What could help conservation of the oceans?"
+    },
+    {
+      "id": 25,
+      "domain": "Biology",
+      "question": "Can we stop ourselves from aging?"
+    },
+    {
+      "id": 26,
+      "domain": "Biology",
+      "question": "Why can only some cells become other cells?"
+    },
+    {
+      "id": 27,
+      "domain": "Biology",
+      "question": "Why are some genomes so big and others very small?"
+    },
+    {
+      "id": 28,
+      "domain": "Biology",
+      "question": "Will it be possible to cure all cancers?"
+    },
+    {
+      "id": 29,
+      "domain": "Biology",
+      "question": "What genes make us uniquely human?"
+    },
+    {
+      "id": 30,
+      "domain": "Biology",
+      "question": "How do migratory animals know where they’re going?"
+    },
+    {
+      "id": 31,
+      "domain": "Biology",
+      "question": "Why did dinosaurs grow to be so big?"
+    },
+    {
+      "id": 32,
+      "domain": "Biology",
+      "question": "How many species are there on Earth?"
+    },
+    {
+      "id": 33,
+      "domain": "Biology",
+      "question": "How do organisms evolve?"
+    },
+    {
+      "id": 34,
+      "domain": "Biology",
+      "question": "Did ancient humans interbreed with other human-like ancestors?"
+    },
+    {
+      "id": 35,
+      "domain": "Biology",
+      "question": "Why do humans get so attached to dogs and cats?"
+    },
+    {
+      "id": 36,
+      "domain": "Biology",
+      "question": "Is de-extinction possible?"
+    },
+    {
+      "id": 37,
+      "domain": "Biology",
+      "question": "Where do human emotions originate?"
+    },
+    {
+      "id": 38,
+      "domain": "Biology",
+      "question": "Will the world’s population keep growing indefinitely?"
+    },
+    {
+      "id": 39,
+      "domain": "Biology",
+      "question": "Why do we stop growing?"
+    },
+    {
+      "id": 40,
+      "domain": "Biology",
+      "question": "Can humans hibernate?"
+    },
+    {
+      "id": 41,
+      "domain": "Biology",
+      "question": "Will humans look physically different in the future?"
+    },
+    {
+      "id": 42,
+      "domain": "Biology",
+      "question": "Why were there species explosions and mass extinctions?"
+    },
+    {
+      "id": 43,
+      "domain": "Biology",
+      "question": "How might genome editing be used to cure disease?"
+    },
+    {
+      "id": 44,
+      "domain": "Biology",
+      "question": "Can a cell be artificially synthesized?"
+    },
+    {
+      "id": 45,
+      "domain": "Biology",
+      "question": "How are biomolecules organized in cells to function orderly and effectively?"
+    },
+    {
+      "id": 46,
+      "domain": "Astronomy",
+      "question": "How many dimensions are there in space?"
+    },
+    {
+      "id": 47,
+      "domain": "Astronomy",
+      "question": "Is it possible to live permanently on another planet?"
+    },
+    {
+      "id": 48,
+      "domain": "Astronomy",
+      "question": "What is the shape of the universe?"
+    },
+    {
+      "id": 49,
+      "domain": "Astronomy",
+      "question": "Why do black holes exist?"
+    },
+    {
+      "id": 50,
+      "domain": "Astronomy",
+      "question": "What is the universe made of?"
+    },
+    {
+      "id": 51,
+      "domain": "Astronomy",
+      "question": "Where did the Big Bang start?"
+    },
+    {
+      "id": 52,
+      "domain": "Astronomy",
+      "question": "Why don’t the orbits of planets decay and cause them to crash into each other?"
+    },
+    {
+      "id": 53,
+      "domain": "Astronomy",
+      "question": "When will the universe die? Will it continue to expand?"
+    },
+    {
+      "id": 54,
+      "domain": "Astronomy",
+      "question": "What is the origin of cosmic rays?"
+    },
+    {
+      "id": 55,
+      "domain": "Astronomy",
+      "question": "What is the origin of mass?"
+    },
+    {
+      "id": 56,
+      "domain": "Astronomy",
+      "question": "Are we alone in the universe?"
+    },
+    {
+      "id": 57,
+      "domain": "Astronomy",
+      "question": "Is our Milky Way Galaxy special?"
+    },
+    {
+      "id": 58,
+      "domain": "Astronomy",
+      "question": "What is the smallest scale of space-time?"
+    },
+    {
+      "id": 59,
+      "domain": "Astronomy",
+      "question": "Is Einstein’s general theory of relativity correct?"
+    },
+    {
+      "id": 60,
+      "domain": "Astronomy",
+      "question": "Is water necessary for all life in the universe, or just on Earth?"
+    },
+    {
+      "id": 61,
+      "domain": "Astronomy",
+      "question": "How are pulsars formed?"
+    },
+    {
+      "id": 62,
+      "domain": "Astronomy",
+      "question": "What is preventing humans from carrying out deep-space exploration?"
+    },
+    {
+      "id": 63,
+      "domain": "Astronomy",
+      "question": "What is the volume, composition, and significance of the deep biosphere?"
+    },
+    {
+      "id": 64,
+      "domain": "Astronomy",
+      "question": "Will humans one day have to leave the planet (or die trying)?"
+    },
+    {
+      "id": 65,
+      "domain": "Astronomy",
+      "question": "Is it possible to understand the structure of compact stars and matter?"
+    },
+    {
+      "id": 66,
+      "domain": "Astronomy",
+      "question": "What is the origin of high-energy cosmic neutrinos?"
+    },
+    {
+      "id": 67,
+      "domain": "Astronomy",
+      "question": "What is gravity?"
+    },
+    {
+      "id": 68,
+      "domain": "Astronomy",
+      "question": "Where do the heavy elements in the universe come from?"
+    },
+    {
+      "id": 69,
+      "domain": "Physics",
+      "question": "Is there a diffraction limit?"
+    },
+    {
+      "id": 70,
+      "domain": "Physics",
+      "question": "What are the limits of heat transfer in matter?"
+    },
+    {
+      "id": 71,
+      "domain": "Physics",
+      "question": "What is the microscopic mechanism for high-temperature superconductivity?"
+    },
+    {
+      "id": 72,
+      "domain": "Physics",
+      "question": "What are the fundamental principles of collective motion?"
+    },
+    {
+      "id": 73,
+      "domain": "Physics",
+      "question": "What is quantum uncertainty and why is it important?"
+    },
+    {
+      "id": 74,
+      "domain": "Physics",
+      "question": "Will we ever travel at the speed of light?"
+    },
+    {
+      "id": 75,
+      "domain": "Physics",
+      "question": "What are the smallest building blocks of matter?"
+    },
+    {
+      "id": 76,
+      "domain": "Physics",
+      "question": "Why does time seem to flow in only one direction?"
+    },
+    {
+      "id": 77,
+      "domain": "Physics",
+      "question": "Are there any particles that behave oppositely to the properties or states of photons?"
+    },
+    {
+      "id": 78,
+      "domain": "Physics",
+      "question": "What is the maximum speed to which we can accelerate a particle?"
+    },
+    {
+      "id": 79,
+      "domain": "Physics",
+      "question": "Will Bose–Einstein condensates be widely used in the future?"
+    },
+    {
+      "id": 80,
+      "domain": "Physics",
+      "question": "Can we accurately simulate the macro- and microworld?"
+    },
+    {
+      "id": 81,
+      "domain": "Physics",
+      "question": "Can humans make intense lasers with incoherence comparable to sunlight?"
+    },
+    {
+      "id": 82,
+      "domain": "Physics",
+      "question": "Is quantum many-body entanglement more fundamental than quantum fields?"
+    },
+    {
+      "id": 83,
+      "domain": "Physics",
+      "question": "Can we make a real, human-size invisibility cloak?"
+    },
+    {
+      "id": 84,
+      "domain": "Physics",
+      "question": "Will there ever be a “theory of everything”?"
+    },
+    {
+      "id": 85,
+      "domain": "Physics",
+      "question": "What is dark matter?"
+    },
+    {
+      "id": 86,
+      "domain": "Physics",
+      "question": "What is the optimum hardware for quantum computers?"
+    },
+    {
+      "id": 87,
+      "domain": "Engineering & Materials Science",
+      "question": "What is the ultimate statistical invariance of turbulence?"
+    },
+    {
+      "id": 88,
+      "domain": "Engineering & Materials Science",
+      "question": "How can we develop manufacturing systems on Mars?"
+    },
+    {
+      "id": 89,
+      "domain": "Engineering & Materials Science",
+      "question": "How can we break the current limit on energy-conversion efficiencies?"
+    },
+    {
+      "id": 90,
+      "domain": "Engineering & Materials Science",
+      "question": "Is a future of only self-driving cars realistic?"
+    },
+    {
+      "id": 91,
+      "domain": "Information Science",
+      "question": "Is there an upper limit to computer processing speed?"
+    },
+    {
+      "id": 92,
+      "domain": "Information Science",
+      "question": "Can DNA act as an information storage medium?"
+    },
+    {
+      "id": 93,
+      "domain": "Information Science",
+      "question": "Can AI replace a doctor?"
+    },
+    {
+      "id": 94,
+      "domain": "Information Science",
+      "question": "Can topological quantum computing be realized?"
+    },
+    {
+      "id": 95,
+      "domain": "Neuroscience",
+      "question": "Where does consciousness lie?"
+    },
+    {
+      "id": 96,
+      "domain": "Neuroscience",
+      "question": "What are the coding principles embedded in neuronal spike trains?"
+    },
+    {
+      "id": 97,
+      "domain": "Neuroscience",
+      "question": "Can human memory be stored, manipulated, and transplanted digitally?"
+    },
+    {
+      "id": 98,
+      "domain": "Neuroscience",
+      "question": "Why do we need sleep?"
+    },
+    {
+      "id": 99,
+      "domain": "Neuroscience",
+      "question": "What is addiction and how does it work?"
+    },
+    {
+      "id": 100,
+      "domain": "Neuroscience",
+      "question": "Why do we fall in love?"
+    },
+    {
+      "id": 101,
+      "domain": "Neuroscience",
+      "question": "Can we cure neurodegenerative diseases?"
+    },
+    {
+      "id": 102,
+      "domain": "Neuroscience",
+      "question": "Why are most people right-handed?"
+    },
+    {
+      "id": 103,
+      "domain": "Neuroscience",
+      "question": "How did speech evolve and what parts of the brain control it?"
+    },
+    {
+      "id": 104,
+      "domain": "Neuroscience",
+      "question": "Is it possible to predict the future?"
+    },
+    {
+      "id": 105,
+      "domain": "Neuroscience",
+      "question": "How smart are nonhuman animals?"
+    },
+    {
+      "id": 106,
+      "domain": "Neuroscience",
+      "question": "Can we more effectively diagnose and treat complex mental disorders?"
+    },
+    {
+      "id": 107,
+      "domain": "Ecology",
+      "question": "Can we stop global climate change?"
+    },
+    {
+      "id": 108,
+      "domain": "Ecology",
+      "question": "Where do we put all the excess carbon dioxide?"
+    },
+    {
+      "id": 109,
+      "domain": "Ecology",
+      "question": "What creates the Earth’s magnetic field (and why does it move)?"
+    },
+    {
+      "id": 110,
+      "domain": "Ecology",
+      "question": "Will we be able to predict catastrophic weather events (tsunamis, hurricanes, earthquakes) more accurately?"
+    },
+    {
+      "id": 111,
+      "domain": "Ecology",
+      "question": "What happens if all the ice on the planet melts?"
+    },
+    {
+      "id": 112,
+      "domain": "Ecology",
+      "question": "Can we create an environmentally friendly replacement for plastics?"
+    },
+    {
+      "id": 113,
+      "domain": "Ecology",
+      "question": "Can we achieve a situation where essentially every material can be recycled and reused?"
+    },
+    {
+      "id": 114,
+      "domain": "Ecology",
+      "question": "Will we soon see the end of monocultures like wheat, maize, rice, and soy?"
+    },
+    {
+      "id": 115,
+      "domain": "Energy Science",
+      "question": "Could we live in a fossil-fuel-free world?"
+    },
+    {
+      "id": 116,
+      "domain": "Energy Science",
+      "question": "What is the future of hydrogen energy?"
+    },
+    {
+      "id": 117,
+      "domain": "Energy Science",
+      "question": "Will cold fusion ever be possible?"
+    },
+    {
+      "id": 118,
+      "domain": "Artificial Intelligence",
+      "question": "Will injectable, disease-fighting nanobots ever be a reality?"
+    },
+    {
+      "id": 119,
+      "domain": "Artificial Intelligence",
+      "question": "Is there a limit to human intelligence?"
+    },
+    {
+      "id": 120,
+      "domain": "Artificial Intelligence",
+      "question": "Will it be possible to create sentient robots?"
+    },
+    {
+      "id": 121,
+      "domain": "Artificial Intelligence",
+      "question": "Will artificial intelligence replace humans?"
+    },
+    {
+      "id": 122,
+      "domain": "Artificial Intelligence",
+      "question": "Could we integrate with computers to form a human–machine hybrid species?"
+    },
+    {
+      "id": 123,
+      "domain": "Artificial Intelligence",
+      "question": "Can quantum artificial intelligence imitate the human brain?"
+    },
+    {
+      "id": 124,
+      "domain": "Artificial Intelligence",
+      "question": "How does group intelligence emerge?"
+    },
+    {
+      "id": 125,
+      "domain": "Artificial Intelligence",
+      "question": "Can robots or AIs have human creativity?"
+    }
+  ]
+}
