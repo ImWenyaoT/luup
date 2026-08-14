@@ -10,17 +10,18 @@
 
 import { spawnSync } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { basename, dirname, relative, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { parseArgs } from "node:util";
 
-import { StageError } from "../agent/failures.ts";
+import { INFRASTRUCTURE_FAILURE_CODES, StageError, type FailureCode } from "../agent/failures.ts";
+import { CampaignMemory } from "../campaign/campaign.ts";
 import { createQwenExecutor } from "../executor.ts";
 import { Harness } from "../harness.ts";
 import { findQuestion, science125Text, type Science125Question } from "../domain/science125.ts";
 import type { StageExecutor } from "../roles.ts";
 import { persistUsage } from "../server.ts";
-import type { SourceIdentity } from "../store/contracts.ts";
+import type { MemoryArm, SourceIdentity } from "../store/contracts.ts";
 import { SqliteStore } from "../store/store.ts";
 
 /** 40 分钟还没终态的流水线是挂了，不是慢。
@@ -43,11 +44,13 @@ export const SAME_CLASS_STOP = 5;
 /** 连续两次环境故障就是凭据、网络或额度问题，剩下的 123 题会一模一样地失败。 */
 export const OUTAGE_STOP = 2;
 
-// 等 A 路（`src/agent/failures.ts`）合并后收敛成 FailureCode 的成员；
-// 现在这两类只在批跑这一层存在，Harness 侧还没有对应的枚举值。
-export const INFRA_ERROR = "infra_error";
-export const INFRA_TIMEOUT = "infra_timeout";
-const OUTAGE_CLASSES: ReadonlySet<string> = new Set([INFRA_ERROR, INFRA_TIMEOUT]);
+/** 这两类由批跑判定，但它们是 `FailureCode` 的成员，不是批跑私有的字符串。
+ *
+ * 判定者与分类法本就该分开：只有旁观者能说出「这道题挂死了」，可这句话落进库里之后，
+ * 与 Harness 自己判定的那几类同属一套 7 类分类法，评估与报告按同一张表读。
+ */
+const INFRA_ERROR: FailureCode = "infra_error";
+const INFRA_TIMEOUT: FailureCode = "infra_timeout";
 
 /** 让批次退出码保持 0 的状态；其余都是欠着的题。 */
 const CLEAN: ReadonlySet<string> = new Set(["passed", "skipped", "planned"]);
@@ -107,6 +110,8 @@ export type BatchOptions = {
   dryRun?: boolean;
   timeoutMs?: number;
   graceMs?: number;
+  /** 这一批属于消融实验的哪一臂。批跑之外的 run 不属于任何一臂，见 store 的 memory_arm。 */
+  memoryArm?: MemoryArm;
   log?: (line: string) => void;
 };
 
@@ -200,7 +205,8 @@ export async function runBatch(questionIds: readonly number[], options: BatchOpt
     const current = outcome.classification ?? outcome.status;
     streak = current === cause ? streak + 1 : 1;
     cause = current;
-    if (streak < (OUTAGE_CLASSES.has(current) ? OUTAGE_STOP : SAME_CLASS_STOP)) continue;
+    const outage = INFRASTRUCTURE_FAILURE_CODES.has(current as FailureCode);
+    if (streak < (outage ? OUTAGE_STOP : SAME_CLASS_STOP)) continue;
 
     const remainingIds = questionIds.slice(index + 1);
     stopped = {
@@ -263,6 +269,7 @@ async function runOne(
       science125Id: questionId,
       // 每道题现场采一次：跑了几小时的批次中途换了 commit，也要各记各的。
       sourceIdentity: readSourceIdentity(options.repoRoot),
+      memoryArm: options.memoryArm ?? null,
     });
   } catch (error) {
     // 建不出 Run 是本机的问题（库锁着、磁盘满），不是这道题的问题。
@@ -368,8 +375,22 @@ function tallyFailures(outcomes: readonly QuestionOutcome[]): Record<string, num
   return counts;
 }
 
+/** 批跑用的战役记忆通道。`--no-memory` 传 null，注入与写回一起关掉。
+ *
+ * 定位符是仓库相对的：战役记忆比写它的 checkout 活得久，worktree、clone 与审阅者机器上
+ * 都要指向同一个逻辑位置。db 在仓根之外时退回它的文件名 —— 记不准也好过记一个假的绝对路径。
+ */
+export function createCampaignMemory(repoRoot: string, dbPath: string): CampaignMemory {
+  const relativeDb = relative(repoRoot, resolve(dbPath));
+  const locator = relativeDb && !relativeDb.startsWith("..") ? relativeDb : basename(dbPath);
+  return new CampaignMemory({
+    memoryDir: resolve(repoRoot, "memory"),
+    locate: (runId) => `${locator}#${runId}`,
+  });
+}
+
 /** 真实执行器：每道题一个 Harness，绑在这道题自己的取消信号上。 */
-export function createHarnessRunner(store: SqliteStore): RunQuestion {
+export function createHarnessRunner(store: SqliteStore, memory: CampaignMemory | null = null): RunQuestion {
   const execute = createQwenExecutor((metrics) => persistUsage(store, metrics));
   return ({ runId, signal }) => {
     const guarded: StageExecutor = (request) => {
@@ -379,7 +400,7 @@ export function createHarnessRunner(store: SqliteStore): RunQuestion {
       }
       return execute(request);
     };
-    return new Harness(store, guarded).execute(runId);
+    return new Harness(store, guarded, { memory }).execute(runId);
   };
 }
 
@@ -391,6 +412,9 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       options: {
         ids: { type: "string" },
         "dry-run": { type: "boolean", default: false },
+        // 消融臂：关掉跨 run 记忆的注入与写回。被消融的是数据通道本身，不是一个返回
+        // 空结果的工具 —— TS 栈没有 memory_search，模型的记忆面只有注入这一条。
+        "no-memory": { type: "boolean", default: false },
         "repo-root": { type: "string" },
         db: { type: "string" },
       },
@@ -413,16 +437,20 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   }
 
   const dryRun = parsed.values["dry-run"] === true;
-  const store = new SqliteStore(
-    parsed.values.db || process.env.LUUP_DATABASE || "outputs/runtime/typescript-runs.db",
-  );
+  const noMemory = parsed.values["no-memory"] === true;
+  const dbPath = parsed.values.db || process.env.LUUP_DATABASE || "outputs/runtime/typescript-runs.db";
+  const repoRoot = resolve(parsed.values["repo-root"] ?? process.cwd());
+  const store = new SqliteStore(dbPath);
   try {
     const report = await runBatch(questionIds, {
       store,
       // dry-run 一次运行都不发起，所以也不构造需要 QWEN_API_KEY 的执行器。
-      runQuestion: dryRun ? () => Promise.reject(new Error("dry-run 不执行")) : createHarnessRunner(store),
-      repoRoot: parsed.values["repo-root"],
+      runQuestion: dryRun
+        ? () => Promise.reject(new Error("dry-run 不执行"))
+        : createHarnessRunner(store, noMemory ? null : createCampaignMemory(repoRoot, dbPath)),
+      repoRoot,
       dryRun,
+      memoryArm: noMemory ? "off" : "on",
     });
     return report.outcomes.every((item) => CLEAN.has(item.status)) ? 0 : 1;
   } finally {

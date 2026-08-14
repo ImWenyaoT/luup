@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { ContractError, StageError } from "../src/agent/failures.ts";
 import { usageOf, type StageUsage } from "../src/executor.ts";
+import { Harness } from "../src/harness.ts";
 import { runTask } from "../src/roles.ts";
 import type { StageExecutor } from "../src/roles.ts";
 import type { TaskContext } from "../src/store/contracts.ts";
@@ -117,6 +118,38 @@ test("failAttempt records the usage already spent as one sdk.usage event", () =>
   });
   // 用量发生在失败之前，事件顺序要说得通。
   assert.ok(usage!.version < events.find((event) => event.kind === "attempt.failed")!.version);
+  store.close();
+});
+
+test("a stage failure inside the Harness lands its usage in the database", async () => {
+  const store = new SqliteStore(":memory:");
+  const spent: StageUsage = { requests: 1, inputTokens: 31, outputTokens: 5, totalTokens: 36, toolCalls: 0 };
+  const execute: StageExecutor = () =>
+    Promise.reject(Object.assign(new StageError("provider_error", "provider 挂了"), { usage: spent }));
+
+  const runId = store.createRun("问题");
+  const outcome = await new Harness(store, execute).execute(runId);
+
+  assert.equal(outcome.status, "failed");
+  assert.equal(outcome.errorCode, "provider_error");
+  // 记账的最后一环：executor 挂在异常上的用量要一路走到库里，否则失败的成本被抹掉。
+  const events = store.eventsAfter(runId, 0);
+  const usage = events.find((event) => event.kind === "sdk.usage");
+  assert.deepEqual(usage?.payload, {
+    agent: "researcher", input_tokens: 31, output_tokens: 5, total_tokens: 36,
+  });
+  assert.ok(usage!.version < events.find((event) => event.kind === "attempt.failed")!.version);
+  store.close();
+});
+
+test("a Harness failure without usage facts writes no usage event", async () => {
+  const store = new SqliteStore(":memory:");
+  const execute: StageExecutor = () => Promise.reject(new StageError("provider_error", "provider 挂了"));
+
+  const runId = store.createRun("问题");
+  await new Harness(store, execute).execute(runId);
+
+  assert.equal(store.eventsAfter(runId, 0).some((event) => event.kind === "sdk.usage"), false);
   store.close();
 });
 

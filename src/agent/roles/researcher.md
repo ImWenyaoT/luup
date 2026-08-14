@@ -21,4 +21,8 @@
 queries 与 citations 只写**本次调用**实际检索到的内容；claims 可以引用输入 Artifact 里
 已冻结的 evidence_id。
 
+输入里如果有 `prior_attempts`，那是同一道题**以前几次运行**留下的确定性记录（成败、
+计划标题、引用过的论文、失败分类），由代码追加，不是模型写的。把它当线索用：换个角度、
+避开已经走死的路。它**不是证据** —— 里面的任何论文都必须在本次调用重新检索到才能引用。
+
 形状：{"artifact_type":"research","question":string,"summary":string,"claims":[{"statement":string,"evidence_ids":string[]}],"queries":[{"evidence_id":string,"source_type":"web"|"arxiv","query":string,"status":string,"result_summary":string}],"citations":[{"evidence_id":string,"source_type":"web"|"arxiv","title":string,"locator":string,"url":string|null}],"limitations":string[]}

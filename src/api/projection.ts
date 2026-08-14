@@ -37,6 +37,9 @@ const EVENT_PAYLOAD_FIELDS: Record<string, readonly string[]> = {
     "failed_count",
     "infra_error",
   ],
+  // 开局注入了几条战役记录。它是消融生效门的事实来源，也是界面上「这个 run 带着
+  // 多少历史开跑」的唯一说明；注入内容本身不出网，只放行条数。
+  "campaign.prior_attempts": ["question_id", "count"],
   // reason 不进公共投影：它是校验器的内部错误信息，只用于排障和调门槛。
   "sdk.structured_correction": ["corrections"],
   "sdk.usage": ["agent", "input_tokens", "output_tokens", "reasoning_tokens", "total_tokens"],

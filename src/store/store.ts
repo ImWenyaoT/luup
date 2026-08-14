@@ -5,7 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 
 import type { DomainArtifact, Role } from "../agent/contracts.ts";
 import type { EvidenceRecord } from "../agent/evidence.ts";
-import type { SourceIdentity, StoredInput, UsageFacts } from "./contracts.ts";
+import type { MemoryArm, SourceIdentity, StoredInput, UsageFacts } from "./contracts.ts";
 import { createSchema, nowIso, type RunStatus } from "./schema.ts";
 
 type Row = Record<string, any>;
@@ -108,11 +108,16 @@ export class SqliteStore {
     });
   }
 
-  /** 建 Run。题号与 sourceIdentity 是可选的**出身**信息：自由输入没有题号，
-   *  取不到 git 就写 NULL —— 记不下出身绝不能让一个花了钱的 Run 起不来。 */
+  /** 建 Run。题号、sourceIdentity 与消融臂都是可选的**出身**信息：自由输入没有题号，
+   *  取不到 git 就写 NULL，批跑之外的 run 不属于任何一臂 —— 记不下出身绝不能让一个
+   *  花了钱的 Run 起不来。 */
   createRun(
     question: string,
-    origin: { science125Id?: number | null; sourceIdentity?: SourceIdentity | null } = {},
+    origin: {
+      science125Id?: number | null;
+      sourceIdentity?: SourceIdentity | null;
+      memoryArm?: MemoryArm | null;
+    } = {},
   ): string {
     const normalized = normalizeQuestion(question);
     if (!normalized) throw new Error("question must not be empty");
@@ -128,11 +133,12 @@ export class SqliteStore {
       const now = nowIso();
       db.prepare(
         "INSERT INTO runs(id, question, status, current_role, version, budget_json, error_code, "
-        + "final_artifact_id, science125_id, source_identity_json, created_at, updated_at) "
-        + "VALUES(?, ?, 'running', NULL, 0, '{}', NULL, NULL, ?, ?, ?, ?)",
+        + "final_artifact_id, science125_id, source_identity_json, memory_arm, created_at, updated_at) "
+        + "VALUES(?, ?, 'running', NULL, 0, '{}', NULL, NULL, ?, ?, ?, ?, ?)",
       ).run(
         runId, normalized, science125Id,
         origin.sourceIdentity ? JSON.stringify(origin.sourceIdentity) : null,
+        origin.memoryArm ?? null,
         now, now,
       );
       emitEvent(db, runId, "run.created", { question: normalized });
@@ -152,6 +158,13 @@ export class SqliteStore {
       science125Id,
     );
     return row ? String(row.id) : null;
+  }
+
+  /** 这个 Run 跑的是第几题。自由输入没有题号，返回 null —— 战役记忆按题分页，没题号就不分页。 */
+  science125Id(runId: string): number | null {
+    const row = this.#get("SELECT science125_id FROM runs WHERE id = ?", runId);
+    const value = row?.science125_id;
+    return typeof value === "number" ? value : null;
   }
 
   sourceIdentity(runId: string): SourceIdentity | null {
@@ -306,6 +319,21 @@ export class SqliteStore {
       payload: JSON.parse(row.payload_json),
       created_at: row.created_at,
     }));
+  }
+
+  /** 这个 Run 最后一次发布的某类 Artifact。
+   *
+   * 战役记忆要记的是「这条路走成什么样」，不只是「有没有交付」：被引用验收否掉的计划，
+   * 它的标题与引用同样值得下一次绕开，可它不会成为 final_artifact_id。
+   */
+  latestArtifact(runId: string, type: string): StoredArtifact | null {
+    const row = this.#get(
+      "SELECT id, type, content_json FROM artifacts WHERE run_id = ? AND type = ? "
+      + "ORDER BY created_at DESC, rowid DESC LIMIT 1",
+      runId, type,
+    );
+    if (!row) return null;
+    return { id: row.id, type: row.type, content: JSON.parse(row.content_json) };
   }
 
   artifact(artifactId: string): StoredArtifact | null {

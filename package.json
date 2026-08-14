@@ -15,6 +15,7 @@
     "start": "pnpm build && node --env-file-if-exists=.env --experimental-strip-types src/main.ts",
     "canary": "node --env-file-if-exists=.env --experimental-strip-types src/canary.ts",
     "batch": "node --env-file-if-exists=.env --experimental-strip-types src/batch/runner.ts",
+    "eval": "node --experimental-strip-types src/eval/metrics.ts",
     "typecheck": "tsc --noEmit && pnpm --filter @luup/frontend typecheck",
     "test": "node --experimental-strip-types --test test/*.test.ts",
     "test:e2e": "pnpm --filter @luup/frontend test:e2e",

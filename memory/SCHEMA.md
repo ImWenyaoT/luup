@@ -44,6 +44,15 @@ memory/
 
 派工注入：有题号时 Harness 开局确定性读本题页末 3 条记录，作为 `priorAttempts` 进 Scientist 首条 message。这条路径不经模型。
 
+## TypeScript 栈（`src/campaign/campaign.ts`）
+
+同一批文件、同一条 append-only 契约，两处按新事实改写：
+
+- **没有 `memory_search`**。TS 栈的记忆通道只剩确定性注入一条：批跑发起 run 前读本题页末 ≤3 行，接在 researcher 输入的 `prior_attempts` 字段里（`src/roles.ts` 的 `buildStageInput`，位置在 `input_artifacts` 之后、纠错材料之前，前缀稳定性因此不破）。模型没有任何自主读本目录的通路，`--no-memory` 关掉的是注入与写回本身。
+- **行格式**：run 定位符从 `runs/<ts>` 变成 `<db 仓库相对路径>#<runId>`（run 数据在 sqlite，`runs/` 降为只读归档），失败分类从 `分类：x` 变成可机读的 `cls=x`。verdict、标题、`引用 <ids>` 三段不变。
+
+每个 run 落一条 `campaign.prior_attempts{question_id,count}` 事件，是消融生效门的事实来源：`memory_arm=off` 的 run 这个数必须为 0。口径见 `docs/design/experiment-protocol.json` 的 2026-08-14 修订记录。
+
 ## B1 不放松
 
 `library/` 命中**只是线索**。任何要出现在 proposal references 里的 arXiv id，仍必须经 `arxiv_save` 在**本次 run** 实检落盘到 `runs/<ts>/memory/papers/`。防虚构四道防线一道不减。

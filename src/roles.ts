@@ -71,6 +71,7 @@ function buildStageInput(spec: {
   question: string;
   goal: string;
   inputs: StoredInput[];
+  priorAttempts?: readonly string[];
   correction?: { issue: string; candidate: unknown; frozenSearches?: EvidenceRecord[] };
 }): string {
   const payload: Record<string, unknown> = {
@@ -78,6 +79,12 @@ function buildStageInput(spec: {
     goal: spec.goal,
     input_artifacts: spec.inputs,
   };
+  // 战役记忆接在稳定段的末尾、纠错材料之前。整个 Run 内它不变，所以首轮 input 仍是
+  // 纠错轮 input 的真前缀；接在纠错材料之后会让前缀在第四个字段上就分叉。
+  // 空数组不写这个键：没有记忆的 run（消融臂、自由输入）的前缀与本波之前逐字节相同。
+  if (spec.priorAttempts && spec.priorAttempts.length > 0) {
+    payload.prior_attempts = spec.priorAttempts;
+  }
   if (spec.correction) {
     payload.correction = [
       `结构化纠错：${spec.correction.issue}。`,
@@ -320,6 +327,7 @@ export async function runTask(
           question: context.question,
           goal: context.goal,
           inputs: context.inputArtifacts,
+          priorAttempts: context.priorAttempts,
           correction,
         }),
       });

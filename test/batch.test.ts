@@ -6,6 +6,7 @@ import test, { type TestContext } from "node:test";
 
 import {
   compactIds,
+  createCampaignMemory,
   parseIds,
   readSourceIdentity,
   remainingPath,
@@ -133,6 +134,32 @@ test("every run records its question id and its source identity", async (t) => {
   // repoRoot 是个不带 git 的临时目录：采不到出身就写 null，绝不编一个。
   assert.equal(store.sourceIdentity(runId), null);
   assert.match(store.question(runId), /第 3 题/);
+});
+
+test("a batch stamps its ablation arm and nothing else does", async (t) => {
+  const store = new SqliteStore(":memory:");
+  const single = store.createRun("HTTP 单跑", { science125Id: 9 });
+
+  const { report } = batch(t, [3], passes, { store, memoryArm: "off" });
+  const runId = (await report).outcomes[0]!.runId!;
+
+  assert.equal(store.snapshot(runId)!.memory_arm, "off");
+  // 单跑（HTTP / canary）不属于任何一臂：标成 on 会往配对里掺没有对照的样本。
+  assert.equal(store.snapshot(single)!.memory_arm, null);
+});
+
+test("the campaign locator is repo-relative so it outlives this checkout", (t) => {
+  const repoRoot = workspace(t);
+  const memory = createCampaignMemory(repoRoot, join(repoRoot, "outputs/runtime/runs.db"));
+  mkdirSync(join(repoRoot, "memory"), { recursive: true });
+
+  memory.recordRun({
+    runId: "abc", questionId: 3, status: "completed", failureCode: null, title: "标题", references: [],
+  });
+
+  const log = readFileSync(join(repoRoot, "memory", "log.md"), "utf8");
+  assert.match(log, /- outputs\/runtime\/runs\.db#abc｜标题/);
+  assert.equal(log.includes(repoRoot), false, "绝对路径活不过一次 clone");
 });
 
 test("source identity is this repo's commit, and null where git cannot answer", (t) => {

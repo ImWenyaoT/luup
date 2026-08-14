@@ -41,6 +41,9 @@ CREATE TABLE IF NOT EXISTS runs (
   science125_id INTEGER,
   -- 哪个 build 产出了这个 Run（git commit + 工作树是否脏）；取不到时为 NULL。
   source_identity_json TEXT,
+  -- 消融臂标签：'on' / 'off'。只有批跑发的 run 属于某一臂；单跑（HTTP/canary）为 NULL，
+  -- 它们不进 2×2 表，把它们标成 on 会往配对里掺没有对照的样本。
+  memory_arm TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -98,6 +101,7 @@ CREATE TABLE IF NOT EXISTS events (
 const ADDED_RUN_COLUMNS: ReadonlyArray<[string, string]> = [
   ["science125_id", "INTEGER"],
   ["source_identity_json", "TEXT"],
+  ["memory_arm", "TEXT"],
 ];
 
 export function createSchema(db: DatabaseSync): void {

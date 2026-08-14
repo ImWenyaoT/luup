@@ -1,8 +1,10 @@
 import { EvidenceLedger } from "./agent/evidence.ts";
 import { classifyFailure } from "./agent/failures.ts";
 import type { EvidenceReview, Research, ResearchPlan, Review, Role } from "./agent/contracts.ts";
+import type { CampaignMemory } from "./campaign/campaign.ts";
+import type { StageUsage } from "./executor.ts";
 import { runTask, type StageExecutor } from "./roles.ts";
-import type { StoredInput, TaskContext } from "./store/contracts.ts";
+import type { StoredInput, TaskContext, UsageFacts } from "./store/contracts.ts";
 import type { SqliteStore, StoredArtifact } from "./store/store.ts";
 import {
   createReferenceVerifier,
@@ -43,6 +45,7 @@ export class Harness {
   readonly #execute: StageExecutor;
   readonly #createLedger: (scope: { runId: string; attemptId: string }) => EvidenceLedger;
   readonly #verifyReferences: ReferenceVerifier;
+  readonly #memory: CampaignMemory | null;
 
   constructor(
     store: SqliteStore,
@@ -51,11 +54,14 @@ export class Harness {
       createLedger?: (scope: { runId: string; attemptId: string }) => EvidenceLedger;
       /** 终局引用验收。默认打 arXiv 官方 API；测试与确定性运行时注入离线替身。 */
       verifyReferences?: ReferenceVerifier;
+      /** 跨 run 战役记忆。不传（或传 null）就是消融臂：既不注入也不写回。 */
+      memory?: CampaignMemory | null;
     } = {},
   ) {
     this.#store = store;
     this.#execute = execute;
     this.#verifyReferences = options.verifyReferences ?? createReferenceVerifier();
+    this.#memory = options.memory ?? null;
     this.#createLedger = options.createLedger
       ?? ((scope) => new EvidenceLedger({
         // tool_evidence.id 全库唯一，所以用完整 Attempt ID 隔离每本台账。
@@ -68,7 +74,34 @@ export class Harness {
     return this.#store.createRun(question);
   }
 
+  /** 跑完一个 Run，并把结论确定性追加进战役记忆。
+   *
+   * 记忆的两端都在这里合拢：开局注入同题最近几次尝试，收尾追加这一次的结论。
+   * 注入了几条**必须落成事实**（`campaign.prior_attempts`）—— 消融生效门读的就是它：
+   * off 臂的 run 若这条事件的 count > 0，那一臂就不是对照臂，该配对必须剔除。
+   * 没有记忆通道时它照样发，count 记 0：缺失与零在这里是两回事，不能靠「没有事件」来推断。
+   */
   async execute(runId: string): Promise<RunOutcome> {
+    const questionId = this.#store.science125Id(runId);
+    const priorAttempts = this.#memory?.readPriorAttempts(questionId) ?? [];
+    this.#store.emit(runId, "campaign.prior_attempts", {
+      question_id: questionId,
+      count: priorAttempts.length,
+    });
+    const outcome = await this.#pipeline(runId, priorAttempts);
+    const plan = this.#store.latestArtifact(runId, "research-plan")?.content as ResearchPlan | undefined;
+    this.#memory?.recordRun({
+      runId,
+      questionId,
+      status: outcome.status,
+      failureCode: outcome.errorCode,
+      title: plan?.paper_title ?? null,
+      references: plan?.references ?? [],
+    });
+    return outcome;
+  }
+
+  async #pipeline(runId: string, priorAttempts: readonly string[]): Promise<RunOutcome> {
     const question = this.#store.question(runId);
     try {
       const research: StoredArtifact[] = [];
@@ -82,7 +115,9 @@ export class Harness {
         const goal = round === 1
           ? "检索并冻结证据"
           : `仅补充证据缺口：${(evidenceReview.content as EvidenceReview).gaps.join("；")}`;
-        research.push(await this.#step(runId, question, "researcher", researchInputs, goal));
+        // 记忆只进 researcher：它是唯一决定「去查什么」的角色，也是唯一能从
+        // 「上次这条路走死了」里得到便宜的角色。下游角色只看冻结 Artifact。
+        research.push(await this.#step(runId, question, "researcher", researchInputs, goal, priorAttempts));
 
         // 补证是累积，不是用第二轮替换第一轮：下游必须同时看到全部冻结 Research。
         const frozenResearch = research.map(toInput);
@@ -158,12 +193,14 @@ export class Harness {
     role: Role,
     inputs: StoredInput[],
     goal: string,
+    priorAttempts: readonly string[] = [],
   ): Promise<StoredArtifact> {
     const attemptId = this.#store.startAttempt(runId, role);
     const context: TaskContext = {
       runId, taskId: attemptId, role, goal, question,
       inputArtifactIds: inputs.map((item) => item.id),
       inputArtifacts: inputs,
+      priorAttempts,
     };
     const ledger = this.#createLedger({ runId, attemptId });
     try {
@@ -173,10 +210,25 @@ export class Harness {
       const failure = classifyFailure(error);
       const errorType = error instanceof Error ? error.name : "Error";
       const corrections = (error as { corrections?: number }).corrections ?? 0;
-      this.#store.failAttempt(runId, attemptId, failure, errorType, corrections);
+      // 失败也花了钱。用量由 executor 挂在它抛出的分类异常上、由 runTask 沿两次调用累加，
+      // 到这里才落库 —— 不透传就等于把失败的成本从账上抹掉，跑完 125 题算总账时
+      // 差的正是最该被看见的那一块。拿不到就传 null，绝不用零顶替。
+      this.#store.failAttempt(runId, attemptId, failure, errorType, corrections, usageFacts(role, error));
       throw new AttemptFailed(failure.code, failure.reason);
     }
   }
+}
+
+/** 异常上携带的 StageUsage 转成记账口径的 UsageFacts。没有就是 null —— 「不知道」不写成零。 */
+function usageFacts(role: Role, error: unknown): UsageFacts | null {
+  const usage = (error as { usage?: StageUsage } | null)?.usage;
+  if (!usage) return null;
+  return {
+    agent: role,
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    totalTokens: usage.totalTokens,
+  };
 }
 
 function toInput(artifact: StoredArtifact): StoredInput {
