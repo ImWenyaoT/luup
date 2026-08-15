@@ -170,6 +170,50 @@ function canonicalizeResearch(
   });
 }
 
+/** 一次「代码用冻结事实覆写模型转述」的记录。
+ *
+ * 覆写救回了一个本来要失败的 Attempt，这恰恰是它不能悄悄发生的理由：
+ * 被替换掉的每个字段都要留成证据。落库的一层在 harness。
+ */
+export type ArtifactDrift = {
+  artifactType: string;
+  field: string;
+  before: string;
+  after: string;
+};
+
+/** 用冻结 Run question 覆写模型转述的那一份。
+ *
+ * Artifact 里的 `question` **纯属回显**，没有任何下游读它：公共投影两个角色都没挑这个字段
+ * （`api/projection.ts` 的 `publicArtifactContentSchema`）、离线评估读的是 `runs.question` 列、
+ * 引用验收与战役记忆都不碰它；下游角色看到的 question 由 `buildStageInput` 直接从 context 给，
+ * 输入 Artifact 里那一份只是同一个值的第二个副本。既然是模型无权决定的不可变数据，
+ * 就该由代码写定 —— 和 citations/queries 元数据、以及 `research_artifact_ids` 那几个
+ * 上游 ID 字段一样，模型抄错了不该由它把整个 Attempt 拖死。
+ *
+ * live 取证（探针 6 次调用）确认漂移形态是**截断**而不是翻译：题面是英文原题包在中文包装里
+ * （`domain/science125.ts` 的 `science125Text`），模型只把「问题：」后面那半截填回来，
+ * 中文出处整段丢掉。三次拿到合格结构的调用里两次如此。纠错轮救不回来 ——
+ * 冻结值本来就明写在同一份 input 的第一个字段上，它看得见仍然照丢。
+ *
+ * 覆写不静默：对齐 Python `backfill_reference_metadata` 的 `on_mismatch`，
+ * 发生一次落一条漂移记录。
+ */
+function withFrozenQuestion<T extends { artifact_type: string; question: string }>(
+  proposed: T,
+  context: TaskContext,
+  onDrift: (drift: ArtifactDrift) => void,
+): T {
+  if (normalize(proposed.question) === normalize(context.question)) return proposed;
+  onDrift({
+    artifactType: proposed.artifact_type,
+    field: "question",
+    before: proposed.question,
+    after: context.question,
+  });
+  return { ...proposed, question: context.question };
+}
+
 function inputsOfType(context: TaskContext, type: string): StoredInput[] {
   return context.inputArtifacts.filter((item) => item.type === type);
 }
@@ -190,7 +234,11 @@ function frozenEvidenceOf(context: TaskContext) {
  * 本次调用的检索记录，不依赖任何跨 Task 的内存状态 —— 顺序与依赖已经由 store
  * 的任务图决定，这里只管单个格子里的合同。
  */
-function acceptFor(context: TaskContext, ledger: EvidenceLedger): (raw: unknown) => DomainArtifact {
+function acceptFor(
+  context: TaskContext,
+  ledger: EvidenceLedger,
+  onDrift: (drift: ArtifactDrift) => void,
+): (raw: unknown) => DomainArtifact {
   switch (context.role) {
     case "researcher":
       return (raw) => {
@@ -200,10 +248,7 @@ function acceptFor(context: TaskContext, ledger: EvidenceLedger): (raw: unknown)
         if (scoped.length === 0) {
           throw new ContractError("researcher published without running any search in this attempt");
         }
-        const proposed = researchSchema.parse(raw);
-        if (normalize(proposed.question) !== normalize(context.question)) {
-          throw new ContractError("research Artifact rewrote the frozen Run question");
-        }
+        const proposed = withFrozenQuestion(researchSchema.parse(raw), context, onDrift);
         const inheritedResearch = inputsOfType(context, "research");
         const inheritedSearches = new Set(inheritedResearch.flatMap((item) =>
           (item.content as unknown as Research).queries.map((query) =>
@@ -221,10 +266,7 @@ function acceptFor(context: TaskContext, ledger: EvidenceLedger): (raw: unknown)
         const research = inputsOfType(context, "research");
         if (research.length === 0) throw new Error("hypothesis task is missing its Research Artifact");
         const cited = frozenEvidenceOf(context).evidenceIds;
-        const proposed = hypothesisSchema.parse(raw);
-        if (normalize(proposed.question) !== normalize(context.question)) {
-          throw new ContractError("hypothesis Artifact rewrote the frozen Run question");
-        }
+        const proposed = withFrozenQuestion(hypothesisSchema.parse(raw), context, onDrift);
         if (!proposed.evidence_ids.every((id) => cited.has(id))) {
           throw new ContractError("hypothesis cites evidence outside its Research Artifacts");
         }
@@ -307,6 +349,8 @@ export type TaskRunResult = {
   searches: EvidenceRecord[];
   /** 这个 Attempt 全部调用的合计用量。执行器不报就是 null —— 「不知道」不写成零。 */
   usage: StageUsage | null;
+  /** 代码在这份产物上覆写掉的不可变字段。没发生就是空数组。 */
+  drift: ArtifactDrift[];
 };
 
 /** 执行一个 Task，至多两次模型调用：首轮 + 一次结构化纠错。
@@ -331,7 +375,10 @@ export async function runTask(
   if (context.role !== "researcher" && agent.tools.length !== 0) {
     throw new Error(`${context.role} cannot use tools`);
   }
-  const accept = acceptFor(context, ledger);
+  // 漂移记录**按轮作废**：只有被接受的那一轮的覆写才是事实。首轮记下一条覆写、
+  // 随后又被别的门驳回时，那条记录属于一份从未发布的产物，不能跟着纠错轮一起落库。
+  let drift: ArtifactDrift[] = [];
+  const accept = acceptFor(context, ledger, (item) => drift.push(item));
 
   let candidate: unknown;
   let correction: { issue: string; candidate: unknown; frozenSearches?: EvidenceRecord[] } | undefined;
@@ -358,6 +405,7 @@ export async function runTask(
     // 台账跨纠错轮累积，上报窗口不跨：纠错轮要求模型重新交一份完整 Artifact，
     // 上一轮捕获到的那份必须先作废，否则守卫会把第二次上报当成重复调用拒掉。
     capture.beginRound();
+    drift = [];
     try {
       // 先存原始输出再解析：解析失败时纠错提示里也要带上模型写的那份原文，
       // 否则它只收到一句「不是合法 JSON」，无从对照着改。
@@ -388,6 +436,7 @@ export async function runTask(
         corrections,
         searches: ledger.scopedRecords(),
         usage: spent,
+        drift,
       };
     } catch (error) {
       spent = addUsage(spent, (error as { usage?: StageUsage }).usage);

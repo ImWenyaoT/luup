@@ -9,9 +9,17 @@ import { EvidenceLedger, type EvidenceCitation, type EvidenceRecord } from "../s
 import { StageError } from "../src/agent/failures.ts";
 import { reportStructuredOutput } from "../src/agent/roles/structured-output.ts";
 import { Harness } from "../src/harness.ts";
-import type { StageExecutor } from "../src/roles.ts";
+import { runTask, type StageExecutor } from "../src/roles.ts";
 import { SqliteStore } from "../src/store/store.ts";
 import { createReferenceVerifier, type ArxivLookup } from "../src/verify/verifier.ts";
+
+/** Science-125 的题面：英文原题包在中文出处里（`science125Text`）。
+ *  这里写的是 store 归一化之后的形态 —— `normalizeQuestion` 会把换行压成空格。 */
+const FROZEN_QUESTION = "来源：《Science》125 前沿科学问题（Science-125 题库）第 1 题，"
+  + "Mathematical Sciences。 问题：What makes prime numbers so special?";
+
+/** live 取证到的漂移形态：**截断**而不是翻译 —— 中文出处整段丢掉，只填回英文原题。 */
+const DRIFTED_QUESTION = "What makes prime numbers so special?";
 
 const citation = {
   source_type: "arxiv" as const,
@@ -56,6 +64,7 @@ function fake(options: {
   claimsFailedSearch?: boolean;
   inventsReviewEvidence?: boolean;
   repeatsSupplementarySearch?: boolean;
+  rewritesResearchQuestion?: boolean;
   rewritesHypothesisQuestion?: boolean;
   claimsUnfrozenSearch?: boolean;
   stageFails?: boolean;
@@ -116,7 +125,7 @@ function fake(options: {
       // 替身也走 structured_output 上报 —— 与真模型同一条通路，同一份参数 schema。
       return await reportStructuredOutput(agent, {
         artifact_type: "research",
-        question: payload.question,
+        question: options.rewritesResearchQuestion ? DRIFTED_QUESTION : payload.question,
         summary: "冻结证据支撑一条可审计的论断。",
         claims: [{
           statement: "证据门提升可审计性。",
@@ -149,7 +158,7 @@ function fake(options: {
       const research = ofType("research");
       return {
         artifact_type: "hypothesis",
-        question: options.rewritesHypothesisQuestion ? "另一个问题" : payload.question,
+        question: options.rewritesHypothesisQuestion ? DRIFTED_QUESTION : payload.question,
         hypothesis: "证据门降低无来源引用。",
         rationale: "冻结证据可审计。",
         falsifiable_predictions: ["无来源引用率低于基线。"],
@@ -390,15 +399,110 @@ test("Evidence Review can only cite frozen Research evidence", async () => {
   h.store.close();
 });
 
-test("Hypothesis cannot rewrite the frozen Run question", async () => {
+/** 这个 run 里全部漂移记录，按事件顺序。 */
+function driftEvents(snapshot: any): any[] {
+  return snapshot.recent_events.filter((event: any) => event.kind === "artifact.field_overwritten");
+}
+
+test("restores the frozen question a Hypothesis rewrote, and records the drift", async () => {
   const h = harness({ rewritesHypothesisQuestion: true });
-  const runId = h.harness.createRun("q");
+  const runId = h.harness.createRun(FROZEN_QUESTION);
   await h.harness.execute(runId);
 
   const snapshot = h.store.snapshot(runId)!;
-  assert.equal(snapshot.status, "failed");
-  assert.equal(snapshot.attempts.at(-1)!.role, "hypothesis-generation");
+  // 改写不再打死 Attempt：question 是回显字段，代码写定就是了。
+  assert.equal(snapshot.status, "completed");
+  const hypothesis = snapshot.artifacts.find((a: any) => a.type === "hypothesis")!.content;
+  assert.equal(hypothesis.question, FROZEN_QUESTION);
+
+  // 覆写救回了这一步，所以它必须留痕 —— 漂移是证据不是秘密。
+  const drift = driftEvents(snapshot);
+  assert.equal(drift.length, 1);
+  assert.equal(drift[0]!.payload.artifact_type, "hypothesis");
+  assert.equal(drift[0]!.payload.field, "question");
+  assert.equal(drift[0]!.payload.before, DRIFTED_QUESTION);
+  assert.equal(drift[0]!.payload.after, FROZEN_QUESTION);
+  // 事件顺序要说得通：先记覆写，再发布那份被覆写过的产物。
+  const published = snapshot.recent_events
+    .filter((e: any) => e.kind === "artifact.published")
+    .find((e: any) => e.payload.artifact_type === "hypothesis")!;
+  assert.ok(drift[0]!.version < published.version);
   h.store.close();
+});
+
+test("restores the frozen question a Research Artifact rewrote", async () => {
+  const h = harness({ rewritesResearchQuestion: true });
+  const runId = h.harness.createRun(FROZEN_QUESTION);
+  await h.harness.execute(runId);
+
+  const snapshot = h.store.snapshot(runId)!;
+  assert.equal(snapshot.status, "completed");
+  const research = snapshot.artifacts.find((a: any) => a.type === "research")!.content;
+  assert.equal(research.question, FROZEN_QUESTION);
+  const drift = driftEvents(snapshot);
+  assert.equal(drift.length, 1);
+  assert.equal(drift[0]!.payload.artifact_type, "research");
+  assert.equal(drift[0]!.payload.before, DRIFTED_QUESTION);
+
+  // 下游拿到的是冻结值：Research 的 question 会随冻结输入原样传给后面每个角色，
+  // 改写不覆写就等于让一份被截断的题面替代原题在流水线里往下走。
+  for (const call of h.calls.filter((item) => item.role !== "researcher")) {
+    for (const input of call.input.input_artifacts as any[]) {
+      if (input.type === "research") assert.equal(input.content.question, FROZEN_QUESTION);
+    }
+  }
+  h.store.close();
+});
+
+test("writes no drift record when the model copies the frozen question verbatim", async () => {
+  const h = harness();
+  const runId = h.harness.createRun(FROZEN_QUESTION);
+  await h.harness.execute(runId);
+
+  const snapshot = h.store.snapshot(runId)!;
+  assert.equal(snapshot.status, "completed");
+  // 覆写没发生就不该有记录 —— 每个 run 都挂一条会让这条事件什么也不说明。
+  assert.deepEqual(driftEvents(snapshot), []);
+  h.store.close();
+});
+
+test("records the drift of the accepted round only", async () => {
+  // 首轮改写了 question，又引了一条不存在的证据：漂移记下了，可这份产物从未发布。
+  // 纠错轮仍然改写 question —— 落库的事实只有一条，不是两条。
+  let call = 0;
+  const research = {
+    id: "art_research",
+    type: "research",
+    content: { citations: [{ evidence_id: "ev_1", url: null }] },
+  };
+  const execute: StageExecutor = () => {
+    call += 1;
+    return Promise.resolve({
+      artifact_type: "hypothesis",
+      question: DRIFTED_QUESTION,
+      hypothesis: "证据门降低无来源引用。",
+      rationale: "冻结证据可审计。",
+      falsifiable_predictions: ["无来源引用率低于基线。"],
+      boundaries: ["仅限引用可靠性。"],
+      research_artifact_ids: ["art_research"],
+      evidence_ids: call === 1 ? ["ev_never_existed"] : ["ev_1"],
+      validation_conditions: ["使用预注册的配对基准。"],
+    });
+  };
+
+  const result = await runTask({
+    runId: "run",
+    taskId: "attempt",
+    role: "hypothesis-generation",
+    goal: "基于全部冻结 Research Artifact 生成可证伪假设",
+    question: FROZEN_QUESTION,
+    inputArtifactIds: ["art_research"],
+    inputArtifacts: [research],
+  }, { execute });
+
+  assert.equal(result.corrections, 1);
+  assert.equal((result.artifact as { question: string }).question, FROZEN_QUESTION);
+  assert.deepEqual(result.drift.map((item) => item.field), ["question"]);
 });
 
 test("runs exactly one supplementary research round", async () => {

@@ -203,6 +203,19 @@ test("白名单外的 kind 得到空 payload，事件本身仍然出去", () => 
   assert.deepEqual(event, { id: 4, version: 4, kind: "sdk.output_rejected", payload: {}, created_at: "t" });
 });
 
+test("漂移事件放行字段名，模型写的原文留在库内", () => {
+  const event = projectRunEvent({
+    id: 11, version: 11, kind: "artifact.field_overwritten", created_at: "t",
+    payload: {
+      artifact_type: "research",
+      field: "question",
+      before: "模型写的那份原文",
+      after: "冻结的那份原文",
+    },
+  });
+  assert.deepEqual(event.payload, { artifact_type: "research", field: "question" });
+});
+
 test("嵌套对象与数组即使字段名在白名单里也被丢弃", () => {
   const nested = projectRunEvent({
     id: 5, version: 5, kind: "task.created", payload: { role: { name: "researcher" } }, created_at: "t",

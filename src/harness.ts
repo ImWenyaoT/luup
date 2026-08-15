@@ -202,6 +202,16 @@ export class Harness {
     const ledger = this.#createLedger({ runId, attemptId });
     try {
       const result = await runTask(context, { execute: this.#execute, ledger });
+      // 覆写救回了这个 Attempt，所以它必须留痕：产物发布之前先把「代码替掉了模型写的哪个
+      // 字段」落成事实，否则 Artifact 看上去永远是对的，漂移发生过几次谁也说不出来。
+      for (const item of result.drift) {
+        this.#store.emit(runId, "artifact.field_overwritten", {
+          artifact_type: item.artifactType,
+          field: item.field,
+          before: summarize(item.before),
+          after: summarize(item.after),
+        });
+      }
       // 成功也花了钱，而且是花得最多的那一半。用量与失败路径同一形状、同一条通路：
       // runTask 按 Attempt 累加，store 在终态事件之前落成唯一一条 `sdk.usage`。
       return this.#store.publishArtifact(
@@ -221,6 +231,18 @@ export class Harness {
       throw new AttemptFailed(failure.code, failure.reason);
     }
   }
+}
+
+/** 漂移记录里的正文摘要。
+ *
+ * 事件载荷是给人读的排障材料，不是原文存档：question 上限 4000 字，整段抄进每条事件
+ * 只会把事件表撑大而不多说一句话。实测的漂移形态（截断掉中文出处）在头 200 字里
+ * 一眼可见，够判形态就够了。
+ */
+const DRIFT_SUMMARY_LENGTH = 200;
+
+function summarize(text: string): string {
+  return text.length <= DRIFT_SUMMARY_LENGTH ? text : `${text.slice(0, DRIFT_SUMMARY_LENGTH)}…`;
 }
 
 /** StageUsage 转成记账口径的 UsageFacts。没有就是 null —— 「不知道」不写成零。 */
