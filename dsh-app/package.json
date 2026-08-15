@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "dsh (DeepSeek Harness) foundation for the luup rebuild. Parallel to src/ until parity.",
+  "description": "dsh (DeepSeek Harness) reference spike: Bailian route + structured_output verified. Learning artifact per ADR-0005, not a migration base.",
   "scripts": {
     "smoke": "./scripts/smoke.sh"
   },

@@ -1,7 +1,7 @@
 packages:
   # 可执行入口一层。harness 本体是根包（`src/`），只有交付面单独成包。
   - 'apps/*'
-  # dsh 重建地基。与 `src/` 并行存在直至对等，不进根 ci 链。
+  # dsh 实践参考学习件（ADR-0005）：go/no-go 数据与可运行读法，不进根 ci 链。
   - 'dsh-app'
 
 allowBuilds:
