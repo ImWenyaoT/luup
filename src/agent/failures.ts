@@ -10,22 +10,31 @@
  * `infra_error` / `infra_timeout` 单列，是为了让 arXiv 不可达不被计成引用造假，
  * 也让「挂死」不被计成模型质量问题 —— 三者在报告里不可混。
  */
-export type FailureCode =
-  | "invalid_output"
-  | "deadline_exceeded"
-  | "provider_error"
-  | "context_overflow"
-  | "missing_credential"
-  | "runtime_error"
-  | "verifier_refs"
-  | "infra_error"
-  | "infra_timeout";
+/** 九个码的**运行时**清单。类型由它派生，不是各写一份 ——
+ *  读数侧的桶归属要断言「每个码恰好落进一个桶」，那条断言需要一个能枚举的事实。 */
+export const FAILURE_CODES = [
+  "invalid_output",
+  "deadline_exceeded",
+  "provider_error",
+  "context_overflow",
+  "missing_credential",
+  "runtime_error",
+  "verifier_refs",
+  "infra_error",
+  "infra_timeout",
+] as const;
 
-/** 环境性失败：不反映提案质量，评估的质量分母要把它们排除，批跑连续两次即停批。
+export type FailureCode = (typeof FAILURE_CODES)[number];
+
+/** **熔断口径**：批跑连续两次撞上这里的码就停批（`batch/runner.ts` 的 outage 判定）。
  *
- * 与 Python `app/evaluation.py` 的 `INFRASTRUCTURE_CLASSES` 同一个集合。写在这里而不是
- * 批跑或评估里，是因为「哪几类算环境故障」是一个跨越执行、熔断与读数三处的口径，
- * 各处各写一份迟早会分叉。
+ * 这两个码作为 `controls.batch_circuit_breakers.outage_classes` 写进了预注册协议
+ * （`docs/design/experiment-protocol.json`），已注册即不可动。
+ *
+ * 它**不是**读数用的环境类桶。`eval/metrics.ts` 的 `INFRASTRUCTURE_CLASSES` 另有五个码：
+ * 「该不该停批」问的是「再跑下去还有没有信息增益」，「该不该剔出质量分母」问的是「谁能修」，
+ * 两个问题的答案本来就不必相同（一次 `provider_error` 不值得停批，却该剔出质量分母）。
+ * 早先这里写着「两者同一个集合」，2026-08-15 桶归属明细化之后不再成立。
  */
 export const INFRASTRUCTURE_FAILURE_CODES: ReadonlySet<FailureCode> = new Set([
   "infra_error",

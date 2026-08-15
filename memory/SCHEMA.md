@@ -1,6 +1,6 @@
 # campaign memory 行为契约
 
-跨 run 的长期记忆（125 题战役）。设计权威是 `docs/design/memory.md`；本文件是给 **agent 在工作现场读的约定**。硬约束在代码里：写入 `backend/app/agent/campaign.py`，读取 `backend/app/agent/tools/memory.py`。
+跨 run 的长期记忆（125 题战役）。设计权威是 `docs/design/memory.md`；本文件是给 **agent 在工作现场读的约定**。硬约束在代码里：读写都在 `src/campaign/campaign.ts`。
 
 ## 两层记忆
 

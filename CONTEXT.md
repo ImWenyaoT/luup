@@ -2,15 +2,20 @@
 
 | 术语 | 含义 | 代码锚点 |
 |------|------|---------|
-| **run** | 一次 `question → Scientist → Reviewer → 最多一次定向返修 → Verify` 的执行；全部事实落在 `runs/<id>/` | `backend/app/agent/orchestrator.py` |
-| **Harness** | 普通 Python 确定性调度器（循环引擎），运行时角色而非子目录（同 eve）；拥有工具执行、预算、状态、证据和验证，不是另一个 LLM Agent | `backend/app/agent/orchestrator.py` |
-| **Scientist** | 检索 run-local 证据并提交结构化研究计划；单次最多两个新检索意图 | `backend/app/agent/specialists.py` |
-| **Reviewer** | 必须独立检索到 Scientist 未见的新信息，再给出 `pass` 或具体返修项 | `backend/app/agent/tools/runtime.py` |
-| **工件（artifact）** | Agent 输出、工具事件、trace、proposal、review、verification 与失败证据 | `backend/app/agent/artifacts.py` |
-| **handoff** | Scientist 输出、Reviewer 输入输出和返修请求的显式文件传递；角色不共享隐藏上下文 | `trace.jsonl`、`tool-events.jsonl` |
-| **独立验收** | 零 LLM 的确定性契约与引用真实性检查；失败必须 fail-closed；模型不可见，属 harness 角色 | `backend/app/agent/verifier.py` |
-| **run outcome** | 对外只有 `working → passed | failed`；内部 phase 不扩大 HTTP 契约 | `backend/app/services/runs.py` |
-| **单写者假设** | `runs/.active.json` 的跨进程锁保证同时最多一个可变 run | `backend/app/services/launch.py` |
-| **战役记忆** | 根 `memory/`；只提供线索，引用仍必须在本 run 重新经 arXiv 核验并落盘 | `backend/app/agent/tools/memory.py` |
-| **离线评估** | 从既有工件复算 gate、版本选择、M9/M10 授权与 McNemar 配对比较，不调用模型 | `backend/app/evaluation.py` |
-| **HTTP adapter** | FastAPI 暴露运行接口；Vite 只消费 HTTP，不直接读取 Python 模块 | `backend/app/main.py` |
+| **run** | 一次 `question → 五角色串行 → 确定性验收` 的执行；全部事实落在 SQLite 单库里 | `src/harness.ts` |
+| **Harness** | 确定性调度器（循环引擎），运行时角色而非子目录；拥有工具执行、预算、状态、证据和验证，不是另一个 LLM Agent | `src/harness.ts` |
+| **五角色** | researcher → hypothesis-generation → evidence-review → research-plan → reviewer，固定串行 | `src/agent/roles/` |
+| **上界** | 补证 ≤2 轮、修订 ≤2 轮，写成 `for` 循环而不是依赖图；顺序由代码决定不由数据决定 | `src/harness.ts` |
+| **Attempt** | 一个角色的一次执行。含一次结构化纠错（`attempts.corrections`），但**没有隐式重试**——纠错不是重试 | `src/roles.ts` |
+| **工件（artifact）** | 角色输出的冻结结构化产物；发布后不可变，下游只能读冻结版本 | `src/store/store.ts` |
+| **证据台账** | 每次检索的 query、结果与结局（八个 `EvidenceStatus`）；失败的 Attempt 也留台账 | `src/agent/evidence.ts` |
+| **handoff** | 角色之间只传冻结 Artifact，不共享隐藏上下文 | `src/harness.ts` 的 `toInput` |
+| **独立验收** | 零 LLM 的 B1–B4 引用真实性检查；失败必须 fail-closed；模型不可见，属 harness 角色 | `src/verify/verifier.ts` |
+| **run outcome** | 对外只有 `running → completed \| review_rejected \| failed`；内部阶段不扩大 HTTP 契约 | `src/store/schema.ts` |
+| **公开投影** | 出网字段的 allowlist；审计、恢复、rationale、原始 payload 一律不公开 | `src/api/projection.ts` |
+| **seam（接缝）** | 可整块替换的四个位置：模型接线、验收器、Run 记账面、记忆通道 | `src/seams/index.ts` |
+| **战役记忆** | 根 `memory/`；文件制 Markdown，确定性字符匹配零 embedding；只在开局注入一次，模型没有自主读取通路 | `src/campaign/campaign.ts` |
+| **消融臂** | `--no-memory` 关掉的是记忆**数据通道**本身，不是一个返回空结果的工具 | `src/batch/runner.ts` |
+| **失败分类** | 终态失败的权威枚举；`INFRASTRUCTURE_*` 与质量类失败分桶报 | `src/agent/failures.ts` |
+| **离线评估** | 从既有 SQLite 库复算 gate、版本选择与 McNemar 配对比较，不调用模型或网络 | `src/eval/metrics.ts` |
+| **HTTP adapter** | `node:http` 暴露运行接口并同端口托管 `apps/web/dist`；前端只消费 HTTP | `src/server.ts` |

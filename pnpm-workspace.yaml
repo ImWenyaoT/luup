@@ -1,5 +1,6 @@
 packages:
-  - 'frontend-ts'
+  # 可执行入口一层。harness 本体是根包（`src/`），只有交付面单独成包。
+  - 'apps/*'
 
 allowBuilds:
   esbuild: true

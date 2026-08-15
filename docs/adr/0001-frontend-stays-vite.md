@@ -2,7 +2,9 @@
 
 ## 状态
 
-已接受，2026-08-12。
+已接受，2026-08-12。**结论仍成立，论据的落点已变**（2026-08-15，ADR-0004）：
+下文的 FastAPI 单进程托管与 `backend/app/frontend` 指的是 Python 期的形状，Python 栈已退役；
+现在同端口托管 `apps/web/dist` 的是 `src/server.ts`。「赛期不换 Next、单进程交付」的裁决未变。
 
 ## 背景
 

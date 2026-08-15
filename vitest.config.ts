@@ -1,16 +1,16 @@
 import { defineConfig } from "vitest/config";
 
-// 根包的测试跑器。frontend-ts/ 有自己的 vitest 与自己的门，这里不碰它——
+// 根包（harness 本体）的测试跑器。apps/web 有自己的 vitest 与自己的门，这里不碰它——
 // include 只收 test/，coverage.include 只收 src/，两边互不越界。
 export default defineConfig({
   test: {
     include: ["test/**/*.test.ts"],
     // Harness 的用例开真 SQLite、真 HTTP 端口、真临时目录：进程隔离比线程可靠，
-    // 也让 `runs/.active.json` 这类跨进程写者锁在测试里保持真实语义。
+    // 单写者锁与端口占用在测试里因此保持真实语义。
     pool: "forks",
     coverage: {
       provider: "v8",
-      // 只度量本仓的运行时源码：frontend-ts 走自己的门，测试自身不计入分母。
+      // 只度量本仓的运行时源码：apps/web 走自己的门，测试自身不计入分母。
       include: ["src/**/*.ts"],
       exclude: [
         // 进程入口：import 即启动服务器/批跑，覆盖率无法在单测进程内度量，

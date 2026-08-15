@@ -127,6 +127,22 @@
         "corrections": "corrections 机制存在且被记账：一个业务 Attempt 内至多一次结构化纠错（模型输出不满足领域合同时把违规项交还重出），记在 `attempts.corrections` 上，**不虚增 Attempt 计数**。它不是重试——controls.no_retry 的「无隐式 Attempt 重试」**原样有效**：契约不合格不会重新发起一个 Attempt，纠错仍不过即终止。Python 期没有这个字段，故本轮新增 `statistics.corrections` 一项过程指标（分母是 Attempt 不是 run），它属机制指标，不参与目标指标的解读。"
       },
       "unchanged": "读数纪律一条不动：statistics.design 仍是 `bounded_comparison`，仍不做显著性主张、不引用 p 与 significant、不加 seed / 重复采样；phase_b_subset 的 30 题、种子 `luup-science125-phaseB-v1`、分层规则与 sha256 承诺 `498002a5...` **一字未改**，仍由重算测试逐条钉住（Python `backend/tests/test_experiment_protocol.py`，TS `test/experiment-protocol.test.ts`）；declarations 的三条口径（pass_squared 的机会样本、verifier 的未校准阈值、failure_classes 的 7 类 / 3 桶与 infra_timeout 可非零）继续有效，只是权威文件路径随执行栈改为 `src/agent/failures.ts` 与 `src/eval/metrics.ts` 的 `INFRASTRUCTURE_CLASSES`。interpretation 的结论形状不变。"
+    },
+    {
+      "date": "2026-08-15",
+      "before_phase_a": false,
+      "recorded_when": "**Phase A 已经开跑之后、首次读数之前。** 本条不是开跑前写的，是开跑后补的：Phase A 的 125 题批跑此时正在进行，本条落盘时**尚未从库里读出任何一个指标**——没有交付率、没有失败分布、没有配对表。诚实的时间戳是这条修订的全部价值，所以它写在这里而不是伪装成预注册的一部分。",
+      "before_any_reading": true,
+      "registered_commit_amended": "fe417584605716f71ef4e101c2ea4b55cbee19cf",
+      "summary": "读数聚合的**桶归属明细化**：把 TS 栈 9 个 failure code 逐个钉进 quality / infrastructure 两桶，并把 `review_rejected` 从「看起来像一个失败码」改为在失败分类里单列一档。**不改变任何测量行为**——run 怎么跑、怎么记账、终态落哪个码，一行都没动；**不改变任何已注册的比较设计**——arms、controls、phase_b_subset、statistics、declarations 一字未动。改的只是离线读数把**已经落盘**的码归到哪个桶。",
+      "changes": {
+        "bucket_membership": "`src/eval/metrics.ts` 的桶归属由**穷举的字面量集合**给出，判据是「谁能修」：infrastructure = `infra_error` / `infra_timeout` / `missing_credential` / `provider_error` / `deadline_exceeded`（环境、供应商、凭据、超时，换个模型重跑也修不掉）；quality = `invalid_output` / `verifier_refs` / `context_overflow` / `runtime_error`（责任在 harness 或模型自己）。`context_overflow` 属 quality 的裁决沿用 Wave 3：上下文塞爆是我们塞多了，须被质量分母看见；`runtime_error` 同理是 harness 兜底 catch 抛出的自家 bug。已知含糊一条随数一起报：`deadline_exceeded` 既可能是 provider 慢也可能是模型自己磨蹭，同一个码里不可分离，本轮整体按环境类读。",
+        "review_rejected": "`review_rejected` 不是 failure code，是 Reviewer 否决后的终态（`runs.status`；harness 把同名字符串一并写进 `error_code` 只为让终态自证）。失败分类里为它单列一档 `reviewRejected`，既不混进 quality 的码分布也不进 infrastructure。**M4 的双分母口径不变**：它是未交付，两个分母（总体 / 剔除 infrastructure）都照旧算它一个未交付——它正是质量判定本身。",
+        "unclassified": "第三桶由「`error_code` 为空」扩为「为空**或**落不进上面任一集合的码」，并列出码名。此前 quality 是 infrastructure 的补集，任何没被裁决过的码（老库里的 Python 期分类名、将来新加的码）会自动获得质量类身份而看不出来。unclassified 的 run **仍留在 M4 的质量分母里**：只有被明确裁决为环境类的才有资格被剔除，存疑不给免票。",
+        "two_sets_diverge": "熔断口径与读数口径就此分家，且**只有读数口径变了**。`controls.batch_circuit_breakers.outage_classes` 已注册的两个码（`infra_error` / `infra_timeout`）一字未动，`src/agent/failures.ts` 的 `INFRASTRUCTURE_FAILURE_CODES` 保持这两个码不变，批跑熔断行为因此**完全没变**——正在跑的 Phase A 不受本条影响。两处回答的是两个问题：「再跑下去还有没有信息增益」（熔断）与「谁能修」（读数），答案不必相同。`src/agent/failures.ts` 里「两者同一个集合」那句注释随本条改写。"
+      },
+      "effect_on_numbers": "对已落盘事实的解释有效应，须直说：按本条之前的实现，quality 是 infrastructure 的补集，因此 `provider_error` / `missing_credential` / `deadline_exceeded` 会被读成质量类并留在 M4 的质量分母里，`review_rejected` 会作为一个「码」出现在质量类分布中。本条之后，前三者进 infrastructure 并**离开**质量分母（质量口径交付率因此可能上移），后者单列（quality 的码分布因此可能下移）。若本轮批跑不产生这四种终态，则所有数一个不变。原始事实（每个 run 的 `status` 与 `error_code`）不受任何影响，任何人可按旧归属重算。",
+      "unchanged": "读数纪律一条不动：`statistics.design` 仍是 `bounded_comparison`，仍不做显著性主张、不引用 p 与 significant、不加 seed / 重复采样；`phase_b_subset` 的 30 题、种子 `luup-science125-phaseB-v1`、分层规则与 sha256 承诺 `498002a5...` **一字未改**，仍由 `test/experiment-protocol.test.ts` 逐条重算钉住；`arms` / `controls` / `metrics` / `declarations` / `interpretation` 一字未动，`declarations` 的三条口径继续有效。M4 的双分母口径（总体 + 剔除 infrastructure）不变，M5 / McNemar / 消融生效门的算法与分母不变。"
     }
   ],
   "interpretation": "这是对已记录架构取舍的证据，不是普适优越性主张。结论的形状只能是「在这一条 harness commit、这一个题库、这一条串行顺序下，跨 run 记忆让交付率朝某个方向动了多少」，不能读成「记忆机制优于无记忆」或反过来。Do not claim superiority from one successful trace, one direction, or an unpriced token count.",

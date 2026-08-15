@@ -29,7 +29,7 @@ export type ArxivSearchResult = {
 };
 
 const ENDPOINT = "https://export.arxiv.org/api/query";
-// 与 Python `backend/app/agent/tools/arxiv.py` 的 `httpx.Timeout(30.0)` 同一个数。
+// 沿用 Python 期 `app/agent/tools/arxiv.py`（ADR-0004 已删）的 `httpx.Timeout(30.0)` 同一个数。
 // 原值 10s 是拍脑袋的：canary 现场两次 `arxiv_search` 都卡在这条线上超时，而同一时刻
 // arXiv 直连是健康的（简单查询 1.3–1.6s）——超的不是网络，是模型生成的复杂检索式，
 // 那类查询在 arXiv 上要 3–10s+。10s 把「慢查询」误判成了「服务不可达」。

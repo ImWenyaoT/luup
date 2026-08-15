@@ -9,7 +9,8 @@
  *    关掉一张表的某几行不是。
  * 3. **红线**：criteria C5 与 `memory/SCHEMA.md` 写死了「文件 + 确定性字符匹配，零 embedding」。
  *
- * 与 Python `backend/app/agent/campaign.py` 的行格式对齐（同一批文件要能被同一个 grep 读），
+ * 与 Python 期 `app/agent/campaign.py`（ADR-0004 已删）的行格式对齐 —— `memory/` 里两栈写的行
+ * 必须能被同一个 grep 读，
  * 只有两处按 TS 栈的事实改写：run 定位符从 `runs/<ts>` 改成 `<db 相对路径>#<runId>`，
  * 失败分类从 `分类：x` 改成可机读的 `cls=x`。
  *

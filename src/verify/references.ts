@@ -1,6 +1,6 @@
 /** B1–B4 确定性引用验收的判定规则。零 LLM、零网络 —— 全是纯函数。
  *
- * 移植自 backend/app/domain/references.py，按 TypeScript 栈的数据形状重写而不是逐行翻译。
+ * 移植自 Python 期 `app/domain/references.py`（ADR-0004 已删），按 TypeScript 栈的数据形状重写而不是逐行翻译。
  * 两边的形状差异决定了「谁是声称、谁是事实」：
  *
  * - Python 的 `Reference` 是模型自己填的 `{arxiv_id, title, authors, year}`，

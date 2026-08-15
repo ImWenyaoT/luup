@@ -108,7 +108,7 @@ function buildStageInput(spec: {
 
 /** 用本次调用真正发生过的检索，改写 Research Artifact 里所有证据字段。
  *
- * 三道门，对齐 backend/app/harness.py 对 ResearchArtifact 的校验：
+ * 三道门，对齐 Python 期 `app/harness.py`（ADR-0004 已删）对 ResearchArtifact 的校验：
  *
  * 1. `queries` 必须**恰好**冻结本次调用的每一次检索 —— 集合相等，不是子集。
  *    少报一次就能把「查过但结果不利」的检索藏起来，多报一次就是凭空捏造检索动作。

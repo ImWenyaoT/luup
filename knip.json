@@ -16,7 +16,7 @@
       ],
       "project": ["src/**/*.ts", "test/**/*.ts"]
     },
-    "frontend-ts": {
+    "apps/web": {
       "entry": ["tests/**/*.spec.ts"],
       "project": ["src/**/*.{ts,tsx}", "src/**/*.css", "tests/**/*.ts", "*.ts"]
     }

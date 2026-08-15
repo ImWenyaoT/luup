@@ -1,6 +1,6 @@
 /** 离线指标：从一个跑完的 SQLite 库读出预注册协议要的那几个数。
  *
- * 移植自 backend/app/evaluation.py，按 TS 栈的事实面重写而不是逐行翻译。两处口径必须
+ * 移植自 Python 期 `app/evaluation.py`（ADR-0004 已删），按 TS 栈的事实面重写而不是逐行翻译。口径必须
  * 跟着执行栈变，其余一字不动：
  *
  * - **记忆泄漏**改成**记忆注入**。Python 有 `memory_search` 工具，所以泄漏度量的是
@@ -22,9 +22,42 @@ import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { parseArgs } from "node:util";
 
-/** 不反映提案质量的失败类别。与 `agent/failures.ts` 的同名集合同源，写成字面量是为了
- *  让离线评估不反向依赖生产 agent 代码 —— 改 agent 不该改掉历史跑批的读数。 */
-export const INFRASTRUCTURE_CLASSES: ReadonlySet<string> = new Set(["infra_error", "infra_timeout"]);
+/** 不反映提案质量的失败类别：环境、供应商、凭据、超时 —— 换个模型再跑一遍也修不掉，
+ *  只有改环境才修得掉。质量分母把它们整个排除。
+ *
+ * 写成字面量而不是 import `agent/failures.ts`，是为了让离线评估不反向依赖生产 agent 代码 ——
+ * 改 agent 不该改掉历史跑批的读数。它与那边的 `INFRASTRUCTURE_FAILURE_CODES` **不再是同一个
+ * 集合**，两者回答的是两个问题：那边是**熔断口径**（连续 2 次即停批），只有 `infra_error` /
+ * `infra_timeout` 两个码，且已作为 `controls.batch_circuit_breakers.outage_classes` 写进预注册
+ * 协议，不得因读数需要而改动；这里是**读数口径**，按「谁能修」分桶。同一个码可以既不停批又该被
+ * 剔出质量分母（`provider_error`），这是两个口径本来就该分开的理由。 */
+export const INFRASTRUCTURE_CLASSES: ReadonlySet<string> = new Set([
+  "infra_error",
+  "infra_timeout",
+  "missing_credential",
+  "provider_error",
+  "deadline_exceeded",
+]);
+
+/** 反映提案质量的失败类别：责任在 harness 或模型自己，改我们的代码/提示/输入就能修，
+ *  因此必须留在质量分母里被看见。
+ *
+ * `context_overflow` 属这里不属环境类：上下文塞爆是我们塞多了，不是 provider 宕机（Wave 3 裁决，
+ * 见 `docs/design/dsh-borrowings.md`）。`runtime_error` 同理 —— 它是 harness 自己抛出的、没被
+ * 归类的异常（`src/harness.ts` 的 catch 兜底、`src/server.ts` 的 promise 兜底），是我们的 bug，
+ * 不给它一张环境类的免票。 */
+export const QUALITY_CLASSES: ReadonlySet<string> = new Set([
+  "invalid_output",
+  "verifier_refs",
+  "context_overflow",
+  "runtime_error",
+]);
+
+/** `review_rejected` **不是** failure code：它是 Reviewer 否决后的终态（`runs.status`），
+ *  harness 把同名字符串一并写进 `error_code` 只是为了让终态自证。它是**质量判定的未交付**，
+ *  在失败分类里单列一档，既不混进 quality 的码分布，也不进 infrastructure ——
+ *  M4 的两个分母都照旧算它一个未交付。 */
+export const REVIEW_REJECTED = "review_rejected";
 
 /** 开局注入了几条战役记录，落在这个事件里。消融生效门读它。 */
 export const INJECTION_EVENT = "campaign.prior_attempts";
@@ -158,7 +191,11 @@ export function proportion(successes: number, total: number): Proportion {
 
 const ratio = (part: number, total: number): number | null => (total > 0 ? part / total : null);
 
-/** M4 交付率。质量口径把 infra 类失败整个剔出分母 —— arXiv 超时不是科研质量的证据。 */
+/** M4 交付率，两个分母都报：总体 + 剔除 infrastructure。
+ *
+ * 质量口径把 `INFRASTRUCTURE_CLASSES` 里的失败整个剔出分母 —— arXiv 不可达、provider 报错、
+ * 缺凭据、超时，都不是科研质量的证据。`review_rejected` 与 unclassified **不剔**：前者是质量
+ * 判定的未交付，后者存疑，两者都得留在质量分母里被看见。 */
 export function deliveryRate(facts: readonly RunFacts[]) {
   const quality = facts.filter((item) => item.deliverable || !INFRASTRUCTURE_CLASSES.has(item.errorCode ?? ""));
   const delivered = facts.filter((item) => item.deliverable).length;
@@ -261,7 +298,16 @@ export function memoryInjection(facts: readonly RunFacts[]) {
   };
 }
 
-/** 失败分类分布，按 quality / infrastructure / unclassified 三桶分。 */
+/** 未交付的构成：review_rejected 单列，其余按 quality / infrastructure / unclassified 三桶分。
+ *
+ * 桶归属由上面两个字面量集合**穷举**，不再用「非环境即质量」的补集推断：补集会让任何一个
+ * 没被裁决过的码（老库里的 Python 期分类、将来新加的码）自动获得质量类身份，读数的人看不出
+ * 它其实没被裁决过。落不进任何一个集合的码进 unclassified 并在那里列出码名 ——
+ * 「不知道」必须长得像不知道。
+ *
+ * 四档之和 = failed（未交付 run 数）。unclassified 的 run 仍留在 M4 的质量分母里：
+ * 只有被明确裁决为环境类的才有资格被剔除，存疑一律不给免票。
+ */
 export function failureClasses(facts: readonly RunFacts[]) {
   const failed = facts.filter((item) => !item.deliverable);
   const tally = (group: readonly RunFacts[]) => {
@@ -271,14 +317,21 @@ export function failureClasses(facts: readonly RunFacts[]) {
     }
     return Object.fromEntries(Object.entries(counts).sort(([left], [right]) => left.localeCompare(right)));
   };
-  const infrastructure = failed.filter((item) => INFRASTRUCTURE_CLASSES.has(item.errorCode ?? ""));
-  const quality = failed.filter((item) =>
-    item.errorCode !== null && !INFRASTRUCTURE_CLASSES.has(item.errorCode));
+  // 终态是 review_rejected 的 run 先摘出去：它不是失败分类，是质量判定的未交付。
+  // 老库里可能只有 status 没写 error_code，两种形状都认。
+  const isRejected = (item: RunFacts): boolean => item.rejected || item.errorCode === REVIEW_REJECTED;
+  const rejected = failed.filter(isRejected);
+  const classified = failed.filter((item) => !isRejected(item));
+  const infrastructure = classified.filter((item) => INFRASTRUCTURE_CLASSES.has(item.errorCode ?? ""));
+  const quality = classified.filter((item) => QUALITY_CLASSES.has(item.errorCode ?? ""));
+  const unclassified = classified.filter((item) =>
+    !INFRASTRUCTURE_CLASSES.has(item.errorCode ?? "") && !QUALITY_CLASSES.has(item.errorCode ?? ""));
   return {
     failed: failed.length,
+    reviewRejected: rejected.length,
     infrastructure: { count: infrastructure.length, byClass: tally(infrastructure) },
     quality: { count: quality.length, byClass: tally(quality) },
-    unclassified: failed.filter((item) => item.errorCode === null).length,
+    unclassified: { count: unclassified.length, byClass: tally(unclassified) },
   };
 }
 
@@ -454,7 +507,13 @@ export function renderMarkdown(report: MetricsReport): string {
     `- 质量类 ${stats.failureClasses.quality.count}：${JSON.stringify(stats.failureClasses.quality.byClass)}`,
     `- 环境类 ${stats.failureClasses.infrastructure.count}：`
     + JSON.stringify(stats.failureClasses.infrastructure.byClass),
-    `- 未分类：${stats.failureClasses.unclassified}`,
+    `- Reviewer 否决（review_rejected，不是 failure code）：${stats.failureClasses.reviewRejected}`,
+    `- 未分类 ${stats.failureClasses.unclassified.count}：`
+    + JSON.stringify(stats.failureClasses.unclassified.byClass),
+    "",
+    "> 桶归属按「谁能修」裁决：环境类（infra_error / infra_timeout / missing_credential /",
+    "> provider_error / deadline_exceeded）剔出质量分母；质量类（invalid_output / verifier_refs /",
+    "> context_overflow / runtime_error）留在分母里。review_rejected 单列，未分类不给免票。",
     "",
   ];
 

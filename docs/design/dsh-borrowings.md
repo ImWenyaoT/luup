@@ -74,6 +74,9 @@ dsh 的会话可以是一整天的人机协作，丢掉不可接受。续跑要�
 
 `context_overflow` **不进** `INFRASTRUCTURE_FAILURE_CODES`：责任在 harness（是我们塞多了），
 该被质量分母看见。这一条与 Python 侧的 `INFRASTRUCTURE_CLASSES` 口径因此仍然一致。
+2026-08-15 补：那个常量此后只作**熔断口径**，读数口径是 `src/eval/metrics.ts` 的
+`INFRASTRUCTURE_CLASSES`（五个码），两者不再是同一个集合；本裁决在两处都成立 ——
+`context_overflow` 归 quality，见 `criteria.md` 的失败分类口径一条。
 
 ### 4. `qwenModelProvider` 接缝
 
@@ -84,7 +87,7 @@ dsh 的会话可以是一整天的人机协作，丢掉不可接受。续跑要�
 
 **解决的问题**：模型接线原先散在 `src/executor.ts`（凭据 + 端点）与 `src/agent/config.ts`
 （模型 id + modelSettings）两处。合成一个文件之后，`process.env.QWEN_*` 只在这里读，
-换 provider 只改这一个文件 —— 继承 Python 侧 `backend/app/agent/model.py` 的地位。
+换 provider 只改这一个文件 —— 继承 Python 期 `app/agent/model.py`（ADR-0004 已删）的地位。
 
 同一个索引里另外三个接缝只导出类型（`Verifier` / `RunStore` / `CampaignMemoryPort`），
 每个带一段「现有 provider 是谁、换实现要满足什么」。`Harness` 的构造签名认这三个类型，

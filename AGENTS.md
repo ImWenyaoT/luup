@@ -1,40 +1,63 @@
 # luup Agent App
 
-Luup 使用 Python OpenAI Agents SDK，通过百炼的 OpenAI-compatible Responses 端点驱动 Qwen。
-Agent 代码位于 `backend/app/agent/`，平铺同 eve——harness 是运行时角色不是子目录：
-`orchestrator.py`/`artifacts.py`/`verifier.py` 即 harness 本体，`tools/` 由它执行，
-`model.py`/`specialists.py`/`prompts/` 是 agent 配置面；模型接线唯一事实源是
-`backend/app/agent/model.py`。修改模型或 Agent 前先查
-<https://openai.github.io/openai-agents-python/>，不得回退到默认 OpenAI 客户端。
-`QWEN_*` / `LUUP_MODEL_ID` 由 `model.py` 的 `QwenSettings`（pydantic-settings）读取：
-系统环境变量优先于仓根 `.env`，`.env` 缺席照常工作；`LUUP_REPO_ROOT` 例外，它是定位 `.env`
-的前提，只能直读 `os.getenv`。
+Luup 是 TypeScript 全栈：`@openai/agents` 驱动 Qwen，走百炼的 OpenAI-compatible 端点。
+运行时是 Node 24 原生跑 `.ts`（`--experimental-strip-types`），无打包步骤、无 transpile 产物。
+修改模型或 Agent 前先查 <https://openai.github.io/openai-agents-js/>，不得回退到默认 OpenAI 客户端。
+
+Python 栈已于 ADR-0004 退役，只存于 git 历史；源码注释里写着「Python 期」的路径都是历史坐标。
 
 ## 仓库布局
 
-- `backend/`：FastAPI、Python Harness、领域契约、工具、离线评估和测试。
-- `frontend/`：Vite/React 交付面；HTTP 契约由 `backend/openapi.json` 生成。
-- `runs/`：运行中 append-only、终态后不可变的证据与工件；属于事实数据，不是缓存。
-- `memory/`：跨 run 的战役记忆，属于事实数据。
-- `docs/`：产品契约、架构、判据、赛题与报告材料。
+```text
+src/         harness 本体 + 领域 + 工具 + 评估（根单包，按子系统分目录）
+test/        根包用例；vitest，进程隔离（pool: forks）
+apps/web/    Vite/React 交付面（`@luup/frontend`），构建产物由 src/server.ts 同端口托管
+data/        science125.json，冻结题库，只读
+docs/        产品契约、架构、判据、ADR、赛题与报告材料
+runs-ts/     Phase A 批跑的证据归档
+runs/        Python 期运行归档，只读（ADR-0004）
+memory/      跨 run 的战役记忆，文件事实源，append-only
+```
+
+运行期事实存在 SQLite 单文件里（默认 `outputs/runtime/typescript-runs.db`，`LUUP_DATABASE`
+可覆盖），不是目录制——`src/store/` 是它的唯一写者。`outputs/` 是派生物，不入库。
+
+`src/` 下的分区：`agent/`（角色契约、工具、失败分类）、`api/`（对外投影）、`batch/`（125 题批跑）、
+`campaign/`（战役记忆读写）、`domain/`（题库）、`eval/`（离线指标）、`seams/`（可替换接线）、
+`store/`（SQLite 事实存储）、`verify/`（B1–B4 确定性引用验收）。
+`harness.ts`/`server.ts`/`roles.ts` 是编排本体——harness 是运行时角色，不是子目录。
+
+## seam 纪律
+
+可替换的东西都收在 `src/seams/`，宽度由类型系统兜底：模型接线（`seams/model.ts` 是
+`QWEN_*` / `LUUP_MODEL_ID` 的**唯一**读取点，别处不碰 `process.env.QWEN_*`）、验收器、
+Run 记账面、记忆通道。换 provider 只改 seam，不动编排。
 
 ## 验证
 
 ```sh
-cd backend
-UV_CACHE_DIR=.cache/uv uv run pytest -q --cov=app --cov-fail-under=90
-UV_CACHE_DIR=.cache/uv uv run ruff check app tests scripts
-UV_CACHE_DIR=.cache/uv uv run ty check app scripts
+pnpm install --frozen-lockfile
+pnpm run ci            # typecheck → lint → build → test:coverage，与 CI 同序
 
-cd ../frontend
-bun run check:client   # 导出 openapi + 重新生成 client，diff 非空即失败
-bun run lint           # biome，会自动写回格式
-bun run test           # bun test（内置，零测试依赖）；只扫 src/**/*.test.ts，见 bunfig.toml
-bun run build          # tsc --noEmit + vite，产物进 backend/app/frontend（不入库）
-bun run test:e2e       # Playwright E2E，须先 build；只读已提交 runs/，零 LLM 调用
+# 各门单跑
+pnpm run typecheck     # 根 program + apps/web program，全量
+pnpm run lint          # oxlint（含 typeAware 档）
+pnpm run test          # vitest
+pnpm run test:coverage # 覆盖率地板见 vitest.config.ts，只许涨不许降
+pnpm run build         # vite build → apps/web/dist
+pnpm run test:e2e      # Playwright；确定性 runtime，零 LLM 调用
 ```
 
-验收锚点：`docs/design/criteria.md`；架构：`docs/design/architecture.md`；已定案、不再重提的决策见
-`docs/adr/`。
+CI 是 `.github/workflows/ts.yml` 的 `check` 与 `e2e` 两个 job，门与上面逐条对应。
 
-Issue 与领域文档见 `docs/agents/`。
+`pnpm run knip`（未使用导出/依赖）**不是门**：当前有一批既存命中（多为预留的公开类型），
+2026-08-15 结构定形时确认它在此之前就是红的，未一并处理。清完之前不要把它挂进 CI。
+
+## 锚点
+
+- 验收判据：`docs/design/criteria.md`
+- 架构：`docs/design/architecture.md`
+- 预注册协议：`docs/design/experiment-protocol.json`（已注册内容不可改，改动必须走 amendment）
+- 已定案、不再重提的决策：`docs/adr/`
+- 领域词汇：`CONTEXT.md`
+- Issue 与领域文档：`docs/agents/`
