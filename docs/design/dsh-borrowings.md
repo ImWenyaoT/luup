@@ -84,7 +84,7 @@ dsh 的会话可以是一整天的人机协作，丢掉不可接受。续跑要�
 
 **解决的问题**：模型接线原先散在 `src/executor.ts`（凭据 + 端点）与 `src/agent/config.ts`
 （模型 id + modelSettings）两处。合成一个文件之后，`process.env.QWEN_*` 只在这里读，
-换 provider 只改这一个文件 —— 继承 Python 侧 `backend/app/agent/model.py` 的地位。
+换 provider 只改这一个文件 —— 继承 Python 期 `app/agent/model.py`（ADR-0004 已删）的地位。
 
 同一个索引里另外三个接缝只导出类型（`Verifier` / `RunStore` / `CampaignMemoryPort`），
 每个带一段「现有 provider 是谁、换实现要满足什么」。`Harness` 的构造签名认这三个类型，

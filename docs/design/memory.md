@@ -1,13 +1,15 @@
 # memory 设计（run-scoped + campaign-scoped 两层）
 
-v3（2026-08-11）：栈迁 Python 后按已落地的代码重写。无 RAG 红线不变：文件 + 确定性字符匹配，零 embedding。
-agent 现场契约见 `memory/SCHEMA.md`；代码是 `backend/app/agent/campaign.py`（写）与
-`backend/app/agent/tools/memory.py`（读）。
+v4（2026-08-15）：随 ADR-0004 改指 TS 栈。无 RAG 红线不变：文件 + 确定性字符匹配，零 embedding。
+agent 现场契约见 `memory/SCHEMA.md`；代码是 `src/campaign/campaign.ts`，读写同一个文件——
+TS 栈没有 `memory_search` 工具，模型没有自主读记忆的通路，注入只发生在 run 开局那一次。
 
 ## 第一层：run-scoped（永久保留）
 
-`runs/<ts>/memory/`：`papers/`（本次实检文献卡）+ `index.md`（代码派生，含第一作者列）。
-存在理由 = criteria B1 的证据链语义：引用必须来自**本次运行**实检。这层是 provenance，不是知识库。
+**存储已随 ADR-0004 变更**：这层不再是 `runs/<ts>/memory/` 目录，而是 SQLite 里的证据台账
+（`src/agent/evidence.ts` 写，`src/verify/` 读）。语义一字未变——存在理由 = criteria B1 的
+证据链语义：引用必须来自**本次运行**实检。这层是 provenance，不是知识库。
+Python 期已落盘的 `runs/<ts>/memory/` 保留为只读归档。
 
 ## 第二层：campaign-scoped（跨 run，服务 125 题战役）
 

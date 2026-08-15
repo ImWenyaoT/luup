@@ -17,7 +17,7 @@ export type EvidenceCitation = {
 /** 一次检索事件。
  *
  * `evidenceId` 标识的是**这次检索**，不是一条来源 —— 一次检索可以产出多条 citation，
- * 它们共享同一个 evidenceId。这是 backend/app/harness.py 的语义
+ * 它们共享同一个 evidenceId。这是 Python 期 `app/harness.py`（ADR-0004 已删）的语义
  * （那边 `citations_by_evidence[evidence_id]` 是个 list）。
  *
  * 这里曾经把 evidenceId 算成 `hash(url + claim)`，即一条来源一个 ID。那样

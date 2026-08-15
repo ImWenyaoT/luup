@@ -46,10 +46,10 @@
 
 ## E. 可复现性（对应评分：应用潜力 30 之代码可复现 10）
 
-- E0 问题源 = 官网维度 A 指定的《Science》125 前沿科学问题：`backend/app/data/science125.json`（权威来源抓取，恰 125 条）；pipeline 按题号取题，也接受自由问题输入。
+- E0 问题源 = 官网维度 A 指定的《Science》125 前沿科学问题：`data/science125.json`（权威来源抓取，恰 125 条）；pipeline 按题号取题，也接受自由问题输入。
 - E1 单命令跑通 E2E：输入一个科学问题（默认取自 Science-125）→ 落盘完整《科学假设与研究计划》(JSON + Markdown) 于 runs/<ts>/。
-- E1b 批量能力：批量 runner（`python -m app.batch --ids 1-125｜3,54,61`，串行、`--dry-run` 零执行）可按题号列表串行跑多题（MVP 验证 ≥2 题抽样；全量 125 题为提交期动作，非 MVP 门槛，预算由用户拍板）。
-- E2 Python 后端 pytest（覆盖率地板 90）/Ruff/ty、OpenAPI client 生成检查、Vite 前端 typecheck/build 均通过（口径以 AGENTS.md 验证节为准；mypy 已不在门内）。
+- E1b 批量能力：批量 runner（`pnpm batch --ids 1-125｜3,54,61`，串行、`--dry-run` 零执行）可按题号列表串行跑多题（MVP 验证 ≥2 题抽样；全量 125 题为提交期动作，非 MVP 门槛，预算由用户拍板）。
+- E2 `pnpm run ci` 全绿：typecheck / oxlint / 覆盖率地板（见 `vitest.config.ts`）/ build，外加 `pnpm run test:e2e`（口径以 AGENTS.md 验证节为准）。〔2026-08-15 ADR-0004：此前是「Python 后端 pytest（地板 90）/Ruff/ty + OpenAPI client 生成检查 + Vite 前端 typecheck/build」，随 Python 栈退役改写；**要求未松动，覆盖率地板换了分母**——90 是 `backend/app` 的，现行四项地板是根包 `src/` 的实测值向下取整。〕
 - E3 run trace（各 agent 输入输出、Reviewer 结论、verifier 结果、token 用量）落盘可查。
 
 ## G. 交付面
@@ -75,7 +75,7 @@
 
 | 层 | 指标 | 定义/数据源 | 翻盘什么决定 |
 |---|------|------------|-------------|
-| Tier0 | 现状保留 | B1–B4 验收器、`review.json`（旧 `verdicts/` 已随 TS 栈退役）；验证命令是 AGENTS.md 验证节那套（backend `uv run pytest` / `ruff` / `ty`，frontend `bun run check:client` / `test` / `test:e2e`），旧 `eval:smoke` / `eval:full` npm script 已随 TS 栈删除 | 单 run 通过性 |
+| Tier0 | 现状保留 | B1–B4 验收器、`review.json`（旧 `verdicts/` 已随 TS 栈退役）；验证命令是 AGENTS.md 验证节那套（`pnpm run ci` + `pnpm run test:e2e`；2026-08-15 前是 Python 与 bun 两套，随 ADR-0004 合一） | 单 run 通过性 |
 | Tier1（零 LLM 派生） | M4 交付率 | deliverable runs / 总 runs（runOutcome），带二项标准误 √(p(1-p)/n)；环境性失败单列一档 | 战役节奏 |
 | | M5 Pass^2 | 同题按时间序相邻两次 run 均 deliverable 的比例 | 可靠性口径（替代单次快照） |
 | | M6 成本会计 | usage.jsonl 聚合：token/题、¥/题、按节点分解 | 重跑预算、模型分档 |
@@ -85,8 +85,8 @@
 | | ~~M10 judge 校准~~ | **2026-08-11 退役**，见下 | —— |
 | Tier3 | M11 配对版本比较 | 同题多版本 McNemar 精确二项：`firstVsLatest`（首末，非受控）+ `memoryArms`（按 `meta.memoryArm` 两臂配对，受控） | 改动是否真的更好 |
 
-- **失败分类口径（7 类 / 3 桶）**：权威定义是 `backend/app/domain/runs.py` 的 `FailureClass`，**7 类**——`reviewer_no_new_evidence`、`verifier_refs`、`revision_no_change`、`contract_violation`、`agent_budget_exhausted`、`infra_timeout`、`infra_error`。`evaluation.py` 把它们分**3 桶**报：quality（前五类）、infrastructure（后两类）、unclassified（终态没写分类的历史 run）。`agent_budget_exhausted` 属 quality 不属 infrastructure，见 `runs.py` 的裁决说明。任何文档、报告或 PPT 引用失败分类时以此为准，不得另立数目。7 类各自的**产生路径不同**，报告须一并说明：`orchestrator.py` 的 `_classify` 只从异常映射出 4 类（`reviewer_no_new_evidence` / `contract_violation` / `agent_budget_exhausted` / `infra_error`），`verifier_refs` 与 `revision_no_change` 由 Harness 主流程直接判定，而 **`infra_timeout` 由两条超时路径写出**：`app/services/launch.py` 的 `RunLauncher._wait`（HTTP 触发单 run，子进程超时后 kill）与 `app/batch.py` 的 `_run_one`（批跑单题超时后取消协程，由批次补写该 run 的终态工件）。两者共用同一个 `launch.RUN_TIMEOUT_SECONDS`，所以「多久算挂死」只有一个数。因此批跑 cohort 里 `infra_timeout` **可以非零**，它读作「该题挂死被判死、批次继续」，属基础设施失败不属模型质量。（2026-08-13 更正：批跑单题超时保护合入之前，这里声明的是「批跑不经过该路径、计数恒为 0」。）
-- **终态判定的单一事实源**：一个 run 是否通过验收，读 `verification.json` 的布尔 `ok`（`services/runs.py` 的 `_verified`、`batch.py` 的 `_is_deliverable` 同源）。`verification-report.md` 里那行 `结果: ALL PASS` 是**渲染物**，只对 2026-08-10 之前那批没写 `verification.json` 的已提交 run 作兜底；两者矛盾时以 JSON 为准。理由见 `loop-upgrade.md`：把 markdown 当结构化状态载体是本项目自列的「最贵的错误」，它让报告模板的一次改动就能翻转一个 run 的成败——书 ch6 所说「评分器 bug 把正确答案判为失败」的经典形态。
+- **失败分类口径（7 类 / 3 桶）**〔2026-08-15 ADR-0004 标注：本条下文的全部路径都是 Python 期坐标，该栈已删除。TS 侧的权威是 `src/agent/failures.ts` 的 `FailureCode` 与 `INFRASTRUCTURE_FAILURE_CODES`，**它是 9 个码、命名与下述 7 类不一一对应**（例如 `contract_violation` 在 TS 侧落成 `invalid_output`，并新增 `context_overflow` / `missing_credential`）。3 桶的分法（quality / infrastructure / unclassified）与「`infra_timeout` 可非零」的读法未变。**跨栈映射表尚未落定，属交付前必须由验收人确认的欠账**——在此之前，报告引用失败分类时必须写明读的是哪个栈的 cohort。〕：权威定义是 `backend/app/domain/runs.py` 的 `FailureClass`，**7 类**——`reviewer_no_new_evidence`、`verifier_refs`、`revision_no_change`、`contract_violation`、`agent_budget_exhausted`、`infra_timeout`、`infra_error`。`evaluation.py` 把它们分**3 桶**报：quality（前五类）、infrastructure（后两类）、unclassified（终态没写分类的历史 run）。`agent_budget_exhausted` 属 quality 不属 infrastructure，见 `runs.py` 的裁决说明。任何文档、报告或 PPT 引用失败分类时以此为准，不得另立数目。7 类各自的**产生路径不同**，报告须一并说明：`orchestrator.py` 的 `_classify` 只从异常映射出 4 类（`reviewer_no_new_evidence` / `contract_violation` / `agent_budget_exhausted` / `infra_error`），`verifier_refs` 与 `revision_no_change` 由 Harness 主流程直接判定，而 **`infra_timeout` 由两条超时路径写出**：`app/services/launch.py` 的 `RunLauncher._wait`（HTTP 触发单 run，子进程超时后 kill）与 `app/batch.py` 的 `_run_one`（批跑单题超时后取消协程，由批次补写该 run 的终态工件）。两者共用同一个 `launch.RUN_TIMEOUT_SECONDS`，所以「多久算挂死」只有一个数。因此批跑 cohort 里 `infra_timeout` **可以非零**，它读作「该题挂死被判死、批次继续」，属基础设施失败不属模型质量。（2026-08-13 更正：批跑单题超时保护合入之前，这里声明的是「批跑不经过该路径、计数恒为 0」。）
+- **终态判定的单一事实源**〔2026-08-15 ADR-0004 标注：TS 栈没有 `verification.json` 这个文件，终态读的是 SQLite 的 `runs.status`（`completed` 即交付，见 `src/store/schema.ts`）。**判据本身一字未变**——终态必须由结构化事实判定，不得由 markdown 渲染物判定；下文描述的是该判据在 Python 期的落点，对 `runs/` 归档仍然适用。〕：一个 run 是否通过验收，读 `verification.json` 的布尔 `ok`（`services/runs.py` 的 `_verified`、`batch.py` 的 `_is_deliverable` 同源）。`verification-report.md` 里那行 `结果: ALL PASS` 是**渲染物**，只对 2026-08-10 之前那批没写 `verification.json` 的已提交 run 作兜底；两者矛盾时以 JSON 为准。理由见 `loop-upgrade.md`：把 markdown 当结构化状态载体是本项目自列的「最贵的错误」，它让报告模板的一次改动就能翻转一个 run 的成败——书 ch6 所说「评分器 bug 把正确答案判为失败」的经典形态。
 - **M9/M10 退役裁决（2026-08-11）**：两者随 TypeScript 栈退役，不重建。理由是事实而非偏好——生产者（score/calibration 的写入侧）随栈删除，且仓库里唯一一份校准报告（`runs/20260808-134046/calibration.md`）的变异体检出率为 0/4（逆序 1），即使重建生产者，M9 也一天都没有取得过排序授权。该 run 已随 TS 栈语料一并从 HEAD 删除，这份数字只存于 git 历史（`git show`），任何报告不得再把它当现行证据引用。处置：`evaluation.py` 不再读 `score.json` / `calibration.md`，版本择优链变为 **gate → refs 数 → token 成本 → run id**（全确定性）；报告输出结构里 M9 相关字段直接消失，不留空壳。残留的 `runs/*/score.json` 是无人读取的历史字节，任何报告不得引用其分数。**点名**：HEAD 里仅存的一份是 `runs/20260810-052412/score.json`，其中的 `rubricVersion` / `judgeModel` / 分数字段全部是退役前的历史字节。终态 run 不可变，所以这些字节**保持原样不清理**；但它们是**不可引用的**——没有任何代码读它，没有任何结论建立在它上面，报告、PPT 与技术方案一律不得引用。
 - **A1/A2 的自动化覆盖缺口**：见 A 节表下的加粗段。M9/M10 退役后，方案实质性质量不再有自动化覆盖，只有引用真实性（B1–B4）仍被机器逐条核验。这句话是判据的一部分，技术报告要原样引用。
 - **同族 judge 诚实条款**（退役后仍为判据）：judge 也是 Qwen（D1 锁死），无法消解自评偏置。这正是 M9 退役而不是降权重建的理由：一个自评的分数，校准不过就没有资格排序，也没有资格进报告的"成绩"栏。

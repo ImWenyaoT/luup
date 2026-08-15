@@ -30,7 +30,7 @@ export type SourceType = z.infer<typeof sourceTypeSchema>;
  */
 export const proposedSourceTypeSchema = z.enum(["web", "arxiv", "crossref"]);
 
-/** 一次检索的结局。八个值与 backend/app/models.py 的 EvidenceStatus 逐字对齐，
+/** 一次检索的结局。八个值与 Python 期 `app/models.py`（ADR-0004 已删）的 EvidenceStatus 逐字对齐，
  *  两边审计口径才能比对。 */
 export const evidenceStatusSchema = z.enum([
   "succeeded",

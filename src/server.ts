@@ -254,7 +254,7 @@ export function createDefaultApp() {
       ? { createLedger: runtime.createLedger, verifyReferences: createDeterministicVerifier() }
       : {},
   );
-  return createApp({ store, harness, webDist: process.env.LUUP_WEB_DIST || "frontend-ts/dist" });
+  return createApp({ store, harness, webDist: process.env.LUUP_WEB_DIST || "apps/web/dist" });
 }
 
 export function runtimeMode(raw: string | undefined = process.env.LUUP_RUNTIME): "live" | "deterministic" {

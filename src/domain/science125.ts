@@ -3,8 +3,8 @@
  * 题库是冻结事实：`data/science125.json` 由抓取脚本一次性产出，代码只读不写。
  * 解析对坏行是宽容的（跳过而不是整份作废）——一条格式不对的记录不该让 125 题全跑不了。
  *
- * cutover 之前这份文件与 `backend/app/data/science125.json` 逐字节相同：
- * 两个栈跑同一批题、报同一个题号，不允许各读各的。
+ * 内容与 Python 期 `app/data/science125.json`（ADR-0004 已删）逐字节相同：换栈没有换题库，
+ * 题号在两栈之间可比，Python 期跑出的 `runs/` 归档因此仍能按题号对上。
  */
 
 import { readFileSync } from "node:fs";

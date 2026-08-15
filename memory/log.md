@@ -8,7 +8,7 @@
     verdict ∈ {SUCCESS, FAILED}（历史条目另有 ALL PASS / PAUSED）
 
 首行之下是可选的 `- ` 明细行。前缀固定 ⇒ `grep "^## \[" memory/log.md | tail -20`
-就是确定性检索，零解析成本。本文件由 backend/app/agent/campaign.py 在 run 收尾时追加，
+就是确定性检索，零解析成本。本文件由 `src/campaign/campaign.ts` 在 run 收尾时追加，
 模型没有写它的通路；请勿手改、勿重排、勿删除历史条目。
 -->
 

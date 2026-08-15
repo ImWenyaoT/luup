@@ -1,6 +1,6 @@
 /** 离线指标：从一个跑完的 SQLite 库读出预注册协议要的那几个数。
  *
- * 移植自 backend/app/evaluation.py，按 TS 栈的事实面重写而不是逐行翻译。两处口径必须
+ * 移植自 Python 期 `app/evaluation.py`（ADR-0004 已删），按 TS 栈的事实面重写而不是逐行翻译。口径必须
  * 跟着执行栈变，其余一字不动：
  *
  * - **记忆泄漏**改成**记忆注入**。Python 有 `memory_search` 工具，所以泄漏度量的是
