@@ -6,14 +6,17 @@ import { DatabaseSync } from "node:sqlite";
 import { test, type TestContext } from "vitest";
 
 import type { DomainArtifact } from "../src/agent/contracts.ts";
+import { FAILURE_CODES } from "../src/agent/failures.ts";
 import {
   ablationEffective,
   evaluate,
   evaluateDatabase,
+  INFRASTRUCTURE_CLASSES,
   loadRunFacts,
   memoryArmComparison,
   passSquared,
   proportion,
+  QUALITY_CLASSES,
   renderMarkdown,
   type RunFacts,
 } from "../src/eval/metrics.ts";
@@ -114,6 +117,84 @@ test("delivery is reported over both denominators, infrastructure excluded from 
   assert.deepEqual(report.statistics.failureClasses.infrastructure.byClass,
     { infra_error: 1, infra_timeout: 1 });
   assert.deepEqual(report.statistics.failureClasses.quality.byClass, { invalid_output: 1 });
+});
+
+test("the two reading buckets partition the nine failure codes, with none left over", () => {
+  // 读数侧刻意不 import 生产代码（改 agent 不该改历史读数），代价是两份清单可能分叉。
+  // 这条断言就是那份代价的对账：新加一个码而不裁决它的桶，这里必红。
+  const codes = new Set<string>(FAILURE_CODES);
+  assert.equal(codes.size, 9, "失败码是 9 个；改了数目就要重走桶归属裁决");
+  const bucketed = [...INFRASTRUCTURE_CLASSES, ...QUALITY_CLASSES];
+  assert.equal(new Set(bucketed).size, bucketed.length, "同一个码不能同时进两个桶");
+  assert.deepEqual([...bucketed].sort(), [...codes].sort(), "每个码恰好落进一个桶");
+  // review_rejected 是终态不是码，因此它**不该**出现在任何一个桶里。
+  assert.equal(codes.has("review_rejected"), false);
+  assert.equal(bucketed.includes("review_rejected"), false);
+});
+
+test("every failure code lands in exactly one bucket, by who can fix it", (t) => {
+  const report = evaluateDatabase(fixture(t, [
+    // 环境类五个码：环境/供应商/凭据/超时，换个模型重跑也修不掉。
+    { questionId: 1, status: "failed", errorCode: "infra_error" },
+    { questionId: 2, status: "failed", errorCode: "infra_timeout" },
+    { questionId: 3, status: "failed", errorCode: "missing_credential" },
+    { questionId: 4, status: "failed", errorCode: "provider_error" },
+    { questionId: 5, status: "failed", errorCode: "deadline_exceeded" },
+    // 质量类四个码：责任在 harness 或模型自己，必须留在质量分母里。
+    { questionId: 6, status: "failed", errorCode: "invalid_output" },
+    { questionId: 7, status: "failed", errorCode: "verifier_refs" },
+    { questionId: 8, status: "failed", errorCode: "context_overflow" },
+    { questionId: 9, status: "failed", errorCode: "runtime_error" },
+    { questionId: 10, status: "completed" },
+  ]));
+
+  const { delivery, failureClasses } = report.statistics;
+  assert.equal(failureClasses.failed, 9);
+  assert.deepEqual(failureClasses.infrastructure.byClass, {
+    deadline_exceeded: 1, infra_error: 1, infra_timeout: 1, missing_credential: 1, provider_error: 1,
+  });
+  assert.deepEqual(failureClasses.quality.byClass, {
+    context_overflow: 1, invalid_output: 1, runtime_error: 1, verifier_refs: 1,
+  });
+  assert.equal(failureClasses.reviewRejected, 0);
+  assert.deepEqual(failureClasses.unclassified, { count: 0, byClass: {} });
+  // 五个环境类的 run 整个离开质量分母：10 - 5 = 5，其中 1 个交付。
+  assert.equal(delivery.runs, 10);
+  assert.equal(delivery.excludingInfrastructure.runs, 5);
+  assert.equal(delivery.excludingInfrastructure.rate, 0.2);
+});
+
+test("review_rejected is counted apart from the failure codes and stays in both denominators", (t) => {
+  const report = evaluateDatabase(fixture(t, [
+    { questionId: 1, status: "completed" },
+    { questionId: 2, status: "review_rejected", errorCode: "review_rejected", reviewed: true },
+    { questionId: 3, status: "failed", errorCode: "infra_error" },
+  ]));
+
+  const { delivery, failureClasses } = report.statistics;
+  assert.equal(failureClasses.reviewRejected, 1);
+  // 它不是 failure code：既不进 quality 的码分布，也不进 infrastructure。
+  assert.deepEqual(failureClasses.quality, { count: 0, byClass: {} });
+  assert.deepEqual(failureClasses.unclassified, { count: 0, byClass: {} });
+  assert.deepEqual(failureClasses.infrastructure.byClass, { infra_error: 1 });
+  // 质量判定的未交付：两个分母都算它一个未交付，只有环境类被剔除。
+  assert.equal(delivery.rate, 1 / 3);
+  assert.equal(delivery.excludingInfrastructure.runs, 2);
+  assert.equal(delivery.excludingInfrastructure.rate, 0.5);
+});
+
+test("a code nobody ruled on reads as unclassified instead of borrowing a bucket", (t) => {
+  const report = evaluateDatabase(fixture(t, [
+    // Python 期的分类名，或者将来新加的码：没被裁决过就不该自动获得质量类身份。
+    { questionId: 1, status: "failed", errorCode: "contract_violation" },
+    { questionId: 2, status: "failed", errorCode: null },
+  ]));
+
+  const { failureClasses, delivery } = report.statistics;
+  assert.deepEqual(failureClasses.unclassified, { count: 2, byClass: { contract_violation: 1 } });
+  assert.equal(failureClasses.quality.count, 0);
+  // 存疑不给免票：未分类仍留在质量分母里。
+  assert.equal(delivery.excludingInfrastructure.runs, 2);
 });
 
 test("a dirty tree is its own cohort and a missing identity is unknown", (t) => {
@@ -285,6 +366,9 @@ test("the markdown report states both denominators and the ablation verdict", (t
 
   assert.match(markdown, /剔除 infra 类/);
   assert.match(markdown, /消融成立/);
+  // 报告自带桶归属口径：引用失败分类的人不必回头翻 criteria.md 才知道谁在哪个桶。
+  assert.match(markdown, /桶归属按「谁能修」裁决/);
+  assert.match(markdown, /review_rejected，不是 failure code/);
   assert.match(markdown, /p 值与 significant 字段不得引用/);
   assert.match(markdown, /机会样本/);
 });

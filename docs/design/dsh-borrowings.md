@@ -74,6 +74,9 @@ dsh 的会话可以是一整天的人机协作，丢掉不可接受。续跑要�
 
 `context_overflow` **不进** `INFRASTRUCTURE_FAILURE_CODES`：责任在 harness（是我们塞多了），
 该被质量分母看见。这一条与 Python 侧的 `INFRASTRUCTURE_CLASSES` 口径因此仍然一致。
+2026-08-15 补：那个常量此后只作**熔断口径**，读数口径是 `src/eval/metrics.ts` 的
+`INFRASTRUCTURE_CLASSES`（五个码），两者不再是同一个集合；本裁决在两处都成立 ——
+`context_overflow` 归 quality，见 `criteria.md` 的失败分类口径一条。
 
 ### 4. `qwenModelProvider` 接缝
 

@@ -36,6 +36,10 @@ type Protocol = {
   amendments: Array<{
     date: string;
     before_phase_a: boolean;
+    /** Phase A 之后落的修订必须自报「什么时候写的、写的时候读过数没有」。 */
+    recorded_when?: string;
+    before_any_reading?: boolean;
+    effect_on_numbers?: string;
     summary: string;
     changes: Record<string, string>;
     unchanged: string;
@@ -167,4 +171,33 @@ test("the TypeScript cutover is recorded as an amendment made before Phase A", (
   // 改的是被声明的事实，读数纪律原封不动。
   assert.match(amendment.unchanged, /bounded_comparison/);
   assert.match(amendment.unchanged, /一字未改/);
+});
+
+test("the bucket amendment says out loud that it landed after Phase A had started", () => {
+  const amendment = protocol.amendments.find((item) => item.date === "2026-08-15");
+  assert.ok(amendment, "桶归属明细化必须留下修订记录");
+  // 这条修订的全部价值是时间戳的诚实：它不是预注册的一部分，是开跑之后补的，
+  // 但在任何一个数被读出来之前。措辞含糊等于没有这条记录。
+  assert.equal(amendment.before_phase_a, false, "写成 true 就是把事后修订伪装成预注册");
+  assert.equal(amendment.before_any_reading, true);
+  assert.match(amendment.recorded_when!, /Phase A 已经开跑之后/);
+  assert.match(amendment.recorded_when!, /尚未从库里读出任何一个指标/);
+  // 改的是读数聚合，不是测量行为，也不是已注册的比较设计。
+  assert.match(amendment.summary, /不改变任何测量行为/);
+  assert.match(amendment.summary, /不改变任何已注册的比较设计/);
+  assert.match(amendment.changes.bucket_membership!, /谁能修/);
+  assert.match(amendment.changes.review_rejected!, /不是 failure code/);
+  // 熔断口径是已注册的 control，读数改动不得顺手动它。
+  assert.match(amendment.changes.two_sets_diverge!, /outage_classes/);
+  assert.match(amendment.effect_on_numbers!, /质量分母/);
+  assert.match(amendment.unchanged, /一字未[改动]/);
+});
+
+test("the amendments are ordered and only the pre-Phase-A ones claim to be", () => {
+  const dates = protocol.amendments.map((item) => item.date);
+  assert.deepEqual(dates, [...dates].sort(), "修订按时间顺序追加，不倒插");
+  for (const amendment of protocol.amendments) {
+    // Phase A 之后落的每一条都必须自报写作时机；缺这一句，读者无从判断它是不是事后追认。
+    if (!amendment.before_phase_a) assert.ok(amendment.recorded_when, `${amendment.date} 少了写作时机`);
+  }
 });
