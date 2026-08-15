@@ -21,6 +21,13 @@ const FROZEN_QUESTION = "来源：《Science》125 前沿科学问题（Science-
 /** live 取证到的漂移形态：**截断**而不是翻译 —— 中文出处整段丢掉，只填回英文原题。 */
 const DRIFTED_QUESTION = "What makes prime numbers so special?";
 
+/** `researchProposalSchema.queries` 的条数上限 —— 模型一次最多能写这么多条转录。
+ *  产物里的 `queries` 由台账填充，不受它约束。 */
+const MODEL_WRITABLE_QUERY_CAP = 12;
+
+/** 台账里不存在的 evidence_id：模型虚报一次检索时写的就是这种东西。 */
+const INVENTED_EVIDENCE_ID = "ev_never_happened_arxiv";
+
 const citation = {
   source_type: "arxiv" as const,
   title: "Fixture source",
@@ -67,6 +74,9 @@ function fake(options: {
   rewritesResearchQuestion?: boolean;
   rewritesHypothesisQuestion?: boolean;
   claimsUnfrozenSearch?: boolean;
+  searchCount?: number;
+  inventsAQuery?: boolean;
+  inventsACitation?: boolean;
   stageFails?: boolean;
   usesProviderSourceAlias?: boolean;
   thinReferences?: boolean;
@@ -109,6 +119,18 @@ function fake(options: {
           citations: [],
         }));
       }
+      // 一个 Attempt 可以检索很多次：v2 实测最多 20 次。SDK 的 maxTurns 不是上界——
+      // 百炼会在同一 turn 并发调工具，`parallelToolCalls: false` 并不总被遵守。
+      for (let extra = 1; extra < (options.searchCount ?? 1); extra += 1) {
+        searches.push(ledger.record({
+          tool: "arxiv_search",
+          sourceType: "arxiv",
+          query: `flood query ${extra}`,
+          status: "succeeded",
+          resultSummary: "arXiv returned 1 citable record(s)",
+          citations: sources,
+        }));
+      }
       if (options.claimsUnfrozenSearch) {
         searches.push(ledger.record({
           tool: "arxiv_search",
@@ -119,7 +141,8 @@ function fake(options: {
           citations: sources,
         }));
       }
-      const reported = options.hidesASearch ? searches.slice(0, 1) : searches;
+      const reported = (options.hidesASearch ? searches.slice(0, 1) : searches)
+        .slice(0, MODEL_WRITABLE_QUERY_CAP);
       const inheritedIds = ofType("research")
         .flatMap((item) => item.content.citations.map((c: any) => c.evidence_id));
       // 替身也走 structured_output 上报 —— 与真模型同一条通路，同一份参数 schema。
@@ -135,21 +158,45 @@ function fake(options: {
             ...inheritedIds,
           ])],
         }],
-        queries: reported.map((record) => ({
-          evidence_id: record.evidenceId,
-          source_type: options.usesProviderSourceAlias ? "crossref" : "arxiv",
-          query: "模型转述的查询词，代码会整条覆写",
-          status: "succeeded",
-          result_summary: "模型转述的摘要",
-        })),
+        queries: [
+          ...reported.map((record) => ({
+            evidence_id: record.evidenceId,
+            source_type: options.usesProviderSourceAlias ? "crossref" : "arxiv",
+            query: "模型转述的查询词，代码会整条覆写",
+            status: "succeeded",
+            result_summary: "模型转述的摘要",
+          })),
+          // 虚报：模型写了一条台账里根本没有的检索。
+          ...(options.inventsAQuery === true
+            ? [{
+              evidence_id: INVENTED_EVIDENCE_ID,
+              source_type: "arxiv",
+              query: "从未发生过的检索",
+              status: "succeeded",
+              result_summary: "凭空捏造的摘要",
+            }]
+            : []),
+        ],
         // 第一条故意让模型转述并改写 URL，其余照抄 —— 代码覆写与否要在同一份产物里看得见。
-        citations: sources.map((source, index) => ({
-          evidence_id: searches[0]!.evidenceId,
-          source_type: options.usesProviderSourceAlias ? "crossref" : "arxiv",
-          title: index === 0 ? "模型转述的标题" : source.title,
-          locator: source.locator,
-          url: index === 0 ? "https://evil.example.com/other" : source.url,
-        })),
+        citations: [
+          ...sources.map((source, index) => ({
+            evidence_id: searches[0]!.evidenceId,
+            source_type: options.usesProviderSourceAlias ? "crossref" : "arxiv",
+            title: index === 0 ? "模型转述的标题" : source.title,
+            locator: source.locator,
+            url: index === 0 ? "https://evil.example.com/other" : source.url,
+          })),
+          // citations 是模型的**选择**行为，不是转录：挂在虚构检索上的引用照旧判死。
+          ...(options.inventsACitation === true
+            ? [{
+              evidence_id: INVENTED_EVIDENCE_ID,
+              source_type: "arxiv",
+              title: "凭空捏造的来源",
+              locator: "arxiv:9999.99999v1",
+              url: null,
+            }]
+            : []),
+        ],
         limitations: ["fixture"],
       });
     }
@@ -350,8 +397,119 @@ test("overwrites model-authored search metadata with what actually happened", as
   h.store.close();
 });
 
-test("fails the attempt when the Artifact hides one of its searches", async () => {
+/** 这个 run 里全部 queries 漂移记录，按事件顺序。 */
+function queryDrift(snapshot: any): any[] {
+  return snapshot.recent_events.filter((event: any) =>
+    event.kind === "artifact.field_overwritten" && event.payload.field === "queries");
+}
+
+test("fills queries from the ledger when the Artifact hides one of its searches", async () => {
   const h = harness({ hidesASearch: true });
+  const runId = h.harness.createRun("q");
+  await h.harness.execute(runId);
+
+  const snapshot = h.store.snapshot(runId)!;
+  // 漏报不再判死：转录不是模型该负责的事，台账才是权威。
+  assert.equal(snapshot.status, "completed");
+  // 而且不花纠错：藏一次检索连第二次调用都不会触发。
+  assert.equal(h.calls.filter((call) => call.role === "researcher").length, 1);
+
+  const research = snapshot.artifacts.find((a: any) => a.type === "research")!.content;
+  const recorded = snapshot.tool_evidence.map((row: any) => row.id);
+  assert.equal(recorded.length, 2);
+  // 被藏起来的那次检索照样进了产物，而且逐条与实录对齐。
+  assert.deepEqual(research.queries.map((query: any) => query.evidence_id), recorded);
+  assert.deepEqual(research.queries.map((query: any) => query.status), ["succeeded", "empty"]);
+
+  // 覆写救回了这一步，所以它必须留痕：漏一条、虚报零条。
+  const drift = queryDrift(snapshot);
+  assert.equal(drift.length, 1);
+  assert.equal(drift[0]!.payload.artifact_type, "research");
+  assert.equal(drift[0]!.payload.missing_count, 1);
+  assert.equal(drift[0]!.payload.invented_count, 0);
+  assert.equal(drift[0]!.payload.missing, recorded[1]);
+  assert.equal(drift[0]!.payload.invented, "");
+  h.store.close();
+});
+
+test("discards a query the model invented and records it as drift", async () => {
+  const h = harness({ inventsAQuery: true });
+  const runId = h.harness.createRun("q");
+  await h.harness.execute(runId);
+
+  const snapshot = h.store.snapshot(runId)!;
+  assert.equal(snapshot.status, "completed");
+
+  const research = snapshot.artifacts.find((a: any) => a.type === "research")!.content;
+  const recorded = snapshot.tool_evidence.map((row: any) => row.id);
+  // 虚报的那条不对应任何真实检索，进不了证据面。
+  assert.deepEqual(research.queries.map((query: any) => query.evidence_id), recorded);
+  assert.ok(!JSON.stringify(research).includes(INVENTED_EVIDENCE_ID));
+
+  const drift = queryDrift(snapshot);
+  assert.equal(drift.length, 1);
+  assert.equal(drift[0]!.payload.missing_count, 0);
+  assert.equal(drift[0]!.payload.invented_count, 1);
+  assert.equal(drift[0]!.payload.invented, INVENTED_EVIDENCE_ID);
+  h.store.close();
+});
+
+test("hands downstream roles the queries the ledger actually recorded", async () => {
+  const h = harness({ hidesASearch: true });
+  const runId = h.harness.createRun("q");
+  await h.harness.execute(runId);
+
+  const snapshot = h.store.snapshot(runId)!;
+  const recorded = snapshot.tool_evidence.map((row: any) => ({
+    evidence_id: row.id,
+    query: row.query,
+    status: row.status,
+  }));
+  // 冻结 Artifact 会原样传给后面每个角色；模型转述的查询词一个字都不该传下去。
+  let seen = 0;
+  for (const call of h.calls.filter((item) => item.role !== "researcher")) {
+    for (const input of call.input.input_artifacts as any[]) {
+      if (input.type !== "research") continue;
+      seen += 1;
+      assert.deepEqual(
+        input.content.queries.map((query: any) => ({
+          evidence_id: query.evidence_id, query: query.query, status: query.status,
+        })),
+        recorded,
+      );
+    }
+  }
+  assert.ok(seen > 0, "下游必须真的收到过 Research Artifact");
+  h.store.close();
+});
+
+test("freezes every search of an attempt that out-searched the model-writable cap", async () => {
+  // 13 = 模型可写上限 + 1，也就是旧 canonical schema 头一个会抛的条数，边界钉在这里。
+  // v2 实测这不是边角情形：一个 Attempt 最多跑了 20 次检索，21 题里 5 个超过 12 次。
+  // 产物的 queries 由代码填满，条数上限只能把「查得多」判死，不能挡住任何滥用。
+  const h = harness({ searchCount: MODEL_WRITABLE_QUERY_CAP + 1 });
+  const runId = h.harness.createRun("q");
+  await h.harness.execute(runId);
+
+  const snapshot = h.store.snapshot(runId)!;
+  assert.equal(snapshot.status, "completed");
+  const research = snapshot.artifacts.find((a: any) => a.type === "research")!.content;
+  assert.equal(research.queries.length, MODEL_WRITABLE_QUERY_CAP + 1);
+  assert.deepEqual(
+    research.queries.map((query: any) => query.evidence_id),
+    snapshot.tool_evidence.map((row: any) => row.id),
+  );
+  // 模型只写得下 12 条，第 13 条是漏报 —— 记成一条漂移，不是一次死亡。
+  const drift = queryDrift(snapshot);
+  assert.equal(drift.length, 1);
+  assert.equal(drift[0]!.payload.missing_count, 1);
+  assert.equal(drift[0]!.payload.invented_count, 0);
+  h.store.close();
+});
+
+test("still refuses a citation hung on a search that never ran", async () => {
+  // citations 是模型的**选择**行为，不是转录：这道成员性校验一字未动。
+  const h = harness({ inventsACitation: true });
   const runId = h.harness.createRun("q");
   await h.harness.execute(runId);
 
@@ -359,10 +517,6 @@ test("fails the attempt when the Artifact hides one of its searches", async () =
   assert.equal(snapshot.status, "failed");
   assert.equal(snapshot.error_code, "invalid_output");
   assert.deepEqual(snapshot.artifacts, []);
-  assert.equal(snapshot.attempts.at(-1)!.status, "failed");
-  const correction = h.calls.filter((call) => call.role === "researcher")[1]!.input;
-  assert.equal(correction.frozen_searches.length, 2);
-  assert.equal(correction.frozen_searches[1].status, "empty");
   h.store.close();
 });
 
@@ -462,6 +616,7 @@ test("writes no drift record when the model copies the frozen question verbatim"
   const snapshot = h.store.snapshot(runId)!;
   assert.equal(snapshot.status, "completed");
   // 覆写没发生就不该有记录 —— 每个 run 都挂一条会让这条事件什么也不说明。
+  // queries 同理：模型转录得与台账逐条一致时，一条漂移事件都不该落。
   assert.deepEqual(driftEvents(snapshot), []);
   h.store.close();
 });
@@ -616,7 +771,7 @@ test("persists every search into tool_evidence as it happens", async () => {
 });
 
 test("keeps the searches of a failed attempt", async () => {
-  const h = harness({ hidesASearch: true });
+  const h = harness({ claimsFailedSearch: true });
   const runId = h.harness.createRun("q");
   await h.harness.execute(runId);
 
@@ -629,6 +784,10 @@ test("keeps the searches of a failed attempt", async () => {
   assert.equal(snapshot.tool_evidence.length, 4);
   assert.deepEqual(snapshot.tool_evidence.map((e: any) => e.status),
     ["succeeded", "empty", "succeeded", "empty"]);
+  // 纠错轮是独立的第二次调用，看不到首轮 tool conversation，必须显式交还已冻结检索。
+  const correction = h.calls.filter((call) => call.role === "researcher")[1]!.input;
+  assert.equal(correction.frozen_searches.length, 2);
+  assert.equal(correction.frozen_searches[1].status, "empty");
   store.close();
 });
 

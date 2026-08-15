@@ -198,8 +198,10 @@ test("the bucket amendment says out loud that it landed after Phase A had starte
 });
 
 test("the efficiency amendment fences the pilot off instead of merging its numbers", () => {
-  const amendment = protocol.amendments.find((item) => item.before_definitive_phase_a === true);
+  // 按内容挑，不按标志位：`before_definitive_phase_a` 现在不止一条修订带着。
+  const amendment = protocol.amendments.find((item) => "pilot_disposition" in item.changes);
   assert.ok(amendment, "并发与退避改的是正式 Phase A 怎么跑，必须留下修订记录");
+  assert.equal(amendment.before_definitive_phase_a, true);
   assert.equal(amendment.date, "2026-08-15");
   // pilot 跑完之后写的：声称「一个数都没看过」是假话——失败分类计数表就摆在欠账文件里。
   assert.equal(amendment.before_phase_a, false, "写成 true 就是把 pilot 之后的修订伪装成预注册");
@@ -222,6 +224,41 @@ test("the efficiency amendment fences the pilot off instead of merging its numbe
   assert.match(changes.pilot_disposition!, /必须逐处标注 pilot/);
   // 会动到数的地方要事先写出机制，不留到看见数之后再解释。
   assert.match(amendment.effect_on_numbers!, /infrastructure/);
+  assert.match(amendment.unchanged, /一字未[改动]/);
+});
+
+test("the queries-authority amendment fences off v2 and moves the ledger to the harness", () => {
+  const amendment = protocol.amendments.find((item) => "queries_authority" in item.changes);
+  assert.ok(amendment, "把一道合同门整个删掉，必须留下修订记录");
+  assert.equal(amendment.date, "2026-08-15");
+  // v3 之前落的：与修订 #3 同一档，不是预注册的一部分。
+  assert.equal(amendment.before_phase_a, false, "写成 true 就是把事后修订伪装成预注册");
+  assert.equal(amendment.before_definitive_phase_a, true);
+  // 21 题的失败分类已经看过，声称「一个数都没看过」是假话。
+  assert.equal(amendment.before_any_reading, false, "看过 v2 的失败分类，不能声称未读数");
+  assert.match(amendment.recorded_when!, /v2/);
+  assert.match(amendment.recorded_when!, /正式 Phase A/);
+
+  const changes = amendment.changes;
+  // (1) v2 部分批围出去，且停批原因写的是那个发现本身，不是「跑得不顺」。
+  assert.match(changes.v2_partial_disposition!, /phase-a-v2-partial/);
+  assert.match(changes.v2_partial_disposition!, /21 题/);
+  assert.match(changes.v2_partial_disposition!, /不并入正式 Phase A 读数/);
+  assert.match(changes.v2_partial_disposition!, /6% → v2 24%/, "两批的对比是停批的全部理由，必须写出数");
+  assert.match(changes.v2_partial_disposition!, /证伪/, "prompt 层方向被证伪这句不能含糊");
+  assert.match(changes.v2_partial_disposition!, /必须逐处标注/);
+  // (2) queries 权威改由台账持有，漂移可观测，虚报不进证据面。
+  assert.match(changes.queries_authority!, /EvidenceLedger\.scopedRecords/);
+  assert.match(changes.queries_authority!, /artifact\.field_overwritten/);
+  assert.match(changes.queries_authority!, /missing_count/);
+  assert.match(changes.queries_authority!, /invented_count/);
+  assert.match(changes.queries_authority!, /虚报条目\*\*直接丢弃\*\*/);
+  // citations 是模型的选择不是转录，那道门必须明写「一字未改」。
+  assert.match(changes.queries_authority!, /citations 的成员性校验与元数据覆写\*\*一字未改\*\*/);
+  // (3) 对读数的效应：旧失败形态消失，漂移事件成为机制指标。
+  assert.match(amendment.effect_on_numbers!, /invalid_output/);
+  assert.match(amendment.effect_on_numbers!, /机制指标/);
+  assert.match(amendment.effect_on_numbers!, /设计使然不是回归/, "新指标基线会升，得事先说清怎么读");
   assert.match(amendment.unchanged, /一字未[改动]/);
 });
 

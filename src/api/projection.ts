@@ -40,10 +40,11 @@ const EVENT_PAYLOAD_FIELDS: Record<string, readonly string[]> = {
   // 开局注入了几条战役记录。它是消融生效门的事实来源，也是界面上「这个 run 带着
   // 多少历史开跑」的唯一说明；注入内容本身不出网，只放行条数。
   "campaign.prior_attempts": ["question_id", "count"],
-  // 代码用冻结事实覆写了模型转述的某个字段。放行「哪份产物的哪个字段被覆写」——
-  // 那是界面上「这一步发生过漂移」的唯一说明；before/after 是模型写的原文，
+  // 代码用冻结事实覆写了模型转述的某个字段。放行「哪份产物的哪个字段被覆写」，
+  // 转录类字段再加两向计数 —— 它们是纯标量，也是 queries 权威改由台账持有之后
+  // 新增的机制指标。before/after 与 missing/invented 的 ID 列表是模型写的原文，
   // 与 sdk.output_rejected 的 reason 同类，只作排障材料留在库内。
-  "artifact.field_overwritten": ["artifact_type", "field"],
+  "artifact.field_overwritten": ["artifact_type", "field", "missing_count", "invented_count"],
   // reason 不进公共投影：它是校验器的内部错误信息，只用于排障和调门槛。
   "sdk.structured_correction": ["corrections"],
   "sdk.usage": ["agent", "input_tokens", "output_tokens", "reasoning_tokens", "total_tokens"],

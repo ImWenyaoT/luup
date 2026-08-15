@@ -74,13 +74,21 @@ export const researchSchema = z.object({
     statement: z.string().min(1),
     evidence_ids: z.array(z.string().min(1)).min(1),
   })).min(1).max(8),
+  /** 检索台账的实录，由 `canonicalizeResearch` 整条填充，模型写什么都不作数。
+   *
+   * **没有条数上限**，这是刻意的：条数由 harness 跑了几次检索决定，模型无从灌水，
+   * 所以一个上限在这里只可能把「查得多」判死，不可能挡住任何滥用。
+   * 曾经写的是 `.max(12)`（照抄模型可写子集的那个值），而 v2 实测一个 Attempt
+   * 最多跑了 20 次检索、21 题里有 5 个 Attempt 超过 12 次——百炼会在同一 turn 并发
+   * 调用检索工具，`parallelToolCalls: false` 并不总被遵守，SDK 的 maxTurns 因此
+   * 不是检索次数的上界。`.min(1)` 留着：一次都没检索就发布是另一道门，在这之前就判死。 */
   queries: z.array(z.object({
     evidence_id: z.string().min(1),
     source_type: sourceTypeSchema,
     query: z.string().min(1),
     status: evidenceStatusSchema,
     result_summary: z.string().min(1),
-  })).min(1).max(12),
+  })).min(1),
   citations: z.array(citationSchema).min(1).max(15),
   limitations: z.array(z.string().min(1)).min(1).max(5),
 });
