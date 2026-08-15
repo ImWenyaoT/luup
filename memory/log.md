@@ -368,3 +368,123 @@
 
 ## [2026-08-15] run | q99 | FAILED
 - runs-ts/phase-a-pilot.db#d4eb4a2defda4efaaba12459b378d01b｜未产出 research-plan｜cls=provider_error
+
+## [2026-08-15] run | q2 | FAILED
+- runs-ts/phase-a-v3-partial.db#2635e10658334faba996291d9b938d79｜黎曼猜想研究现状的系统性评估与验证框架重构｜引用 1910.02954v7, 2008.07206v2, https://doi.org/10.1063/1.1784280, https://doi.org/10.64628/aa.fatgnvf5u｜cls=review_rejected
+
+## [2026-08-15] run | q1 | FAILED
+- runs-ts/phase-a-v3-partial.db#8bfdf9c73b16491ab78fd4f3d6c1f81b｜素数特殊性的多维验证：从黎曼零点到随机矩阵统计的结构同构性研究｜引用 1810.02188v1, 1711.07996v2, 1003.4015v2, https://doi.org/10.15421/241607, 1910.02954v7, 2406.08121v2｜cls=review_rejected
+
+## [2026-08-15] run | q3 | FAILED
+- runs-ts/phase-a-v3-partial.db#4d728b098d4d4f8593311ce4fa65ed92｜纳维-斯托克斯千禧年难题现状评估：预印本声称解与奇点模型的批判性分析｜引用 1806.10081v10, 2505.13816v3, 1210.1981v4, https://doi.org/10.2139/ssrn.5295955, 1503.03063v2｜cls=review_rejected
+
+## [2026-08-15] run | q6 | SUCCESS
+- runs-ts/phase-a-v3-partial.db#2ed6b0fdb9b34f6eb4391199f25f0855｜基于扫描探针与非线性光谱联用的微观界面现象综合表征研究｜引用 1504.04790v2, 1704.06330v1, 1011.3942v3, 2607.20017v1, 2207.14610v1, https://doi.org/10.1017/s1431927617000368, https://doi.org/10.1007/978-3-662-45240-0_9, https://doi.org/10.1016/j.electacta.2007.03.016
+
+## [2026-08-15] run | q5 | FAILED
+- runs-ts/phase-a-v3-partial.db#f918265143f54f3d9662861130806ca8｜未产出 research-plan｜cls=invalid_output
+
+## [2026-08-15] run | q7 | SUCCESS
+- runs-ts/phase-a-v3-partial.db#26f4bce12c20451883b06b89ed93de8c｜原子层沉积固态电解质在电网级储能中的应用：安全性、循环寿命与经济性的综合评估｜引用 1903.03740v1, 1912.04755v1, https://doi.org/10.1201/9781003512882-4, https://doi.org/10.3390/batteries12080300, https://doi.org/10.1016/j.ensm.2020.05.001
+
+## [2026-08-15] run | q8 | FAILED
+- runs-ts/phase-a-v3-partial.db#e7409229bd2b4d828b9b9c924807a2f2｜同手性的功能必要性：外消旋混合物对生物大分子结构与功能影响的定量研究｜引用 2012.12850v1, 2110.01975v1, 2205.01193v1, https://doi.org/10.1007/978-3-0348-8837-0_10, https://doi.org/10.1007/pl00000777｜cls=review_rejected
+
+## [2026-08-15] run | q4 | FAILED
+- runs-ts/phase-a-v3-partial.db#cad7d2669e1b46ba9ffbb12441908dc6｜未产出 research-plan｜cls=deadline_exceeded
+
+## [2026-08-15] run | q9 | FAILED
+- runs-ts/phase-a-v3-partial.db#45f23232be5744a0b37b2201ec1dccde｜整合AI多光谱分拣与化学回收以提升塑料废弃物试点系统价值保留率的研究计划｜引用 2501.13855v1, 2105.06808v1, 2211.06509v1, https://doi.org/10.1201/9781003449133-11, https://doi.org/10.1016/bs.mie.2020.12.027｜cls=review_rejected
+
+## [2026-08-15] run | q11 | FAILED
+- runs-ts/phase-a-v3-partial.db#d77bf89be0884b5097ad8c6d99834cef｜基于功能性合成生物学与细胞凝聚体编程的工程活体材料构建研究｜引用 2207.00538v1, https://doi.org/10.3389/conf.fbioe.2016.01.01269, https://doi.org/10.1101/2025.03.02.640994, 2311.13342v1｜cls=verifier_refs
+
+## [2026-08-15] run | q12 | SUCCESS
+- runs-ts/phase-a-v3-partial.db#263fe81706aa4a8eabe982a8f965ea28｜能量流驱动下化学反应网络中自复制能力的自发涌现机制研究｜引用 1801.05872v2, 2107.03086v1, https://doi.org/10.1002/9781118698723, nlin/0512025v3, 1512.04478v2
+
+## [2026-08-15] run | q13 | SUCCESS
+- runs-ts/phase-a-v3-partial.db#987f5efb67354f3db588cdd048524beb｜基于多维数据融合与人畜共患病溢出风险模型的有限早期预警系统验证研究｜引用 1801.07807v1, 2601.13349v2, 2311.03654v1, https://doi.org/10.1016/b978-0-443-33871-7.00011-8, 1801.07807v1
+
+## [2026-08-15] run | q10 | SUCCESS
+- runs-ts/phase-a-v3-partial.db#2ddc8847533a48d3bfc04faba999cbaf｜量化人工智能对化学研究范式的影响：从数字孪生到自主发现的实证评估｜引用 2502.17506v3, 2601.13232v1, 2025.10010, https://doi.org/10.21275/sr26105185908, 2508.03278v1
+
+## [2026-08-15] run | q16 | FAILED
+- runs-ts/phase-a-v3-partial.db#9c1657fe6afc463ea201c4341bf8a0cb｜未产出 research-plan｜cls=invalid_output
+
+## [2026-08-15] run | q14 | FAILED
+- runs-ts/phase-a-v3-partial.db#05e193e55d83401288c560b9a8ad2f1e｜普通感冒治愈路径的可行性边界：从抗原多样性挑战到广谱抗病毒策略的综合评估｜引用 https://doi.org/10.1358/dof.2000.025.03.858657, https://doi.org/10.1136/bmj.1.3395.165, 2017.02412, 2017.20203, https://doi.org/10.1016/0166-3542(92)90032-z｜cls=review_rejected
+
+## [2026-08-15] run | q17 | FAILED
+- runs-ts/phase-a-v3-partial.db#6fa9b10485dc4afebe0d65250ac8bc10｜NR4A 核受体家族通过直接调控调节性 T 细胞抑制性细胞因子表达维持免疫稳态的研究｜引用 https://doi.org/10.1101/2021.04.28.441904, https://doi.org/10.1016/j.coi.2008.10.005, https://doi.org/10.4110/in.2013.13.6.227, https://doi.org/10.1016/b978-0-443-45128-7.00020-0｜cls=review_rejected
+
+## [2026-08-15] run | q15 | SUCCESS
+- runs-ts/phase-a-v3-partial.db#5234229968c74a6088f4f1dfcf8ce74c｜基于药物基因组学与逆设计3D打印的个性化多药丸：一项随机对照药代动力学试验与GMP合规性研究｜引用 2512.09154v2, 2023.0364, https://doi.org/10.1201/b15465-23, https://doi.org/10.47191/etj/v11i06.22, 2507.00166v1, https://doi.org/10.1007/978-981-96-9075-6_4, 2025.10024
+
+## [2026-08-15] run | q18 | SUCCESS
+- runs-ts/phase-a-v3-partial.db#b8816c626a8947cebd866a519eae2f30｜primo血管系统作为传统中医经络解剖学基础的实证研究：多模态成像与生理功能分析｜引用 https://doi.org/10.1016/j.jams.2013.10.001, https://doi.org/10.1016/j.jams.2012.07.001, https://doi.org/10.1016/j.dcmed.2020.09.001, https://doi.org/10.1097/hm9.0000000000000128, https://doi.org/10.1016/j.jams.2012.07.017
+
+## [2026-08-15] run | q19 | FAILED
+- runs-ts/phase-a-v3-partial.db#e4c6a5fd28cf43c89272171fdacbd6c3｜未产出 research-plan｜cls=invalid_output
+
+## [2026-08-15] run | q20 | FAILED
+- runs-ts/phase-a-v3-partial.db#7922ea9883b84b54b498f298588f00c3｜遗传-环境交互作用驱动自闭症谱系障碍异质性病因的研究计划｜引用 1301.2694v1, https://doi.org/10.4324/9781351242455-2, med/9780199, https://doi.org/10.55677/ijmspr/2026-3050-i415, https://doi.org/10.70957/uqu.edu.sa/s.toxicology.s/stj.2025.2.8｜cls=review_rejected
+
+## [2026-08-15] run | q21 | FAILED
+- runs-ts/phase-a-v3-partial.db#39efc6ecc6fc40b6b84964e96264fde9｜未产出 research-plan｜cls=invalid_output
+
+## [2026-08-15] run | q22 | SUCCESS
+- runs-ts/phase-a-v3-partial.db#c1a4eda3f8c64370a35d80dbcafa3aaa｜肠道微生物组-代谢组-疾病轴在年龄相关性炎症中的因果作用：一项基于结构方程模型的纵向研究｜引用 2402.08222v2, 2303.16722v1, https://doi.org/10.1201/9781003037521-9, https://doi.org/10.1007/978-981-16-3156-6_5, https://doi.org/10.1007/978-981-16-3156-6_9, https://doi.org/10.1186/s40168-017-0296-0
+
+## [2026-08-15] run | q24 | SUCCESS
+- runs-ts/phase-a-v3-partial.db#ef6a4ecc175245d7bdb6d6a73fba78b2｜协同增效：评估禁捕政策、防降级措施与船队多样化对海洋生物多样性及渔业产量的综合影响｜引用 2210.03890v1, 2308.16397v1, 0807.4040v2, 1602.05723v2, 1403.2812v3
+
+## [2026-08-15] run | q23 | SUCCESS
+- runs-ts/phase-a-v3-partial.db#0ed2f5a179db440b9f806926533c3d1c｜从个案到预测：基于转化建模与计算机仿真的基因编辑猪肾脏异种移植潜力评估｜引用 2404.14658v1, https://doi.org/10.1111/xen.70018, https://doi.org/10.1111/xen.12848, https://doi.org/10.1016/s0140-6736(24)00938-3, https://doi.org/10.1111/aor.14945, https://doi.org/10.1111/xen.70052
+
+## [2026-08-15] run | q26 | SUCCESS
+- runs-ts/phase-a-v3-partial.db#0ebf427c59d64112b081e6e9332e155b｜表观遗传景观中的能垒与拓扑限制：解析细胞命运选择性的定量机制｜引用 1211.3133v4, 1410.2337v1, https://doi.org/10.1177/21524971251359000, 1312.7250v2, 2005.04877v1
+
+## [2026-08-15] run | q25 | FAILED
+- runs-ts/phase-a-v3-partial.db#ef0ed096941b4fc982fe1eb573956778｜多靶点联合干预对Misrepair积累驱动的生物衰老及健康寿命的影响研究｜引用 2408.15264v1, 1505.07016v2, 2406.13889v1, 2024.13342, 1103.4649v1｜cls=review_rejected
+
+## [2026-08-15] run | q27 | SUCCESS
+- runs-ts/phase-a-v3-partial.db#54be2c8026f149b88ca433c9f7b24e2b｜漂变与负荷的博弈：有效种群大小对无性系基因组大小演化的调节机制｜引用 1511.05548v1, 1109.2214v2, https://doi.org/10.1007/978-94-011-4156-7_13, oso/9780198, 1511.05548v1
+
+## [2026-08-15] run | q28 | FAILED
+- runs-ts/phase-a-v3-partial.db#6abaa7ff918d466eb8fac6015eb323cb｜从技术瓶颈到理论极限：癌症治愈可能性的多尺度量化分析｜引用 2411.19532v1, 1705.05025v1, 2605.04999v2, 1409.1974v1, https://doi.org/10.70534/zfha4089, https://doi.org/10.1016/j.ctrv.2016.08.008｜cls=review_rejected
+
+## [2026-08-15] run | q30 | SUCCESS
+- runs-ts/phase-a-v3-partial.db#9db3fd0a057f45f6b3a4d9f5d16bbc57｜地磁校准天体线索：迁徙鸟类导航中的量子磁感应机制研究｜引用 2504.12336v2, 2106.12903v1, 2000.1582, https://doi.org/10.1038/s41598-024-77883-9, https://doi.org/10.1038/347378a0, https://doi.org/10.1007/bf00168646
+
+## [2026-08-15] run | q32 | FAILED
+- runs-ts/phase-a-v3-partial.db#1c5b2cb69d02451baad048c4827d1e45｜未产出 research-plan｜cls=invalid_output
+
+## [2026-08-15] run | q29 | FAILED
+- runs-ts/phase-a-v3-partial.db#2386890877014d3586340b6e99e90d3a｜解码人类独特性：NOTCH2NL、HARs 与 FOXP2 在大脑进化中的协同机制研究｜引用 https://doi.org/10.1007/s00439-019-02018-4, 5127.79354, https://doi.org/10.1093/gbe/evx240, https://doi.org/10.1016/j.schres.2022.06.023, https://doi.org/10.1093/genetics/162.4.1825｜cls=review_rejected
+
+## [2026-08-15] run | q31 | SUCCESS
+- runs-ts/phase-a-v3-partial.db#5835862fb9ce4143aa4d5a70ccbb71cb｜蜥脚类恐龙巨大化的进化级联机制：基于多物理场耦合模型的定量验证｜引用 https://doi.org/10.1371/journal.pone.0078573, https://doi.org/10.1371/journal.pone.0068714, https://doi.org/10.1666/0094-8373(2003)029<0243:vpasat>2.0.co;2, https://doi.org/10.1371/journal.pone.0163205, https://doi.org/10.1126/science.1160904
+
+## [2026-08-15] run | q34 | FAILED
+- runs-ts/phase-a-v3-partial.db#91ae80fac0fd48a7925c91f8f919297e｜古代人类与古人类祖先杂交的多重证据整合与功能性后果验证研究计划｜引用 1103.4621v2, 1312.7749v1, https://doi.org/10.1101/343087, https://doi.org/10.1038/s41559-018-0735-8, https://doi.org/10.1002/ajpa.23951｜cls=review_rejected
+
+## [2026-08-15] run | q36 | FAILED
+- runs-ts/phase-a-v3-partial.db#df51790a5c904f93bebff4f26a81d8b9｜未产出 research-plan｜cls=invalid_output
+
+## [2026-08-15] run | q35 | SUCCESS
+- runs-ts/phase-a-v3-partial.db#b70a493373db4941b47958c9c569e15a｜解构跨物种依恋：婴儿图式与凝视在人-狗及人-猫关系中的差异化神经机制｜引用 https://doi.org/10.1126/science.1261022, 2023.10680, https://doi.org/10.2147/prbm.s74972, 2011.00200, 2505.02756v1
+
+## [2026-08-15] run | q33 | FAILED
+- runs-ts/phase-a-v3-partial.db#632892c2eac245648e03db9c56435ed4｜个体间波动选择（FSI）的动力学特征与信息论量化：一项基于模拟和人类基因组数据的验证研究｜引用 1211.4037v1, https://doi.org/10.1101/2025.11.10.687654, https://doi.org/10.1007/s13752-017-0264-8, https://doi.org/10.1101/2023.07.11.548607, 2111.06909v1｜cls=review_rejected
+
+## [2026-08-15] run | q37 | FAILED
+- runs-ts/phase-a-v3-partial.db#1de2fa4dfb8d422cbd21d6b0ae337a9f｜基于MEG-fMRI融合技术的人类情感起源时空动态机制：岛叶与杏仁核的因果时序解析｜引用 1308.5405v1, https://doi.org/10.1101/2022.01.29.477631, https://doi.org/10.1016/b978-0-443-13519-4.00014-3, https://doi.org/10.4324/9780429472541-7, https://doi.org/10.1007/s00429-023-02644-9｜cls=review_rejected
+
+## [2026-08-15] run | q38 | FAILED
+- runs-ts/phase-a-v3-partial.db#ca7a4e1f944e4faeb4ea64e861cecfd6｜全球人口增长极限：基于多模型回溯测试与敏感性分析的峰值预测验证｜引用 https://doi.org/10.2139/ssrn.4435761, https://doi.org/10.18356/9789210014380c008, https://doi.org/10.18356/9789211071887c005, https://doi.org/10.1080/0032472031000149536｜cls=review_rejected
+
+## [2026-08-15] run | q39 | FAILED
+- runs-ts/phase-a-v3-partial.db#9ebd6457b7734046be961f860fda8094｜雌激素驱动的生长板软骨细胞衰老与干细胞耗竭在骨骼生长终止中的协同作用机制研究｜引用 https://doi.org/10.1159/000327788, 2227.1995, 2025.10163, https://doi.org/10.69622/32020686｜cls=review_rejected
+
+## [2026-08-15] run | q40 | SUCCESS
+- runs-ts/phase-a-v3-partial.db#ae61e68a6bf04dbbb67a8b058a0ab05d｜自然缺失与人工诱导：人类冬眠能力的生理学边界与临床应用评估｜引用 https://doi.org/10.64628/ab.mek6jdfyk, https://doi.org/10.1007/978-3-662-04162-8_16, 2102.11510, https://doi.org/10.1007/978-4-431-53961-2_45, https://doi.org/10.7748/en2003.07.11.4.24.c1127
