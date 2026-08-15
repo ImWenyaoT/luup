@@ -3,11 +3,12 @@ import { test } from "vitest";
 
 import { RunContext } from "@openai/agents";
 
-import { researchProposalSchema } from "../src/agent/contracts.ts";
+import { researchProposalSchema, roleSchema } from "../src/agent/contracts.ts";
 import { EvidenceLedger } from "../src/agent/evidence.ts";
 import { classifyFailure } from "../src/agent/failures.ts";
+import { createRoles } from "../src/agent/roles/index.ts";
 import { createStructuredOutput, STRUCTURED_OUTPUT_TOOL } from "../src/agent/roles/structured-output.ts";
-import { isContextOverflow } from "../src/executor.ts";
+import { isContextOverflow, maxTurnsFor } from "../src/executor.ts";
 import { runTask, type StageExecutor } from "../src/roles.ts";
 import type { TaskContext } from "../src/store/contracts.ts";
 
@@ -98,6 +99,33 @@ test("finishing without calling the tool is a contract violation, not a correcti
   assert.equal(calls, 1, "不做隐式重跑：这一类不再花一次调用去说同一句话");
   assert.equal(classifyFailure(failure).code, "invalid_output");
   assert.match((failure as Error).message, new RegExp(STRUCTURED_OUTPUT_TOOL));
+});
+
+/** Phase A 只读诊断（n=46）里 researcher 撞死的那条序列：两次 arxiv、三次 crossref、
+ *  上报一次被 zod 驳回、改对再报一次。关掉并发工具调用之后，每一步各占一个 turn ——
+ *  7 > 6，于是 18 个 failed 里有 15 个是同一句 `reached the Agent turn limit`。 */
+const RESEARCHER_TURNS_THAT_USED_TO_DIE = 2 + 3 + 1 + 1;
+
+test("the turn budget follows the tool surface: only the researcher gets headroom", () => {
+  const { agents } = createRoles(new EvidenceLedger());
+
+  for (const role of roleSchema.options) {
+    const agent = agents[role];
+    if (agent.tools.length === 0) {
+      // 无工具角色产物即最终输出，正常路径一个 turn 就结束：6 已是宽松余量，
+      // 抬高它救不回任何一次失败，只会在模型空转时多烧几轮 token 才撞同一堵墙。
+      assert.equal(maxTurnsFor(role), 6, `${role} 无工具，不该分到检索余量`);
+    } else {
+      assert.equal(role, "researcher", "多出一个有工具的角色，turn 预算的推导要重写");
+      assert.equal(maxTurnsFor(role), 12);
+    }
+  }
+
+  // 预算的意义在这一条：检索 5 + 上报 1 之后，每一步都还能错一次。
+  assert.ok(
+    maxTurnsFor("researcher") > RESEARCHER_TURNS_THAT_USED_TO_DIE,
+    "researcher 的预算必须容得下「查满 + 上报 + 修正」，否则改了等于没改",
+  );
 });
 
 test("context overflow is recognised across provider wordings", () => {

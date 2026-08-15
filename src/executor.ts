@@ -98,6 +98,44 @@ export function isContextOverflow(detail: string): boolean {
   return CONTEXT_OVERFLOW_PATTERNS.some((pattern) => pattern.test(detail));
 }
 
+/** 每个角色一次 `runner.run` 允许的 turn 数。
+ *
+ * SDK 的判据是 `state._currentTurn > maxTurns`（`runner/turnPreparation.mjs`），而
+ * researcher 关掉了 `parallelToolCalls`，所以一次工具调用正好吃掉一个 turn ——
+ * 这个数就是「模型最多能开口几次」。
+ *
+ * **6 是 luup-old 时代的值，前提已经不成立**：那时 researcher 交作业走自由文本，
+ * 一次调用一个 turn 就收尾。现在它走合成工具通路，一个 Attempt 的最小账是
+ * 检索 5 次（arxiv + crossref 合计的意图上限，提示词写「通常 2–3 次」但两个源分头用）
+ * + `structured_output` 上报 1 次 = 6，正好顶满：工具参数被 zod 驳回一次要重报，
+ * 换关键词重检索一次也要一个 turn，任何一次修正都当场撞墙。
+ * Phase A 只读诊断（n=46）量化了这笔账：18 个 failed 里 15 个是
+ * `researcher reached the Agent turn limit`。
+ *
+ * researcher 取 12 的推导 = 检索 5 + 上报 1 + 修正余量 6。余量与检索预算同量级，
+ * 才谈得上「查完之后每一步都还能错一次」；给 7、8 只是把同一堵墙挪近一点。
+ *
+ * 另外四个角色**没有工具**（`roles.ts` 的 runTask 开头就断言这件事），产物即最终输出，
+ * 正常路径一个 turn 就结束，6 已经是宽松余量。跟着抬高它们不会救回任何一次失败 ——
+ * 无工具角色撞 turn limit 只可能是模型在空转，多给的 turn 是纯粹多付的预算。
+ *
+ * 抬高不会失控，兜底在外层而不在这个数：阶段 deadline 300s（`roles.ts` 的 `timeoutMs`）
+ * 与单题 40 分钟（`batch/runner.ts` 的 `RUN_TIMEOUT_MS`）。两者用尽是不同的失败码
+ * （`deadline_exceeded`），与 turn 用尽（`invalid_output`）在报告里也分得开。
+ */
+const MAX_TURNS_BY_ROLE: Record<Role, number> = {
+  "researcher": 12,
+  "hypothesis-generation": 6,
+  "evidence-review": 6,
+  "research-plan": 6,
+  "reviewer": 6,
+};
+
+/** 角色的 turn 上限。`Record<Role, ...>` 保证少写一个角色是编译期错误。 */
+export function maxTurnsFor(role: Role): number {
+  return MAX_TURNS_BY_ROLE[role];
+}
+
 export function createQwenExecutor(onComplete?: (metrics: StageMetrics) => void): StageExecutor {
   const runner = new Runner({ modelProvider: qwenModelProvider(), tracingDisabled: true });
   return async ({ runId, role, agent, input, timeoutMs, onUsage }) => {
@@ -112,7 +150,7 @@ export function createQwenExecutor(onComplete?: (metrics: StageMetrics) => void)
     let result;
     try {
       result = await runner.run(agent, input, {
-        maxTurns: 6,
+        maxTurns: maxTurnsFor(role),
         signal,
         errorHandlers: {
           invalidFinalOutput: ({ context, runData }) => {

@@ -19,7 +19,9 @@
 把同一个源用同样的词再查一遍不算补证。
 
 queries 与 citations 只写**本次调用**实际检索到的内容；claims 可以引用输入 Artifact 里
-已冻结的 evidence_id。
+已冻结的 evidence_id。本次调用的**每一次**检索都要原样写进 queries，一次都不能少，
+status 为 empty / failed / rate_limited 的那几次同样要写 —— 它们是检索过程的事实，
+不是需要藏起来的瑕疵。
 
 输入里如果有 `prior_attempts`，那是同一道题**以前几次运行**留下的确定性记录（成败、
 计划标题、引用过的论文、失败分类），由代码追加，不是模型写的。把它当线索用：换个角度、
