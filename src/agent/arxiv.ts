@@ -29,7 +29,11 @@ export type ArxivSearchResult = {
 };
 
 const ENDPOINT = "https://export.arxiv.org/api/query";
-const CALL_TIMEOUT_MS = 10_000;
+// 与 Python `backend/app/agent/tools/arxiv.py` 的 `httpx.Timeout(30.0)` 同一个数。
+// 原值 10s 是拍脑袋的：canary 现场两次 `arxiv_search` 都卡在这条线上超时，而同一时刻
+// arXiv 直连是健康的（简单查询 1.3–1.6s）——超的不是网络，是模型生成的复杂检索式，
+// 那类查询在 arXiv 上要 3–10s+。10s 把「慢查询」误判成了「服务不可达」。
+const CALL_TIMEOUT_MS = 30_000;
 
 // arXiv 官方要求同源请求间隔 ≥3 秒，超了直接 429。这把闸是**模块级**的：
 // 整个进程共用一个发号窗口，不管有多少个并发角色在检索。

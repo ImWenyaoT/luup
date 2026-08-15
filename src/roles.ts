@@ -333,7 +333,15 @@ export async function runTask(
   // 一个 Attempt 最多两次模型调用；失败时往上带的是这个 Attempt 的**合计**已发生用量，
   // 只带最后一次会把纠错轮之前烧掉的 token 从账上抹掉。
   let spent: StageUsage | null = null;
-  const timeoutMs = Number(process.env.LUUP_STAGE_TIMEOUT_MS || 60_000);
+  // 这道线判的是「卡死」，不是「慢」：一个阶段 5 分钟还没交出 Artifact 就是挂了。
+  // 真正给单题兜底的是外层——`batch/runner.ts` 的 `RUN_TIMEOUT_MS`（40 分钟/题）。
+  // 两层不是相乘关系：流水线最坏 10 次阶段调用（证据环 3 × 2 + 计划评审环 2 × 2），
+  // 典型路径 5 次；40 分钟先到就先切，这里只负责不让单个阶段无限期吊住。
+  // 60s 是 luup-old 时代针对当时更简流水线定的值，对现在的 researcher 不成立：
+  // 它一个阶段要做多轮 LLM + 数次 arXiv/Crossref（含 arXiv 官方要求的 3s 间隔）
+  // + 合成工具上报。canary 现场 researcher 撞 deadline 拿到 `deadline_exceeded`；
+  // 修好 arXiv 超时后重跑，同一阶段实测 56s——离 60s 只剩 4 秒，等于没有余量。
+  const timeoutMs = Number(process.env.LUUP_STAGE_TIMEOUT_MS || 300_000);
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     throw new Error("LUUP_STAGE_TIMEOUT_MS must be a positive number");
   }
