@@ -36,6 +36,8 @@ type Protocol = {
   amendments: Array<{
     date: string;
     before_phase_a: boolean;
+    /** pilot 之后、正式 Phase A 之前落的修订自报这一条。 */
+    before_definitive_phase_a?: boolean;
     /** Phase A 之后落的修订必须自报「什么时候写的、写的时候读过数没有」。 */
     recorded_when?: string;
     before_any_reading?: boolean;
@@ -174,8 +176,10 @@ test("the TypeScript cutover is recorded as an amendment made before Phase A", (
 });
 
 test("the bucket amendment says out loud that it landed after Phase A had started", () => {
-  const amendment = protocol.amendments.find((item) => item.date === "2026-08-15");
+  // 按内容挑，不按日期：同一天可以落不止一条修订。
+  const amendment = protocol.amendments.find((item) => "bucket_membership" in item.changes);
   assert.ok(amendment, "桶归属明细化必须留下修订记录");
+  assert.equal(amendment.date, "2026-08-15");
   // 这条修订的全部价值是时间戳的诚实：它不是预注册的一部分，是开跑之后补的，
   // 但在任何一个数被读出来之前。措辞含糊等于没有这条记录。
   assert.equal(amendment.before_phase_a, false, "写成 true 就是把事后修订伪装成预注册");
@@ -190,6 +194,34 @@ test("the bucket amendment says out loud that it landed after Phase A had starte
   // 熔断口径是已注册的 control，读数改动不得顺手动它。
   assert.match(amendment.changes.two_sets_diverge!, /outage_classes/);
   assert.match(amendment.effect_on_numbers!, /质量分母/);
+  assert.match(amendment.unchanged, /一字未[改动]/);
+});
+
+test("the efficiency amendment fences the pilot off instead of merging its numbers", () => {
+  const amendment = protocol.amendments.find((item) => item.before_definitive_phase_a === true);
+  assert.ok(amendment, "并发与退避改的是正式 Phase A 怎么跑，必须留下修订记录");
+  assert.equal(amendment.date, "2026-08-15");
+  // pilot 跑完之后写的：声称「一个数都没看过」是假话——失败分类计数表就摆在欠账文件里。
+  assert.equal(amendment.before_phase_a, false, "写成 true 就是把 pilot 之后的修订伪装成预注册");
+  assert.equal(amendment.before_any_reading, false, "看过 pilot 的失败分类表，不能声称未读数");
+  assert.match(amendment.recorded_when!, /pilot 跑完之后、正式 Phase A 开跑之前/);
+
+  const changes = amendment.changes;
+  // ① 串行 → 有界并发：注册串行的理由必须被回答，熔断按结算序，在飞的题不取消。
+  assert.match(changes.execution_control!, /结算顺序/);
+  assert.match(changes.execution_control!, /不取消在飞的题/);
+  assert.match(changes.execution_control!, /MAX_CONCURRENCY/);
+  assert.match(changes.execution_control!, /429/, "注册串行的理由是 429 噪音，必须正面回答");
+  // ② 传输层重试与 no_retry 的边界。
+  assert.match(changes.transient_backoff!, /no_retry/);
+  assert.match(changes.transient_backoff!, /Attempt/);
+  assert.match(changes.transient_backoff!, /不做错误正文的散文匹配/);
+  // ③ pilot 归档，且不进正式读数。
+  assert.match(changes.pilot_disposition!, /runs-ts\/phase-a-pilot\.db/);
+  assert.match(changes.pilot_disposition!, /不并入正式 Phase A 读数/);
+  assert.match(changes.pilot_disposition!, /必须逐处标注 pilot/);
+  // 会动到数的地方要事先写出机制，不留到看见数之后再解释。
+  assert.match(amendment.effect_on_numbers!, /infrastructure/);
   assert.match(amendment.unchanged, /一字未[改动]/);
 });
 

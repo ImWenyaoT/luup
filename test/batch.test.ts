@@ -7,6 +7,8 @@ import { test, type TestContext } from "vitest";
 import {
   compactIds,
   createCampaignMemory,
+  MAX_CONCURRENCY,
+  parseConcurrency,
   parseIds,
   readSourceIdentity,
   remainingPath,
@@ -51,6 +53,17 @@ function batch(
 }
 
 const passes: RunQuestion = () => Promise.resolve({ status: "completed" as const, errorCode: null });
+
+const sleep = (ms: number) => new Promise<void>((resolve) => { setTimeout(resolve, ms); });
+
+/** 等一个可观测的条件成立。并发用例靠它对齐时序，不靠猜多少个微任务够用。 */
+async function until(ready: () => boolean, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!ready()) {
+    if (Date.now() > deadline) throw new Error("等待的条件在期限内没有成立");
+    await sleep(1);
+  }
+}
 
 const classes = (outcomes: QuestionOutcome[]) =>
   outcomes.map((item) => `${item.status}/${item.classification ?? "-"}`);
@@ -306,12 +319,143 @@ test("--dry-run plans without creating a single run", async (t) => {
   assert.ok(outcomes[0]!.detail.length > 0);
 });
 
-test("progress is one line per question plus a tally", async (t) => {
+test("progress is one line per question, tagged with its pool slot, plus a tally", async (t) => {
   const lines: string[] = [];
   const { report } = batch(t, [1, 2], passes, { log: (line) => lines.push(line) });
   await report;
 
   assert.equal(lines.length, 3);
-  assert.match(lines[0]!, /^\[batch] 1\/2 q1 \| passed \| \d+\.\ds$/);
+  // 槽位标识 `s1`：并发跑时没有它，交错的进度行分不清哪几行属于同一条流水。
+  assert.match(lines[0]!, /^\[batch] 1\/2 s1 q1 \| passed \| \d+\.\ds$/);
   assert.match(lines[2]!, /^\[batch] 合计 2 题：passed 2$/);
+});
+
+test("--concurrency is bounded before any money is spent", () => {
+  assert.equal(parseConcurrency(undefined), 3);
+  assert.equal(parseConcurrency("1"), 1);
+  assert.equal(parseConcurrency(String(MAX_CONCURRENCY)), MAX_CONCURRENCY);
+  for (const spec of ["0", "-1", String(MAX_CONCURRENCY + 1), "2.5", "abc", ""]) {
+    assert.throws(() => parseConcurrency(spec), /--concurrency/, `expected ${JSON.stringify(spec)} to be rejected`);
+  }
+});
+
+test("the pool never runs more questions than its bound, and settles them as they finish", async (t) => {
+  let live = 0;
+  let peak = 0;
+  const { report } = batch(t, [1, 2, 3, 4, 5, 6], async ({ questionId }) => {
+    live += 1;
+    peak = Math.max(peak, live);
+    // 第一题慢，其余快：结算顺序因此必然不是派发顺序。
+    await sleep(questionId === 1 ? 60 : 1);
+    live -= 1;
+    return { status: "completed" as const, errorCode: null };
+  }, { concurrency: 3, timeoutMs: 10_000 });
+  const { outcomes } = await report;
+
+  assert.equal(peak, 3, "池子该是满的，也不该超");
+  assert.equal(outcomes.length, 6);
+  // 完成即结算：慢的第 1 题最后落，后面五题不必等它。
+  assert.equal(outcomes.at(-1)!.questionId, 1);
+  assert.deepEqual([...outcomes].map((item) => item.questionId).sort((a, b) => a - b), [1, 2, 3, 4, 5, 6]);
+});
+
+test("--concurrency 1 is exactly the serial batch", async (t) => {
+  let live = 0;
+  let peak = 0;
+  const { report } = batch(t, [1, 2, 3], async ({ questionId }) => {
+    live += 1;
+    peak = Math.max(peak, live);
+    await sleep(questionId === 1 ? 30 : 1);
+    live -= 1;
+    return { status: "completed" as const, errorCode: null };
+  }, { concurrency: 1, timeoutMs: 10_000 });
+  const { outcomes } = await report;
+
+  assert.equal(peak, 1, "并发 1 就是一次一题");
+  // 慢的第 1 题仍然第一个结算：串行下结算顺序等于派发顺序。
+  assert.deepEqual(outcomes.map((item) => item.questionId), [1, 2, 3]);
+});
+
+test("a tripped breaker stops dispatching but lets the in-flight questions finish", async (t) => {
+  const started: number[] = [];
+  const cancelled: number[] = [];
+  const settled: string[] = [];
+  const gates = new Map<number, () => void>();
+  const open = (questionId: number) => new Promise<void>((resolve) => gates.set(questionId, resolve));
+
+  const { repoRoot, report } = batch(t, [1, 2, 3, 4, 5], async ({ questionId, signal }) => {
+    started.push(questionId);
+    signal.addEventListener("abort", () => cancelled.push(questionId));
+    await open(questionId);
+    if (questionId === 3) return { status: "completed" as const, errorCode: null };
+    throw new Error("ECONNREFUSED");
+  }, {
+    concurrency: 2,
+    timeoutMs: 10_000,
+    graceMs: 10_000,
+    log: (line) => { if (/^\[batch] \d+\/5 /.test(line)) settled.push(line); },
+  });
+
+  // 1、2 一起在飞。1 先落 → 补进 3；2 再落 → 结算序上连续两次 infra_error，熔断。
+  await until(() => started.length === 2);
+  gates.get(1)!();
+  await until(() => started.length === 3);
+  gates.get(2)!();
+  await until(() => settled.length === 2);
+  gates.get(3)!();
+  const { outcomes, stopped } = await report;
+
+  assert.deepEqual(started, [1, 2, 3], "熔断之后不该再派发第 4 题");
+  assert.deepEqual(cancelled, [], "在飞的题不被取消——它们的钱已经花了");
+  assert.deepEqual(
+    outcomes.map((item) => `q${item.questionId}/${item.status}`),
+    ["q1/error", "q2/error", "q3/passed"],
+    "熔断之后才落地的那道题照样进 outcomes",
+  );
+  assert.ok(stopped);
+  assert.match(stopped.reason, /连续 2 次 infra_error/);
+  // 欠账只算从未派发过的题；已经跑完的第 3 题不在里面。
+  assert.equal(stopped.remaining, "4,5");
+  assert.equal(stopped.completed, 3, "排空之后才定稿，在飞的那题也算已完成");
+  assert.deepEqual(stopped.failedByClass, { infra_error: 2 });
+  assert.deepEqual(JSON.parse(readFileSync(remainingPath(repoRoot), "utf8")), JSON.parse(JSON.stringify(stopped)));
+});
+
+test("the breaker counts a same-class streak in settlement order, not dispatch order", async (t) => {
+  const settled: string[] = [];
+  const gates = new Map<number, () => void>();
+  const open = (questionId: number) => new Promise<void>((resolve) => gates.set(questionId, resolve));
+  const failing = new Set([2, 3]);
+
+  const { report } = batch(t, [1, 2, 3, 4, 5], async ({ questionId }) => {
+    await open(questionId);
+    return failing.has(questionId)
+      ? { status: "failed" as const, errorCode: "infra_error" }
+      : { status: "completed" as const, errorCode: null };
+  }, {
+    concurrency: 3,
+    timeoutMs: 10_000,
+    graceMs: 10_000,
+    log: (line) => { if (/^\[batch] \d+\/5 /.test(line)) settled.push(line); },
+  });
+
+  // 派发序是 1,2,3；结算序是 2,3 —— 中间没有 passed 打断，连击成立，而第 1 题此刻还在飞。
+  await until(() => gates.size === 3);
+  gates.get(2)!();
+  await until(() => settled.length === 1 && gates.has(4));
+  gates.get(3)!();
+  await until(() => settled.length === 2);
+  gates.get(1)!();
+  gates.get(4)!();
+  const { outcomes, stopped } = await report;
+
+  assert.ok(stopped, "结算序上连续两次 infra_error，尽管派发序里第 1 题排在它们前面");
+  assert.match(stopped.reason, /连续 2 次 infra_error/);
+  assert.deepEqual(outcomes.slice(0, 2).map((item) => item.questionId), [2, 3]);
+  assert.deepEqual(
+    outcomes.map((item) => item.questionId).sort((left, right) => left - right),
+    [1, 2, 3, 4],
+    "熔断时在飞的 1 与 4 都排空了，只有从未派发的 5 欠着",
+  );
+  assert.equal(stopped.remaining, "5");
 });

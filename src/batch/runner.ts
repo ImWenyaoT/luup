@@ -1,11 +1,16 @@
-/** 批跑：`pnpm batch --ids 1-125`。
+/** 批跑：`pnpm batch --ids 1-125 --concurrency 3`。
  *
  * 交付要求是「整套 Science-125 且可断点续跑」。那是围着既有组合根转的一个循环，
  * 不是第二条流水线：每道题都走同一个 Harness，批跑产出的 Run 与单跑逐字段同构。
  *
  * 让一次跑几个小时的无人值守批次能活下来的，是四条性质：
  * 续跑（已经交付过的题不会再花第二次钱）、隔离（一道题的故障记下来，批次继续）、
- * 串行（百炼有速率限制，题一道一道跑，顺序固定）、限时（挂住的题被取消，而不是拖住整夜）。
+ * 有界并发（题按升序派发进一个至多 5 个槽位的池，完成即结算，见 `runBatch`）、
+ * 限时（挂住的题被取消，而不是拖住整夜）。
+ *
+ * 并发取代了原来的第三条「串行」：pilot 实测单题墙钟 145s，几乎全是模型网络往返，
+ * 单线程等 I/O 而已。速率限制不再靠串行来守 —— 检索侧有模块级同源发号闸，
+ * 模型侧有 executor 的传输层退避（`TRANSIENT_RETRY`），两者都比「一次只跑一题」精确。
  */
 
 import { spawnSync } from "node:child_process";
@@ -36,6 +41,22 @@ export const RUN_TIMEOUT_MS = 40 * 60 * 1000;
  * 宽限期过了就不再等它，由批跑给那个 Run 补终态。
  */
 export const CANCEL_GRACE_MS = 30_000;
+
+/** 同时在飞的题数上限。
+ *
+ * 5 不是实测出来的最优值，是一条自觉保守的线：并发的收益是隐藏模型往返，代价是
+ * 一次熔断会浪费掉更多在飞的题（它们的钱已经花了，见 `runBatch`），而单题 40 分钟的
+ * 兜底又让「浪费」的上界随并发线性放大。3 起步、5 封顶，够把 125 题的墙钟压掉大半，
+ * 又不至于让一次供应商停机烧掉 5 道题的预算。
+ */
+export const MAX_CONCURRENCY = 5;
+
+/** CLI 不给 `--concurrency` 时的并发。
+ *
+ * `runBatch` 自己默认 1（串行）：库函数的默认值应当是那个最不惊讶的语义，
+ * 「一次跑几道」是操作决策，属于命令行。
+ */
+export const DEFAULT_CONCURRENCY = 3;
 
 /** 批跑成立的前提是题与题互相独立；连续同类失败恰好证伪了这个前提。 */
 export const SAME_CLASS_STOP = 5;
@@ -107,6 +128,8 @@ export type BatchOptions = {
   /** 题库路径；默认 `data/science125.json`。 */
   dataPath?: string;
   dryRun?: boolean;
+  /** 同时在飞的题数。默认 1（串行）；超出 [1, MAX_CONCURRENCY] 的值就近夹住。 */
+  concurrency?: number;
   timeoutMs?: number;
   graceMs?: number;
   /** 这一批属于消融实验的哪一臂。批跑之外的 run 不属于任何一臂，见 store 的 memory_arm。 */
@@ -180,39 +203,132 @@ function git(cwd: string, args: string[]): string | null {
   return result.stdout;
 }
 
+/** 并发落进 [1, MAX_CONCURRENCY]。库函数就近夹住而不抛：把一个越界的数字变成中断整批的
+ *  异常没有意义。命令行那一侧相反 —— 花钱之前拒绝，见 `parseConcurrency`。 */
+function boundConcurrency(value: number): number {
+  if (!Number.isFinite(value)) return 1;
+  return Math.min(MAX_CONCURRENCY, Math.max(1, Math.trunc(value)));
+}
+
+/** `--concurrency` 的取值。非法输入在这里就抛，和 `--ids` 同一条纪律。 */
+export function parseConcurrency(spec: string | undefined): number {
+  if (spec === undefined) return DEFAULT_CONCURRENCY;
+  const value = Number(spec);
+  if (!Number.isInteger(value) || value < 1 || value > MAX_CONCURRENCY) {
+    throw new Error(`--concurrency 只接受 1 到 ${MAX_CONCURRENCY} 的整数，收到 ${JSON.stringify(spec)}。`);
+  }
+  return value;
+}
+
+/** 跑一批题：题号按升序派发进一个有界池，完成即结算。
+ *
+ * ## 形状
+ *
+ * 滚动池，不是分批 —— 一道题结算就立刻补进下一道，池子一直是满的。派发顺序是升序，
+ * 结算顺序是完成顺序，两者在并发下必然不同，`outcomes` 记的是**结算顺序**。
+ * 没有「按顺序提交」的需求：每道题自己写自己的 Run，题与题之间没有交付顺序。
+ *
+ * ## 为什么并发是安全的
+ *
+ * 并发只在**一个 Node 进程、一条 JS 线程**内发生。三处共享状态各自成立：
+ *
+ * 1. **SQLite**：`store/store.ts` 用 `node:sqlite` 的 `DatabaseSync`，写路径是
+ *    `BEGIN IMMEDIATE` → 同步回调 → `COMMIT`，中间没有 `await`。单线程 JS 下没有
+ *    第二个执行流能挤进这段，事务因此天然原子；两道题不可能交错在同一次写里。
+ * 2. **检索发号闸**：`agent/rate-limit.ts` 的限流器是**模块级**单例（arXiv 3s、
+ *    Crossref 1s），用 promise 链串行化。并发的是题，不是请求：五道题同时要查 arXiv，
+ *    仍然排在同一条队上 3s 发一次。预注册的检索纪律一字不破。代价要说清 ——
+ *    这条闸是并发加速比的地板：全批 arXiv 请求数 × 3s 是任何并发都压不下去的墙钟。
+ * 3. **战役记忆**：注入端只读同题页（`questions/q<id>.md`），题与题读的不是同一个文件；
+ *    写回端在题终态之后，`campaign.ts` 的 `append` 是「读 → 写临时文件 → rename」
+ *    三个同步调用，同样没有 `await`，所以两道题的追加不会互相截断。共享的只有
+ *    `log.md`，多道题的行按结算顺序落，各是各的一行。
+ *
+ * 模型端的速率限制不靠并发上限来守：撞上 429 由 executor 的 `TRANSIENT_RETRY` 退避重试，
+ * 抖动因此不会再被记成 `provider_error`（那正是 pilot 结尾触发熔断的东西）。
+ *
+ * ## 熔断在并发下的语义
+ *
+ * 同类连击按**结算顺序**计数——那是唯一存在的全序，派发顺序在这里说明不了任何事。
+ * 触发之后：停止派发新题，**不取消在飞的题**（它们的 token 已经烧掉了，让它们落终态，
+ * 拿到证据比省下尾巴上那点墙钟值钱），等全部结算完再退出。因此欠账 = 从未派发过的题，
+ * 而 `completed` 与 `failedByClass` 都在排空之后才定稿。
+ */
 export async function runBatch(questionIds: readonly number[], options: BatchOptions): Promise<BatchReport> {
   const log = options.log ?? ((line: string) => process.stdout.write(`${line}\n`));
   const repoRoot = resolve(options.repoRoot ?? process.cwd());
+  const limit = boundConcurrency(options.concurrency ?? 1);
+  const total = questionIds.length;
   const outcomes: QuestionOutcome[] = [];
   let cause = "";
   let streak = 0;
-  let stopped: BatchStop | null = null;
+  let halted: { stoppedAt: string; reason: string } | null = null;
+  let dispatched = 0;
 
-  for (const [index, questionId] of questionIds.entries()) {
-    const outcome = await runOne(questionId, { ...options, repoRoot });
+  // 槽位号只为进度行服务：并发日志里没有它就分不清哪几行属于同一条流水。
+  const idle = Array.from({ length: limit }, (_, index) => index + 1);
+  type Landed = { ticket: number; slot: number; outcome: QuestionOutcome };
+  const inflight = new Map<number, Promise<Landed>>();
+  let ticket = 0;
+
+  const fill = () => {
+    while (!halted && inflight.size < limit && dispatched < total) {
+      const questionId = questionIds[dispatched]!;
+      dispatched += 1;
+      const slot = idle.shift()!;
+      const seat = ticket;
+      ticket += 1;
+      inflight.set(
+        seat,
+        runOne(questionId, { ...options, repoRoot }).then((outcome) => ({ ticket: seat, slot, outcome })),
+      );
+    }
+  };
+
+  fill();
+  while (inflight.size > 0) {
+    const landed = await Promise.race(inflight.values());
+    inflight.delete(landed.ticket);
+    idle.push(landed.slot);
+    const outcome = landed.outcome;
     outcomes.push(outcome);
     log(
-      `[batch] ${index + 1}/${questionIds.length} q${outcome.questionId} | ${outcome.status} | `
+      `[batch] ${outcomes.length}/${total} s${landed.slot} q${outcome.questionId} | ${outcome.status} | `
       + `${outcome.seconds.toFixed(1)}s${outcome.detail ? ` | ${outcome.detail}` : ""}`,
     );
-    if (outcome.status === "passed") {
-      cause = "";
-      streak = 0;
+
+    if (!halted) {
+      if (outcome.status === "passed") {
+        cause = "";
+        streak = 0;
+      }
+      if (!CLEAN.has(outcome.status)) {
+        const current = outcome.classification ?? outcome.status;
+        streak = current === cause ? streak + 1 : 1;
+        cause = current;
+        const outage = INFRASTRUCTURE_FAILURE_CODES.has(current as FailureCode);
+        if (streak >= (outage ? OUTAGE_STOP : SAME_CLASS_STOP)) {
+          halted = { stoppedAt: new Date().toISOString(), reason: `连续 ${streak} 次 ${current}` };
+          // 串行时在飞的只有刚结算的这一道，池子已经空了，这行不打——日志与并发前逐字相同。
+          if (inflight.size > 0) {
+            log(
+              `[batch] 熔断触发：${halted.reason}。停止派发新题，等在飞的 ${inflight.size} 题结算完再退出`
+              + "（不取消：它们的钱已经花了）",
+            );
+          }
+        }
+      }
     }
-    if (CLEAN.has(outcome.status)) continue;
+    fill();
+  }
 
-    const current = outcome.classification ?? outcome.status;
-    streak = current === cause ? streak + 1 : 1;
-    cause = current;
-    const outage = INFRASTRUCTURE_FAILURE_CODES.has(current as FailureCode);
-    if (streak < (outage ? OUTAGE_STOP : SAME_CLASS_STOP)) continue;
-
-    const remainingIds = questionIds.slice(index + 1);
+  let stopped: BatchStop | null = null;
+  if (halted) {
+    const remainingIds = questionIds.slice(dispatched);
     stopped = {
-      stoppedAt: new Date().toISOString(),
-      reason: `连续 ${streak} 次 ${current}`,
-      completed: index + 1,
-      total: questionIds.length,
+      ...halted,
+      completed: outcomes.length,
+      total,
       remaining: compactIds(remainingIds),
       remainingIds: [...remainingIds],
       failedByClass: tallyFailures(outcomes),
@@ -221,7 +337,6 @@ export async function runBatch(questionIds: readonly number[], options: BatchOpt
       `[batch] 熔断停批：${stopped.reason}。已完成 ${stopped.completed}/${stopped.total}，`
       + `剩余 --ids ${stopped.remaining || "（无）"}`,
     );
-    break;
   }
 
   // 欠账写成文件，续跑的人不必从几小时的日志里翻那一行。
@@ -388,7 +503,11 @@ export function createCampaignMemory(repoRoot: string, dbPath: string): Campaign
   });
 }
 
-/** 真实执行器：每道题一个 Harness，绑在这道题自己的取消信号上。 */
+/** 真实执行器：每道题一个 Harness，绑在这道题自己的取消信号上。
+ *
+ * 并发的题共用同一个 executor，这是有意的：`Runner.run` 每次调用自建 RunState，
+ * 不跨调用留状态；被共用的只有模型客户端和它底下的连接池，那本来就该共用。
+ */
 export function createHarnessRunner(store: SqliteStore, memory: CampaignMemory | null = null): RunQuestion {
   // 用量由 harness 每个 Attempt 落一条 `sdk.usage`，这里不再挂第二个写库回调。
   const execute = createQwenExecutor();
@@ -411,6 +530,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       args: argv,
       options: {
         ids: { type: "string" },
+        // 同时在飞几道题。默认 3、上限 MAX_CONCURRENCY，安全性论证见 `runBatch`。
+        concurrency: { type: "string" },
         "dry-run": { type: "boolean", default: false },
         // 消融臂：关掉跨 run 记忆的注入与写回。被消融的是数据通道本身，不是一个返回
         // 空结果的工具 —— TS 栈没有 memory_search，模型的记忆面只有注入这一条。
@@ -429,8 +550,10 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     return 2;
   }
   let questionIds: number[];
+  let concurrency: number;
   try {
     questionIds = parseIds(parsed.values.ids);
+    concurrency = parseConcurrency(parsed.values.concurrency);
   } catch (error) {
     process.stdout.write(`[batch] ${error instanceof Error ? error.message : String(error)}\n`);
     return 2;
@@ -450,6 +573,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         : createHarnessRunner(store, noMemory ? null : createCampaignMemory(repoRoot, dbPath)),
       repoRoot,
       dryRun,
+      concurrency,
       memoryArm: noMemory ? "off" : "on",
     });
     return report.outcomes.every((item) => CLEAN.has(item.status)) ? 0 : 1;

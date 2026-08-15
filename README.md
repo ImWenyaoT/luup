@@ -73,7 +73,8 @@ pnpm dev       # http://127.0.0.1:5173
 ```sh
 pnpm canary                              # 单题冒烟，走 live 模型
 pnpm batch --ids 1-125 --dry-run         # 先看计划，零执行
-pnpm batch --ids 3,54,61                 # 串行、断点续跑：已交付的题自动跳过
+pnpm batch --ids 3,54,61                 # 断点续跑：已交付的题自动跳过
+pnpm batch --ids 1-125 --concurrency 3   # 有界并发，默认 3、上限 5；1 即串行
 pnpm batch --ids 1-30 --no-memory        # 记忆消融臂
 pnpm eval --db outputs/runtime/typescript-runs.db   # 离线指标，不调模型
 ```

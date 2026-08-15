@@ -2,7 +2,11 @@ import {
   MaxTurnsExceededError,
   ModelBehaviorError,
   ModelRefusalError,
+  retryPolicies,
   Runner,
+  type ModelProvider,
+  type ModelSettings,
+  type RetryPolicy,
 } from "@openai/agents";
 
 import { ContractError, StageError } from "./agent/failures.ts";
@@ -136,8 +140,82 @@ export function maxTurnsFor(role: Role): number {
   return MAX_TURNS_BY_ROLE[role];
 }
 
-export function createQwenExecutor(onComplete?: (metrics: StageMetrics) => void): StageExecutor {
-  const runner = new Runner({ modelProvider: qwenModelProvider(), tracingDisabled: true });
+/** 明确瞬时的 HTTP 状态：限流与服务端故障。
+ *
+ * 判据只看 `normalized.statusCode` —— SDK 已经把 status 从 provider 异常里解出来了
+ * （`runner/modelRetry.mjs` 的 `getStatusCode`，含 `cause` 递归）。绝不匹配错误正文：
+ * 散文匹配会把语义错误（提示词太长、参数非法）误判成瞬时故障，一路重试到超时为止。
+ * 4xx 里除 429 之外的全部落在这条判据之外，照旧立即终止。
+ */
+const TRANSIENT_STATUS: RetryPolicy = ({ normalized }) => {
+  const status = normalized.statusCode;
+  if (status === undefined) return false;
+  return status === 429 || status >= 500;
+};
+
+/** 传输层的有界退避重试。**不是 Attempt 重试**，边界见下。
+ *
+ * ## 这是什么
+ *
+ * 同一次模型调用在网络层失败之后，用同一份 input 再发一次。重试的是**传输**：
+ * 提示词一字未改，模型没有第二次纠错机会，Attempt 计数与 corrections 计数都不动。
+ * 预注册协议 `controls.no_retry` 注册的是「无隐式 Attempt 重试」——契约不合格不重试，
+ * 那条纪律原样有效：`ContractError` 与 `MaxTurnsExceededError` 一次都不重发。
+ *
+ * 起因是 Phase A pilot 结尾连续 5 次 `provider_error` 触发熔断停批：供应商瞬时故障，
+ * 而 harness 一次退避都没做，把可恢复的抖动全部记成了终态失败。
+ *
+ * ## 为什么用 SDK 配置而不是自己写
+ *
+ * `@openai/agents` 0.14.3 内置 runner 级重试：`modelSettings.retry`（`maxRetries` /
+ * `policy` / `backoff`），由 `runner/modelRetry.mjs` 的 `getResponseWithRetry` 执行，
+ * `run.mjs` 每一次模型调用都走它。自造一层只会与它叠加成两套语义。三条它已经做对、
+ * 自己写很难做对的事：
+ *
+ * 1. **取消优先于重试**：`evaluateRetry` 见到 `normalized.isAbort` 直接不重试，
+ *    退避等待本身也绑在 `request.signal` 上。阶段 deadline（`roles.ts` 的 300s）
+ *    与批跑单题 40 分钟因此仍是硬上界 —— 重试**不可能**把一个 Attempt 拖过期限。
+ * 2. **重试要记账**：`addFailedRetryAttemptsToUsage` 把失败的尝试补进 `usage.requests`，
+ *    于是「这次调用重试过几次」在既有用量事件里就看得见，不必另开一条遥测。
+ * 3. **provider 说了算**：`retryPolicies.providerSuggested()` 读 `x-should-retry` 头，
+ *    provider 明说「别重试」时是**硬否决**，压过下面两条状态码判据。
+ *
+ * ## 两层重试的实情
+ *
+ * 底下的 `openai` 客户端自己默认就重试 2 次（`openai@6` 的 `maxRetries ?? 2`，
+ * 亚秒级退避）——这在本次改动**之前就已经在跑**，pilot 那 5 次 `provider_error`
+ * 是穿过了它才落到我们手上的。SDK 只在第 2 次及以后的 runner 级尝试上关掉客户端重试
+ * （`shouldDisableProviderManagedRetry`），所以最坏路径是：首次尝试（客户端最多 3 发）
+ * + 退避 2s 后第 2 次（1 发）+ 退避 8s 后第 3 次（1 发）。加的不是重试的有无，
+ * 而是**等待的量级**：客户端那两次亚秒级重试救不了一次持续几秒的抖动。
+ *
+ * 2s / 8s 由 `initialDelayMs=2000` × `multiplier=4` 得到，`maxDelayMs` 封在 8s，
+ * `jitter` 打散 ±12.5%（`getDefaultDelayMs`）——并发批跑下同时撞上限流的几道题
+ * 不会踩着同一个节拍一起重发。provider 给了 `Retry-After` 时以它为准。
+ */
+export const TRANSIENT_RETRY: ModelSettings = {
+  retry: {
+    // 2 次之后仍失败就不是抖动，是停机；继续重试只是把整批的墙钟烧在一个死掉的端点上。
+    maxRetries: 2,
+    policy: retryPolicies.any(
+      retryPolicies.providerSuggested(),
+      retryPolicies.networkError(),
+      TRANSIENT_STATUS,
+    ),
+    backoff: { initialDelayMs: 2_000, multiplier: 4, maxDelayMs: 8_000, jitter: true },
+  },
+};
+
+/** `modelProvider` 以接缝入参：默认是唯一的模型接线（`seams/model.ts`），
+ *  测试注入按脚本抛状态码的替身，用来验证退避判据本身，零网络零 LLM。 */
+export function createQwenExecutor(
+  onComplete?: (metrics: StageMetrics) => void,
+  modelProvider: ModelProvider = qwenModelProvider(),
+): StageExecutor {
+  // 重试挂在 RunConfig 上，五个角色共用一份：瞬时故障是端点的属性，不是角色的属性。
+  // Agent 自己的 modelSettings（`seams/model.ts` 的 `sharedModelSettings`）不带 retry 键，
+  // 合并时（`mergeModelSettings`）不会把这里的配置盖掉。
+  const runner = new Runner({ modelProvider, tracingDisabled: true, modelSettings: TRANSIENT_RETRY });
   return async ({ runId, role, agent, input, timeoutMs, onUsage }) => {
     const signal = AbortSignal.timeout(timeoutMs);
     // `outputType` 校验失败时 SDK 不给异常挂 state：`runner/turnResolution.mjs` 直接
@@ -205,6 +283,9 @@ export function createQwenExecutor(onComplete?: (metrics: StageMetrics) => void)
           { cause: error },
         ));
       }
+      // 走到这里的瞬时故障已经退避重试过（`TRANSIENT_RETRY`）并且仍然失败，或者
+      // 判据认定它根本不瞬时（4xx 语义错误）。两种都是终态：`provider_error` 的语义
+      // 因此从「provider 报错了」收紧为「provider 报错且重试救不回来」。
       return fail(new StageError(
         "provider_error",
         `${role} provider call failed: ${error instanceof Error ? error.message : String(error)}`,
