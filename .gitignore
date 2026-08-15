@@ -3,23 +3,38 @@
 !.env.example
 .DS_Store
 
-# 会话工具状态
+# 会话工具状态：本机 agent 工具的私有配置，因人而异，跟踪它只会制造无意义 diff。
+# `.agents/`、`.codex/` 本仓尚未出现，先行忽略——同类落点，等出现再补等于先脏一次。
 .claude/
+.agents/
+.codex/
 
-# TS 栈依赖与构建产物
+# 依赖与构建产物
 node_modules/
-/.pnpm-store/
 dist/
 coverage/
 *.tsbuildinfo
-/outputs/runtime/
-/outputs/playwright/
-/outputs/e2e/
-/*.db
 
 # 运行期瞬态。边界纪律（architecture.md「存储裁决」）：
-# runs-ts/ 与 memory/ 是 source of truth，runs/ 是 Python 期的只读归档，三者永不 ignore；
-# 只有「删掉重算即可」的瞬态才 ignore——批跑停批时留下的欠账便签：欠了哪些题的权威在
-# sqlite（runs.science125_id + status），这个文件只是给人复制粘贴 `--ids` 用的，
-# 删掉重跑一次就有。
-/outputs/batch-remaining.json
+# `runs-ts/`、`memory/`、`data/` 是 source of truth，`runs/` 是 Python 期只读归档（ADR-0004），
+# 四者永不 ignore；只有「删掉重算即可」的瞬态才 ignore。
+# `outputs/` 整个是派生物——批跑与 e2e 的 sqlite、playwright 结果、评估导出的 markdown
+# （`src/eval/scoring.ts --out`）、停批欠账便签。欠账的权威在 sqlite
+# （`runs.science125_id + status`），便签只是给人复制 `--ids` 用，删掉重跑一次就有。
+/outputs/
+/*.db
+
+# SQLite 边车。主件是证据要入库（`runs-ts/*.db` 已跟踪），边车只在进程活着时有意义，
+# 所以按后缀精确匹配——不写 `*.db*`，那会连主件一起吞掉。
+# 四种形状实测自一次 e2e（`store.ts` 单写者锁 + `schema.ts` 的 `journal_mode = WAL`）。
+*.db-wal
+*.db-shm
+*.db-journal
+*.writer-lock.db
+
+# 原子写的孤儿：`src/campaign/campaign.ts` 先写 `<记忆页>.<pid>.tmp` 再 rename，进程被杀即残留。
+*.tmp
+
+# 无人值守批跑的控制台副本。正本是显式重定向进 `runs-ts/*.log` 的那份（已跟踪、是证据），
+# 所以这里只忽略 nohup 的兜底文件，不忽略 `*.log`。
+nohup.out

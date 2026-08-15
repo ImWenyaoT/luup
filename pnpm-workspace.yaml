@@ -1,8 +1,18 @@
 packages:
   # 可执行入口一层。harness 本体是根包（`src/`），只有交付面单独成包。
   - 'apps/*'
+  # dsh 重建地基。与 `src/` 并行存在直至对等，不进根 ci 链。
+  - 'dsh-app'
 
 allowBuilds:
+  # dsh 的本地子进程/终端面需要各自的原生构建；不放行则 pty 与 bash 工具在运行期才炸。
+  '@deepseek-ai/dsh-subprocess-local': true
+  koffi: true
+  node-pty: true
+  # pi-ai 全量 provider catalog 顺带拖进来的传递依赖，luup 只走百炼 route，
+  # 不放行其 postinstall（只是跳过可选的构建步骤，包本身照常可解析）。
+  '@google/genai': false
+  protobufjs: false
   esbuild: true
   # lefthook 的 postinstall 只是把当前平台的二进制链到 node_modules/.bin。
   lefthook: true

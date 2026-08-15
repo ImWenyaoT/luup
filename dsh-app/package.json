@@ -1,0 +1,13 @@
+{
+  "name": "@luup/dsh-app",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "dsh (DeepSeek Harness) foundation for the luup rebuild. Parallel to src/ until parity.",
+  "scripts": {
+    "smoke": "./scripts/smoke.sh"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh": "0.1.0-rc.6"
+  }
+}

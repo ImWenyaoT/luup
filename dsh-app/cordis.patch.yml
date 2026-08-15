@@ -1,0 +1,51 @@
+# luup dsh 地基：用户 patch 层，叠在 dsh-base + dsh-headless 两个 bundle 之上。
+#
+# dsh 的产品路径是 profile（`$DSH_HOME/profiles/<name>` = package.json + cordis.patch.yml），
+# 不是一份自造的整树 cordis.yml——所以这里只写「与出厂 headless 的差量」：
+#   1. 把 base 里空挂（dormant）的 llm-pi-ai 填上百炼 route
+#   2. 把默认模型从 deepseek-v4-flash 换成 qwen3.7-plus
+#   3. 关掉绑 DEEPSEEK_API_KEY 的 web_search
+# 其余保持出厂 headless 组合，减少地基验证阶段的自造变量。
+#
+# 凭据纪律：apiKeyEnv 是「环境变量名」的引用，按请求解析；baseURL 走 env 读取。
+# 任何密钥值都不进本文件。
+
+# ── 1. 百炼 route ────────────────────────────────────────────────────────────
+# base 以零 route 空挂 llm-pi-ai，此处补上 providers 即激活。
+# `bailian` 不是 pi-ai 自带 catalog route，因此是「整条自声明」：
+# api / baseURL / models 三者都必须由本 profile 供给。
+- id: llm-pi-ai
+  config:
+    providers:
+      bailian:
+        displayName: Bailian (Qwen)
+        # 引用而非取值：credential 按请求从环境/凭据库解析。
+        apiKeyEnv: QWEN_API_KEY
+        # 百炼 compatible-mode 是 OpenAI Chat Completions 线协议。
+        api: openai-completions
+        # 专属工作区端点，从环境注入；缺失即整条 route 构建失败（响亮失败，不静默降级）。
+        baseURL: !!js process.env.QWEN_BASE_URL
+        # 端点 URL 无法被 pi-ai 识别为 qwen，推理字段方言必须显式声明。
+        compat:
+          thinkingFormat: qwen
+        models:
+          - id: !!js process.env.LUUP_MODEL_ID ?? 'qwen3.7-plus'
+            name: Qwen3.7 Plus
+            contextWindow: 262144
+            maxTokens: 32768
+
+# ── 2. 默认模型 ──────────────────────────────────────────────────────────────
+# provider 取 llm-pi-ai 的 route key。
+- id: agent-default-model
+  config:
+    provider: bailian
+    model: !!js process.env.LUUP_MODEL_ID ?? 'qwen3.7-plus'
+
+# ── 3. 关掉用不到的重件 ──────────────────────────────────────────────────────
+# 出厂 web_search 走 DeepSeek Messages 端点、绑 DEEPSEEK_API_KEY；本仓没有该凭据，
+# 且 luup 的检索面将来自建（arXiv）。关掉工具本身，模型就看不到这个必然失败的调用。
+- id: tool-web
+  disabled: true
+
+- id: web-search-deepseek
+  disabled: true
