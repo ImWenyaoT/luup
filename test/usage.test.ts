@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 
 import { ContractError, StageError } from "../src/agent/failures.ts";
 import { createDeterministicRuntime, createDeterministicVerifier } from "../src/executors/deterministic.ts";

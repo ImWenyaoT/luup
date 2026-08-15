@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 
 import { ArxivLookupError, fetchArxivByIds, publishedYear } from "../src/agent/arxiv.ts";
 import type { Research, ResearchPlan } from "../src/agent/contracts.ts";

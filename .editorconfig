@@ -1,0 +1,7 @@
+# Editor-side declaration of the repo's text conventions — the one path git's
+# filters cannot reach: this pins what EDITORS write to disk.
+root = true
+
+[*]
+end_of_line = lf
+insert_final_newline = true

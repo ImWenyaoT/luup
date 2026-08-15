@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import test, { type TestContext } from "node:test";
+import { test, type TestContext } from "vitest";
 
 import type { DomainArtifact } from "../src/agent/contracts.ts";
 import {
@@ -38,7 +38,7 @@ type Seed = {
 /** 造一个真库：走 SqliteStore 自己的写入路径，不手搓 SQL —— 评估读的必须是生产形状。 */
 function fixture(t: TestContext, seeds: Seed[]): string {
   const dir = mkdtempSync(join(tmpdir(), "luup-metrics-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
   const path = join(dir, "runs.db");
   const store = new SqliteStore(path);
 

@@ -3,6 +3,8 @@ packages:
 
 allowBuilds:
   esbuild: true
+  # lefthook 的 postinstall 只是把当前平台的二进制链到 node_modules/.bin。
+  lefthook: true
   sharp: true
 
 minimumReleaseAgeExclude:

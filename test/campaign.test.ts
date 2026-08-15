@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import test, { type TestContext } from "node:test";
+import { test, type TestContext } from "vitest";
 
 import {
   CampaignMemory,
@@ -21,7 +21,7 @@ const NOW = new Date("2026-08-14T09:15:30.500Z");
 
 function memoryDir(t: TestContext, seedExisting = ""): string {
   const dir = mkdtempSync(join(tmpdir(), "luup-memory-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
   if (seedExisting) {
     mkdirSync(join(dir, "questions"), { recursive: true });
     writeFileSync(join(dir, "questions", "q7.md"), seedExisting, "utf8");
@@ -157,7 +157,7 @@ function capturing(): { execute: StageExecutor; inputs: Array<Record<string, unk
 test("the researcher input carries prior attempts after the stable prefix", async (t) => {
   const dir = memoryDir(t, "# q7\n\n- [2026-08-01T00:00:00Z] FAILED | run a | 走死过的路\n");
   const store = new SqliteStore(":memory:");
-  t.after(() => store.close());
+  t.onTestFinished(() => store.close());
   const { execute, inputs } = capturing();
 
   const runId = store.createRun("问题", { science125Id: 7 });
@@ -171,7 +171,7 @@ test("the researcher input carries prior attempts after the stable prefix", asyn
 test("the ablation arm injects nothing and the fact is on the record", async (t) => {
   const dir = memoryDir(t, "# q7\n\n- [2026-08-01T00:00:00Z] FAILED | run a | 走死过的路\n");
   const store = new SqliteStore(":memory:");
-  t.after(() => store.close());
+  t.onTestFinished(() => store.close());
   const { execute, inputs } = capturing();
 
   const runId = store.createRun("问题", { science125Id: 7, memoryArm: "off" });
@@ -188,7 +188,7 @@ test("the ablation arm injects nothing and the fact is on the record", async (t)
 test("a run records what it injected even when it fails", async (t) => {
   const dir = memoryDir(t, "# q7\n\n- [2026-08-01T00:00:00Z] FAILED | run a | 一\n- [2026-08-02T00:00:00Z] FAILED | run b | 二\n");
   const store = new SqliteStore(":memory:");
-  t.after(() => store.close());
+  t.onTestFinished(() => store.close());
 
   const runId = store.createRun("问题", { science125Id: 7, memoryArm: "on" });
   await new Harness(store, capturing().execute, { memory: open(t, dir) }).execute(runId);

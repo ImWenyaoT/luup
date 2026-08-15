@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import test, { type TestContext } from "node:test";
+import { test, type TestContext } from "vitest";
 
 import {
   compactIds,
@@ -21,7 +21,7 @@ import { SqliteStore } from "../src/store/store.ts";
 
 function workspace(t: TestContext): string {
   const dir = mkdtempSync(join(tmpdir(), "luup-batch-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
 
@@ -34,7 +34,7 @@ function batch(
 ): { store: SqliteStore; repoRoot: string; report: Promise<BatchReport> } {
   const store = overrides.store ?? new SqliteStore(":memory:");
   const repoRoot = overrides.repoRoot ?? workspace(t);
-  t.after(() => store.close());
+  t.onTestFinished(() => store.close());
   return {
     store,
     repoRoot,

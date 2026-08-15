@@ -292,14 +292,3 @@ export function checkResolvedMetadata(
   return checks;
 }
 
-/** B1 + B3：完全离线的那一半，只看本 run 已冻结的事实。 */
-export function verifyOfflineReferences(
-  references: readonly string[],
-  cards: ReadonlyMap<string, FrozenCitation>,
-): { targets: ReferenceTarget[]; checks: ReferenceCheck[] } {
-  const targets = resolveTargets(references, cards);
-  return {
-    targets,
-    checks: [checkReferenceCount(references), ...checkFrozenMembership(targets, cards.size)],
-  };
-}

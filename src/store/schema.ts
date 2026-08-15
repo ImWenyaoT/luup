@@ -4,7 +4,6 @@ export const RUN_STATUSES = ["running", "completed", "review_rejected", "failed"
 export const ATTEMPT_STATUSES = ["running", "completed", "failed"] as const;
 
 export type RunStatus = (typeof RUN_STATUSES)[number];
-export type AttemptStatus = (typeof ATTEMPT_STATUSES)[number];
 
 /** 全库唯一的时间戳来源。
  *

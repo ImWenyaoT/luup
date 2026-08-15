@@ -1,7 +1,5 @@
 import type { ResearchPlan } from "./contracts.ts";
 
-const cjk = /[\u3400-\u4dbf\u4e00-\u9fff]/;
-
 /** \u4e0a\u6e38\u51bb\u7ed3\u4e8b\u5b9e\uff1a\u6240\u6709 Research Artifact \u91cc\u51fa\u73b0\u8fc7\u7684 evidence ID \u4e0e URL\u3002 */
 export type FrozenEvidence = { evidenceIds: ReadonlySet<string>; urls: ReadonlySet<string> };
 
@@ -27,11 +25,6 @@ export function upstreamTraceabilityIssues(plan: ResearchPlan, frozen: FrozenEvi
     }
   }
   return issues;
-}
-
-export function validateResearchPlanQuality(plan: ResearchPlan): void {
-  const issues = researchPlanQualityIssues(plan);
-  if (issues.length > 0) throw new Error(issues.join("\uff1b"));
 }
 
 export function researchPlanQualityIssues(plan: ResearchPlan): string[] {

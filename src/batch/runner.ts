@@ -337,7 +337,7 @@ function track<T>(promise: Promise<T>): { done: Promise<void>; peek: () => Settl
   let outcome: Settled<T> | null = null;
   const done = promise.then(
     (value) => { outcome = { state: "fulfilled", value }; },
-    (reason) => { outcome = { state: "rejected", reason }; },
+    (reason: unknown) => { outcome = { state: "rejected", reason }; },
   );
   return { done, peek: () => outcome };
 }

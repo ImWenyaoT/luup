@@ -1,7 +1,5 @@
 import { z } from "zod";
 
-import type { Failure } from "./failures.ts";
-
 export const roleSchema = z.enum([
   "researcher",
   "hypothesis-generation",
@@ -210,16 +208,3 @@ export type ResearchPlan = z.infer<typeof researchPlanSchema>;
 export type Review = z.infer<typeof reviewSchema>;
 export type DomainArtifact = Research | Hypothesis | EvidenceReview | ResearchPlan | Review;
 
-export type StoredArtifact = { id: string; type: DomainArtifact["artifact_type"]; content: DomainArtifact };
-
-/** 一个业务 Attempt。SDK 内部的 model/tool turn 不升级成 Attempt，
- *  同一个 Attempt 内的结构化纠错记在 corrections 上，不虚增计数。 */
-export type AttemptRecord = {
-  role: Role;
-  ordinal: number;
-  status: "succeeded" | "failed";
-  inputArtifactIds: string[];
-  outputArtifactId: string | null;
-  corrections: number;
-  failure?: Failure;
-};

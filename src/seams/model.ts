@@ -19,9 +19,15 @@ export function qwenModelProvider(): OpenAIProvider {
   });
 }
 
-/** Demo 先让五个角色共用一个已验证模型；需要对比时用环境变量覆盖即可。 */
+/** Demo 先让五个角色共用一个已验证模型；需要对比时用环境变量覆盖即可。
+ *
+ * 变量名先读 `LUUP_MODEL_ID`：仓根 `.env` 与 Python 栈
+ * （`backend/app/agent/model.py` 的 `QwenSettings.model_id`）用的都是这个名字，
+ * 两栈共用一份 `.env` 时必须认同一个键，否则这边会静默掉回默认值。
+ * `QWEN_MODEL` 是 TS 栈自己早期用过的名字，保留为回退，别人的脚本还在用。
+ */
 export function modelForRole(): string {
-  return process.env.QWEN_MODEL || "qwen3.7-plus";
+  return process.env.LUUP_MODEL_ID || process.env.QWEN_MODEL || "qwen3.7-plus";
 }
 
 /** 结构化输出场景一律关思考：百炼在 structured output 上开思考会放大 token 且不稳。 */

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import test from "node:test";
+import { test } from "vitest";
 
 import { ArxivLookupError } from "../src/agent/arxiv.ts";
 import { EvidenceLedger, type EvidenceCitation, type EvidenceRecord } from "../src/agent/evidence.ts";
@@ -270,7 +270,7 @@ function harness(options: Parameters<typeof fake>[0] & { lookupFails?: boolean }
 test("marks a run interrupted when its database is reopened", (t) => {
   const directory = mkdtempSync(join(tmpdir(), "luup-store-"));
   const database = join(directory, "runs.db");
-  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => rmSync(directory, { recursive: true, force: true }));
 
   let store = new SqliteStore(database);
   const runId = store.createRun("q");
@@ -290,7 +290,7 @@ test("marks a run interrupted when its database is reopened", (t) => {
 test("refuses a second writer without interrupting the active run", (t) => {
   const directory = mkdtempSync(join(tmpdir(), "luup-lock-"));
   const database = join(directory, "runs.db");
-  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => rmSync(directory, { recursive: true, force: true }));
 
   const store = new SqliteStore(database);
   const runId = store.createRun("q");
@@ -302,7 +302,7 @@ test("refuses a second writer without interrupting the active run", (t) => {
 test("opens an empty SQLite writer-lock database", (t) => {
   const directory = mkdtempSync(join(tmpdir(), "luup-stale-lock-"));
   const database = join(directory, "runs.db");
-  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => rmSync(directory, { recursive: true, force: true }));
   writeFileSync(`${database}.writer-lock.db`, "");
 
   const store = new SqliteStore(database);

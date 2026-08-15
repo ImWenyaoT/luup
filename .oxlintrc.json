@@ -1,0 +1,173 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": [],
+  "categories": {
+    "correctness": "off"
+  },
+  "options": {
+    "reportUnusedDisableDirectives": "warn",
+    "typeAware": true
+  },
+  "env": {
+    "builtin": true
+  },
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/coverage/**",
+    ".claude/**",
+    "backend/**",
+    "frontend/**",
+    "**/*.js",
+    "**/*.mjs",
+    "**/*.config.ts"
+  ],
+  "overrides": [
+    {
+      // eslint recommended + typescript-eslint recommended 的逐条等价物。
+      // 迁移时对过账：那 69 条里 oxlint 只缺 no-octal，而遗留八进制字面量在
+      // ESM TypeScript 里根本编译不过（tsc TS1121），所以没有实质规则丢失。
+      "files": ["src/**/*.ts", "test/**/*.ts", "frontend-ts/src/**/*.{ts,tsx}", "frontend-ts/tests/**/*.ts"],
+      "rules": {
+        "for-direction": "error",
+        "no-async-promise-executor": "error",
+        "no-case-declarations": "error",
+        "no-compare-neg-zero": "error",
+        "no-cond-assign": "error",
+        "no-constant-binary-expression": "error",
+        "no-constant-condition": "error",
+        "no-control-regex": "error",
+        "no-debugger": "error",
+        "no-delete-var": "error",
+        "no-dupe-else-if": "error",
+        "no-duplicate-case": "error",
+        "no-empty": "error",
+        "no-empty-character-class": "error",
+        "no-empty-pattern": "error",
+        "no-empty-static-block": "error",
+        "no-ex-assign": "error",
+        "no-extra-boolean-cast": "error",
+        "no-fallthrough": "error",
+        "no-global-assign": "error",
+        "no-invalid-regexp": "error",
+        "no-irregular-whitespace": "error",
+        "no-loss-of-precision": "error",
+        "no-misleading-character-class": "error",
+        "no-nonoctal-decimal-escape": "error",
+        "no-prototype-builtins": "error",
+        "no-regex-spaces": "error",
+        "no-self-assign": "error",
+        "no-shadow-restricted-names": "error",
+        "no-sparse-arrays": "error",
+        "no-unassigned-vars": "error",
+        "no-unexpected-multiline": "error",
+        "no-unsafe-finally": "error",
+        "no-unsafe-optional-chaining": "error",
+        "no-unused-labels": "error",
+        "no-unused-private-class-members": "error",
+        "no-useless-assignment": "error",
+        "no-useless-backreference": "error",
+        "no-useless-catch": "error",
+        "no-useless-escape": "error",
+        "no-var": "error",
+        "prefer-const": "error",
+        "prefer-rest-params": "error",
+        "prefer-spread": "error",
+        "preserve-caught-error": "error",
+        "require-yield": "error",
+        "use-isnan": "error",
+        "valid-typeof": "error",
+        "typescript/ban-ts-comment": "error",
+        "typescript/no-array-constructor": "error",
+        "typescript/no-duplicate-enum-values": "error",
+        "typescript/no-empty-object-type": "error",
+        "typescript/no-explicit-any": "error",
+        "typescript/no-extra-non-null-assertion": "error",
+        "typescript/no-misused-new": "error",
+        "typescript/no-namespace": "error",
+        "typescript/no-non-null-asserted-optional-chain": "error",
+        "typescript/no-require-imports": "error",
+        "typescript/no-this-alias": "error",
+        "typescript/no-unnecessary-type-constraint": "error",
+        "typescript/no-unsafe-declaration-merging": "error",
+        "typescript/no-unsafe-function-type": "error",
+        "typescript/no-unused-expressions": "error",
+        "typescript/no-unused-vars": [
+          "error",
+          {
+            "argsIgnorePattern": "^_",
+            "varsIgnorePattern": "^_",
+            "caughtErrorsIgnorePattern": "^_"
+          }
+        ],
+        "typescript/no-wrapper-object-types": "error",
+        "typescript/prefer-as-const": "error",
+        "typescript/prefer-namespace-keyword": "error",
+        "typescript/triple-slash-reference": "error"
+      },
+      "plugins": ["typescript"]
+    },
+    {
+      // eslint 从未提供的那一档：类型感知规则。丢掉的 promise 是这个仓库最贵的
+      // 一类 bug —— harness 全程在编排异步阶段，一个没 await 的调用会让阶段"成功"
+      // 而证据没落盘。dsh 的同名规则集，按本仓路径裁剪。
+      "files": ["src/**/*.ts", "test/**/*.ts", "frontend-ts/src/**/*.{ts,tsx}", "frontend-ts/tests/**/*.ts"],
+      "rules": {
+        "typescript/await-thenable": "error",
+        "typescript/no-floating-promises": "error",
+        "typescript/no-misused-promises": "error",
+        "typescript/no-array-delete": "error",
+        "typescript/no-base-to-string": "error",
+        "typescript/no-for-in-array": "error",
+        "typescript/no-implied-eval": "error",
+        "typescript/no-meaningless-void-operator": "error",
+        "typescript/no-mixed-enums": "error",
+        "typescript/no-non-null-asserted-nullish-coalescing": "error",
+        "typescript/no-redundant-type-constituents": "error",
+        "typescript/no-unnecessary-type-assertion": "error",
+        "typescript/no-unsafe-unary-minus": "error",
+        "typescript/prefer-promise-reject-errors": "error",
+        "typescript/prefer-reduce-type-parameter": "error",
+        "typescript/prefer-return-this-type": "error",
+        "typescript/related-getter-setter-pairs": "error",
+        "typescript/unbound-method": "error",
+        "typescript/use-unknown-in-catch-callback-variable": "error"
+      },
+      "plugins": ["typescript"]
+    },
+    {
+      // 源码档：错误必须是 Error，联合分支必须穷尽。这两条在产品代码里是设计错误。
+      "files": ["src/**/*.ts", "frontend-ts/src/**/*.{ts,tsx}"],
+      "rules": {
+        "typescript/only-throw-error": "error",
+        "typescript/switch-exhaustiveness-check": [
+          "error",
+          {
+            "considerDefaultExhaustiveForUnions": true
+          }
+        ]
+      },
+      "plugins": ["typescript"]
+    },
+    {
+      // 2026-08-15 切 oxlint 时记在案的三条豁免。src/ 与 test/ 此前从未被 lint 过
+      // （eslint 只跑 frontend-ts），所以这里不是放弃已有的门，是把新增体量按价值排序。
+      // frontend-ts 不在本档内 —— 它这三条在 eslint 下就是 error 且零命中，平移不打折。
+      "files": ["src/**/*.ts", "test/**/*.ts"],
+      "rules": {
+        // src 26 处 / test 28 处。tsc strict 已挡住绝大多数不安全用法，而真正补齐这条
+        // 要连 no-unsafe-* 全家一起上；只开半条只会换来一堆 as unknown as。
+        // 想开的话，先开 no-unsafe-argument/assignment/call/member-access/return。
+        "typescript/no-explicit-any": "off",
+        // src 22 处 / test 85 处，全部是 `arr[0]!` 这类下标断言。它们"多余"只是因为
+        // tsconfig 没开 noUncheckedIndexedAccess；一旦开了这些 `!` 又全都必要。
+        // 顺序反了会白改两遍：先开 noUncheckedIndexedAccess，再开这条。
+        "typescript/no-unnecessary-type-assertion": "off",
+        // src 33 处。`!` 在本仓是"前面的不变量已经证过了"的书写惯例，测试里更是
+        // 紧跟断言之后。改成显式 narrowing 属于风格重写，不是修 bug。
+        "typescript/no-non-null-assertion": "off"
+      },
+      "plugins": ["typescript"]
+    }
+  ]
+}

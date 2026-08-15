@@ -4,7 +4,7 @@ import type { Server } from "node:http";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import test from "node:test";
+import { test } from "vitest";
 
 import { createDeterministicRuntime, createDeterministicVerifier } from "../src/executors/deterministic.ts";
 import { Harness } from "../src/harness.ts";
@@ -164,7 +164,7 @@ test("rejects an unknown runtime instead of silently selecting paid live mode", 
 
 test("unknown API routes stay JSON 404 when the SPA is enabled", async (t) => {
   const dist = mkdtempSync(join(tmpdir(), "luup-web-"));
-  t.after(() => rmSync(dist, { recursive: true, force: true }));
+  t.onTestFinished(() => rmSync(dist, { recursive: true, force: true }));
   writeFileSync(join(dist, "index.html"), "<main>Luup</main>");
 
   const store = new SqliteStore(":memory:");
