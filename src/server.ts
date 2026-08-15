@@ -4,7 +4,7 @@ import { extname, join, normalize, resolve } from "node:path";
 
 import { projectArtifact, projectRunSnapshot, projectSseFrame } from "./api/projection.ts";
 import { createDeterministicRuntime, createDeterministicVerifier } from "./executors/deterministic.ts";
-import { createQwenExecutor, type StageMetrics } from "./executor.ts";
+import { createQwenExecutor } from "./executor.ts";
 import { Harness } from "./harness.ts";
 import { MAX_QUESTION_LENGTH, normalizeQuestion, SqliteStore } from "./store/store.ts";
 
@@ -245,7 +245,10 @@ export function createDefaultApp() {
   const runtime = deterministic ? createDeterministicRuntime(store) : null;
   const harness = new Harness(
     store,
-    runtime ? runtime.execute : createQwenExecutor((metrics) => persistUsage(store, metrics)),
+    // 用量不在这里落库：executor 把它交还给 runTask，harness 每个 Attempt 落一条
+    // `sdk.usage`。这里再挂一个写库回调就是双写 —— 失败的 Attempt 会被记两遍，
+    // 纠错轮还会把同一个 Attempt 拆成两条。
+    runtime ? runtime.execute : createQwenExecutor(),
     // 确定性模式连引用验收也不打网络：它的来源是写死的，反查替身与之同源。
     runtime
       ? { createLedger: runtime.createLedger, verifyReferences: createDeterministicVerifier() }
@@ -260,14 +263,4 @@ export function runtimeMode(raw: string | undefined = process.env.LUUP_RUNTIME):
     throw new Error("LUUP_RUNTIME must be live or deterministic");
   }
   return mode;
-}
-
-/** 每次 SDK 调用成功就记一条事件。SDK 没提供的字段不猜，也不补假数据。 */
-export function persistUsage(store: SqliteStore, metrics: StageMetrics): void {
-  store.emit(metrics.runId, "sdk.usage", {
-    agent: metrics.role,
-    input_tokens: metrics.inputTokens,
-    output_tokens: metrics.outputTokens,
-    total_tokens: metrics.totalTokens,
-  });
 }

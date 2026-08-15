@@ -202,7 +202,11 @@ export class Harness {
     const ledger = this.#createLedger({ runId, attemptId });
     try {
       const result = await runTask(context, { execute: this.#execute, ledger });
-      return this.#store.publishArtifact(runId, attemptId, result.artifact, inputs, result.corrections);
+      // 成功也花了钱，而且是花得最多的那一半。用量与失败路径同一形状、同一条通路：
+      // runTask 按 Attempt 累加，store 在终态事件之前落成唯一一条 `sdk.usage`。
+      return this.#store.publishArtifact(
+        runId, attemptId, result.artifact, inputs, result.corrections, usageFacts(role, result.usage),
+      );
     } catch (error) {
       const failure = classifyFailure(error);
       const errorType = error instanceof Error ? error.name : "Error";
@@ -210,15 +214,17 @@ export class Harness {
       // 失败也花了钱。用量由 executor 挂在它抛出的分类异常上、由 runTask 沿两次调用累加，
       // 到这里才落库 —— 不透传就等于把失败的成本从账上抹掉，跑完 125 题算总账时
       // 差的正是最该被看见的那一块。拿不到就传 null，绝不用零顶替。
-      this.#store.failAttempt(runId, attemptId, failure, errorType, corrections, usageFacts(role, error));
+      this.#store.failAttempt(
+        runId, attemptId, failure, errorType, corrections,
+        usageFacts(role, (error as { usage?: StageUsage } | null)?.usage),
+      );
       throw new AttemptFailed(failure.code, failure.reason);
     }
   }
 }
 
-/** 异常上携带的 StageUsage 转成记账口径的 UsageFacts。没有就是 null —— 「不知道」不写成零。 */
-function usageFacts(role: Role, error: unknown): UsageFacts | null {
-  const usage = (error as { usage?: StageUsage } | null)?.usage;
+/** StageUsage 转成记账口径的 UsageFacts。没有就是 null —— 「不知道」不写成零。 */
+function usageFacts(role: Role, usage: StageUsage | null | undefined): UsageFacts | null {
   if (!usage) return null;
   return {
     agent: role,

@@ -197,16 +197,31 @@ export class SqliteStore {
     });
   }
 
+  /** 成功的 Attempt 落库。
+   *
+   * `usage` 与 `failAttempt` 那一份是同一件事的两半：一个业务 Attempt 至多一条
+   * `sdk.usage`，成败同一形状、同一位置（在终态事件之前）。成功路径也必须记 ——
+   * 一次运行里绝大多数 token 都烧在成功的阶段上，只记失败等于把成本账倒过来看。
+   */
   publishArtifact(
     runId: string,
     attemptId: string,
     artifact: DomainArtifact,
     inputs: StoredInput[],
     corrections: number,
+    usage: UsageFacts | null = null,
   ): StoredArtifact {
     return this.#write((db) => {
       const artifactId = shortId();
       const now = nowIso();
+      if (usage) {
+        emitEvent(db, runId, "sdk.usage", {
+          agent: usage.agent,
+          input_tokens: usage.inputTokens,
+          output_tokens: usage.outputTokens,
+          total_tokens: usage.totalTokens,
+        });
+      }
       db.prepare(
         "INSERT INTO artifacts(id, run_id, attempt_id, type, content_json, input_artifact_ids_json, "
         + "created_at) VALUES(?, ?, ?, ?, ?, ?, ?)",

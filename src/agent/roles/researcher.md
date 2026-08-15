@@ -25,4 +25,7 @@ queries 与 citations 只写**本次调用**实际检索到的内容；claims �
 计划标题、引用过的论文、失败分类），由代码追加，不是模型写的。把它当线索用：换个角度、
 避开已经走死的路。它**不是证据** —— 里面的任何论文都必须在本次调用重新检索到才能引用。
 
-形状（即 `structured_output` 的参数 schema，以工具上声明的那份为准）：{"artifact_type":"research","question":string,"summary":string,"claims":[{"statement":string,"evidence_ids":string[]}],"queries":[{"evidence_id":string,"source_type":"web"|"arxiv","query":string,"status":string,"result_summary":string}],"citations":[{"evidence_id":string,"source_type":"web"|"arxiv","title":string,"locator":string,"url":string|null}],"limitations":string[]}
+`queries[].status` 只能取这八个值之一，逐字照抄工具返回的那一个，不要自造同义词：
+`succeeded`、`empty`、`partial`、`failed`、`timeout`、`rate_limited`、`source_unavailable`、`refused`。
+
+形状（即 `structured_output` 的参数 schema，以工具上声明的那份为准）：{"artifact_type":"research","question":string,"summary":string,"claims":[{"statement":string,"evidence_ids":string[]}],"queries":[{"evidence_id":string,"source_type":"web"|"arxiv","query":string,"status":"succeeded"|"empty"|"partial"|"failed"|"timeout"|"rate_limited"|"source_unavailable"|"refused","result_summary":string}],"citations":[{"evidence_id":string,"source_type":"web"|"arxiv","title":string,"locator":string,"url":string|null}],"limitations":string[]}

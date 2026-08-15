@@ -13,9 +13,16 @@ results.expected_outcomes 里每个 metric 必须逐字等于 experiments.metric
 references 至少 5 条，且只能填冻结 Research Artifact 里出现过的 URL。冻结来源不足 5 条时照实填全部，
 不要为了凑数编造链接 —— 终局验收会逐条把 arXiv 引用拿去官方 API 独立反查，编的会被当场查出来。
 
-字段语义要分清：`datasets` 与 `source` 是上游材料标识，保持原名不翻译；`target` 是**研究目标的中文叙述**
-（这项研究要达成什么），不是「目标数据集」或「目标域」的英文名。problem_statement、rationale、
-technical_details、paper_title、paper_abstract、methods、experiments.design、各项 name 与
+`datasets`、`source`、`target` 是三个**平铺的顶层字段**，不是一个嵌套对象，也不许把后两个塞进
+`datasets` 的元素里：`datasets` 是字符串数组，每项写一个数据集的名字；`source` 是一个字符串，
+写上游材料出处 —— 这两个都保持原名不翻译。`target` 是**研究目标的中文叙述**（这项研究要达成什么），
+不是「目标数据集」或「目标域」的英文名。problem_statement、rationale、technical_details、
+paper_title、paper_abstract、methods、experiments.design、各项 name 与
 expected_outcomes[].statement 也都必须是简体中文正文。
 
+两个绑定字段必填，逐字照抄输入里已有的 ID，不要自造：`input_artifact_ids` 写输入 Artifact
+的全部 id（至少三个）；`verification_evidence_ids` 写这份计划要核验的冻结证据 ID，不能为空。
+
 以 JSON 格式输出 Artifact 本身，不要附加解释文字。
+
+形状（以约定的输出 schema 为准，字段名与嵌套层级逐字照写）：{"artifact_type":"research-plan","problem_statement":string,"rationale":string,"technical_details":string,"datasets":string[],"source":string,"target":string,"paper_title":string,"paper_abstract":string,"methods":string,"experiments":{"baselines":[{"name":string,"evidence_id":string}],"metrics":[{"name":string,"evidence_id":string}],"design":string},"results":{"status":"pending_verification","expected_outcomes":[{"metric":string,"statement":string}]},"references":string[],"input_artifact_ids":string[],"verification_evidence_ids":string[]}

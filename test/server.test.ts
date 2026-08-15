@@ -8,7 +8,7 @@ import test from "node:test";
 
 import { createDeterministicRuntime, createDeterministicVerifier } from "../src/executors/deterministic.ts";
 import { Harness } from "../src/harness.ts";
-import { createApp, persistUsage, runtimeMode } from "../src/server.ts";
+import { createApp, runtimeMode } from "../src/server.ts";
 import { SqliteStore } from "../src/store/store.ts";
 
 async function listen(): Promise<{ base: string; server: Server; store: SqliteStore }> {
@@ -154,30 +154,6 @@ test("rejects an empty question and unknown ids", async () => {
   assert.equal((await fetch(`${base}/api/artifacts/deadbeef`)).status, 404);
   assert.equal((await fetch(`${base}/api/runs/deadbeef/events`)).status, 404);
   await close(server, store);
-});
-
-test("persists live SDK usage as a public run event", () => {
-  const store = new SqliteStore(":memory:");
-  const runId = store.createRun("q");
-  persistUsage(store, {
-    runId,
-    role: "researcher",
-    requests: 1,
-    inputTokens: 12,
-    outputTokens: 5,
-    totalTokens: 17,
-    toolCalls: 2,
-    outcome: "completed",
-  });
-
-  assert.deepEqual(store.eventsAfter(runId, 0).at(-1), {
-    id: 2,
-    version: 2,
-    kind: "sdk.usage",
-    payload: { agent: "researcher", input_tokens: 12, output_tokens: 5, total_tokens: 17 },
-    created_at: store.eventsAfter(runId, 0).at(-1)!.created_at,
-  });
-  store.close();
 });
 
 test("rejects an unknown runtime instead of silently selecting paid live mode", () => {

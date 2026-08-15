@@ -20,7 +20,6 @@ import { createQwenExecutor } from "../executor.ts";
 import { Harness } from "../harness.ts";
 import { findQuestion, science125Text, type Science125Question } from "../domain/science125.ts";
 import type { StageExecutor } from "../roles.ts";
-import { persistUsage } from "../server.ts";
 import type { MemoryArm, SourceIdentity } from "../store/contracts.ts";
 import { SqliteStore } from "../store/store.ts";
 
@@ -391,7 +390,8 @@ export function createCampaignMemory(repoRoot: string, dbPath: string): Campaign
 
 /** 真实执行器：每道题一个 Harness，绑在这道题自己的取消信号上。 */
 export function createHarnessRunner(store: SqliteStore, memory: CampaignMemory | null = null): RunQuestion {
-  const execute = createQwenExecutor((metrics) => persistUsage(store, metrics));
+  // 用量由 harness 每个 Attempt 落一条 `sdk.usage`，这里不再挂第二个写库回调。
+  const execute = createQwenExecutor();
   return ({ runId, signal }) => {
     const guarded: StageExecutor = (request) => {
       // 批跑取消之后不再进下一个阶段。当前阶段自己的超时由 executor 管。

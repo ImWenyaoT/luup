@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { ContractError, StageError } from "../src/agent/failures.ts";
+import { createDeterministicRuntime, createDeterministicVerifier } from "../src/executors/deterministic.ts";
 import { usageOf, type StageUsage } from "../src/executor.ts";
 import { Harness } from "../src/harness.ts";
 import { runTask } from "../src/roles.ts";
@@ -161,5 +162,122 @@ test("failAttempt invents no usage event when there is no usage fact", () => {
   store.failAttempt(runId, attemptId, { code: "provider_error", reason: "boom" }, "StageError", 0);
 
   assert.equal(store.eventsAfter(runId, 0).some((event) => event.kind === "sdk.usage"), false);
+  store.close();
+});
+
+/** 一个成功的 reviewer Attempt 需要的两条冻结输入；accept 只读它们的 id。 */
+const reviewerInputs = [
+  { id: "plan", type: "research-plan", content: {} },
+  { id: "review", type: "evidence-review", content: {} },
+];
+
+const review = {
+  artifact_type: "review",
+  research_plan_artifact_id: "will be overwritten",
+  evidence_review_artifact_id: "will be overwritten",
+  scores: { scientific_value: 4, technical_depth: 4, application_potential: 4 },
+  weaknesses: [],
+  feedback: [],
+  suggested_successor_roles: [],
+  accepted: true,
+};
+
+test("a successful Attempt carries the usage of every call it made", async () => {
+  const spent: StageUsage = { requests: 1, inputTokens: 10, outputTokens: 4, totalTokens: 14, toolCalls: 0 };
+  let call = 0;
+  const execute: StageExecutor = ({ onUsage }) => {
+    call += 1;
+    // 首轮：模型调用成功（用量已经发生），产物被合同门驳回。
+    if (call === 1) {
+      onUsage?.(spent);
+      return Promise.reject(new ContractError("产物违反后置约束"));
+    }
+    onUsage?.(spent);
+    return Promise.resolve(review);
+  };
+
+  const result = await runTask(
+    { ...context, inputArtifacts: reviewerInputs, inputArtifactIds: ["plan", "review"] },
+    { execute },
+  );
+
+  assert.equal(call, 2);
+  assert.equal(result.corrections, 1);
+  // 被驳回的那一轮同样烧掉了 token —— 只记交出 Artifact 的那次就是漏账。
+  assert.deepEqual(result.usage, {
+    requests: 2, inputTokens: 20, outputTokens: 8, totalTokens: 28, toolCalls: 0,
+  });
+});
+
+test("an executor that reports no usage leaves the Attempt usage unknown", async () => {
+  const execute: StageExecutor = () => Promise.resolve(review);
+  const result = await runTask(
+    { ...context, inputArtifacts: reviewerInputs, inputArtifactIds: ["plan", "review"] },
+    { execute },
+  );
+  assert.equal(result.usage, null);
+});
+
+test("publishArtifact records the usage as one event ahead of the published artifact", () => {
+  const store = new SqliteStore(":memory:");
+  const runId = store.createRun("问题");
+  const attemptId = store.startAttempt(runId, "reviewer");
+
+  store.publishArtifact(runId, attemptId, review as any, [], 0, {
+    agent: "reviewer", inputTokens: 20, outputTokens: 8, totalTokens: 28,
+  });
+
+  const events = store.eventsAfter(runId, 0);
+  const usage = events.filter((event) => event.kind === "sdk.usage");
+  assert.equal(usage.length, 1);
+  assert.deepEqual(usage[0]!.payload, {
+    agent: "reviewer", input_tokens: 20, output_tokens: 8, total_tokens: 28,
+  });
+  // 与失败路径同一形状：用量发生在终态事件之前。
+  assert.ok(usage[0]!.version < events.find((event) => event.kind === "artifact.published")!.version);
+  store.close();
+});
+
+test("publishArtifact invents no usage event when there is no usage fact", () => {
+  const store = new SqliteStore(":memory:");
+  const runId = store.createRun("问题");
+  const attemptId = store.startAttempt(runId, "reviewer");
+
+  store.publishArtifact(runId, attemptId, review as any, [], 0);
+
+  assert.equal(store.eventsAfter(runId, 0).some((event) => event.kind === "sdk.usage"), false);
+  store.close();
+});
+
+test("every completed Attempt of a whole run lands exactly one usage event", async () => {
+  const store = new SqliteStore(":memory:");
+  const runtime = createDeterministicRuntime(store);
+  const spent: StageUsage = { requests: 1, inputTokens: 100, outputTokens: 40, totalTokens: 140, toolCalls: 1 };
+  // 离线替身不花钱，所以由这层替它报一份用量 —— 验的是记账通路，不是替身的账。
+  const execute: StageExecutor = (request) => {
+    request.onUsage?.(spent);
+    return runtime.execute(request);
+  };
+
+  const runId = store.createRun("问题");
+  const outcome = await new Harness(store, execute, {
+    createLedger: runtime.createLedger,
+    verifyReferences: createDeterministicVerifier(),
+  }).execute(runId);
+
+  assert.equal(outcome.status, "completed");
+  const events = store.eventsAfter(runId, 0);
+  const usage = events.filter((event) => event.kind === "sdk.usage");
+  const published = events.filter((event) => event.kind === "artifact.published");
+  // 成对：每个成功 Attempt 一条，不多也不少 —— 多一条就是双写。
+  assert.equal(usage.length, published.length);
+  assert.equal(usage.length, 5);
+  for (const [index, event] of usage.entries()) {
+    assert.equal(event.version + 1, published[index]!.version);
+  }
+  assert.equal(
+    usage.reduce((total, event) => total + Number(event.payload.total_tokens), 0),
+    5 * spent.totalTokens,
+  );
   store.close();
 });

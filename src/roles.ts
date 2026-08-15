@@ -37,6 +37,10 @@ export type StageExecutor = (request: {
   agent: Agent<any, any>;
   input: string;
   timeoutMs: number;
+  /** 这次调用**已经发生**的用量。成功路径经由它交还，失败路径挂在抛出的异常上
+   *  （`error.usage`）—— 两条路都汇进 `runTask` 的同一个累加器。
+   *  离线替身不花钱，不实现它就是「不知道」，不会被写成零。 */
+  onUsage?: (usage: StageUsage) => void;
 }) => Promise<unknown>;
 
 const normalize = (text: string) => text.split(/\s+/).filter(Boolean).join(" ");
@@ -301,6 +305,8 @@ export type TaskRunResult = {
   artifact: DomainArtifact;
   corrections: number;
   searches: EvidenceRecord[];
+  /** 这个 Attempt 全部调用的合计用量。执行器不报就是 null —— 「不知道」不写成零。 */
+  usage: StageUsage | null;
 };
 
 /** 执行一个 Task，至多两次模型调用：首轮 + 一次结构化纠错。
@@ -330,7 +336,7 @@ export async function runTask(
   let candidate: unknown;
   let correction: { issue: string; candidate: unknown; frozenSearches?: EvidenceRecord[] } | undefined;
   let corrections = 0;
-  // 一个 Attempt 最多两次模型调用；失败时往上带的是这个 Attempt 的**合计**已发生用量，
+  // 一个 Attempt 最多两次模型调用；成功与失败往上带的都是这个 Attempt 的**合计**已发生用量，
   // 只带最后一次会把纠错轮之前烧掉的 token 从账上抹掉。
   let spent: StageUsage | null = null;
   // 这道线判的是「卡死」，不是「慢」：一个阶段 5 分钟还没交出 Artifact 就是挂了。
@@ -371,10 +377,18 @@ export async function runTask(
           priorAttempts: context.priorAttempts,
           correction,
         }),
+        // 模型调用成功了这一段就算花掉了 —— 哪怕紧接着的合同门把产物驳回，
+        // 也不能因为「这一轮没交出 Artifact」把已经烧掉的 token 从账上抹掉。
+        onUsage: (usage) => { spent = addUsage(spent, usage); },
       });
       // researcher 交作业走合成工具，最终文本只是收尾回执，产物在上报窗口里。
       candidate = context.role === "researcher" ? capturedArtifact(capture, context.role) : returned;
-      return { artifact: accept(parseValue(candidate)), corrections, searches: ledger.scopedRecords() };
+      return {
+        artifact: accept(parseValue(candidate)),
+        corrections,
+        searches: ledger.scopedRecords(),
+        usage: spent,
+      };
     } catch (error) {
       spent = addUsage(spent, (error as { usage?: StageUsage }).usage);
       if (round === 1 || !(error instanceof ContractError || (error as Error)?.name === "ZodError")) {

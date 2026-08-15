@@ -28,19 +28,29 @@ export type StageMetrics = {
  * 只在成功路径记账，等于把所有失败的成本从账上抹掉 —— 跑完 125 题算总账时，
  * 差的正好是最该被看见的那一块。
  *
- * SDK 把这些挂在 `AgentsError.state` 上（`errors.d.ts`：所有错误类都带 `state?: RunState`，
- * `RunState.usage` 是聚合用量）。拿不到就返回 null，绝不用零顶替：
- * 零的意思是「确实没花」，缺失的意思是「不知道」。
+ * `errors.d.ts` 上所有错误类都**声明**了 `state?: RunState`（`RunState.usage` 是聚合用量），
+ * 但 0.14.3 只有一部分构造点真的传了它。读源码逐条核对过：
+ * - `MaxTurnsExceededError`（`runner/turnPreparation.mjs:20`）传了 state，这里读得到；
+ * - `ModelBehaviorError`（`runner/turnResolution.mjs:795`，`outputType` 校验失败）没传，
+ *   `run.mjs` 的 catch 里那句 `attachRunStateToError` 也只补 ToolCallError ——
+ *   这条路改由 `createQwenExecutor` 的 `errorHandlers.invalidFinalOutput` 观测，见下面；
+ * - 超时中断与 provider 抛错走的是原始异常，SDK 不暴露 state，也没有等价钩子：
+ *   这两条如实记 null，不造数。
+ *
+ * 拿不到就返回 null，绝不用零顶替：零的意思是「确实没花」，缺失的意思是「不知道」。
  */
 export type StageUsage = Omit<StageMetrics, "runId" | "role" | "outcome">;
 
-export function usageOf(error: unknown): StageUsage | null {
-  const state = (error as { state?: { usage?: unknown; _generatedItems?: unknown } } | null)?.state;
-  const usage = state?.usage as
+/** 一份 `RunState` 形状的观测点：聚合用量 + 已生成的 run item。
+ *  `usageOf` 与 `invalidFinalOutput` 观测器读的是同一个形状，所以只写一次。 */
+type UsageSource = { usage?: unknown; _generatedItems?: unknown } | null | undefined;
+
+function stageUsageOf(source: UsageSource): StageUsage | null {
+  const usage = source?.usage as
     | { requests?: number; inputTokens?: number; outputTokens?: number; totalTokens?: number }
     | undefined;
   if (!usage || typeof usage.totalTokens !== "number") return null;
-  const items = Array.isArray(state?._generatedItems) ? state._generatedItems : [];
+  const items = Array.isArray(source?._generatedItems) ? source._generatedItems : [];
   return {
     requests: usage.requests ?? 0,
     inputTokens: usage.inputTokens ?? 0,
@@ -48,6 +58,10 @@ export function usageOf(error: unknown): StageUsage | null {
     totalTokens: usage.totalTokens,
     toolCalls: items.filter((item) => (item as { type?: string }).type === "tool_call_item").length,
   };
+}
+
+export function usageOf(error: unknown): StageUsage | null {
+  return stageUsageOf((error as { state?: UsageSource } | null)?.state);
 }
 
 /** provider 说「上下文放不下了」的各种说法。
@@ -86,15 +100,32 @@ export function isContextOverflow(detail: string): boolean {
 
 export function createQwenExecutor(onComplete?: (metrics: StageMetrics) => void): StageExecutor {
   const runner = new Runner({ modelProvider: qwenModelProvider(), tracingDisabled: true });
-  return async ({ runId, role, agent, input, timeoutMs }) => {
+  return async ({ runId, role, agent, input, timeoutMs, onUsage }) => {
     const signal = AbortSignal.timeout(timeoutMs);
+    // `outputType` 校验失败时 SDK 不给异常挂 state：`runner/turnResolution.mjs` 直接
+    // `new ModelBehaviorError(message)`，而 `attachRunStateToError` 只补 ToolCallError，
+    // 于是 `usageOf` 在这条最常见的失败路径上永远读回 null。SDK 自己留了观测口 ——
+    // `errorHandlers.invalidFinalOutput` 收到的 `runData.state` 就是那一次 run 的状态，
+    // 用量此刻已经累加完（`run.mjs` 每收到一次模型响应就 `state._context.usage.add`）。
+    // 处理器返回 undefined 表示不接管，SDK 照常抛原来的错误：这里只观测，不改语义。
+    const observed: { usage: StageUsage | null } = { usage: null };
     let result;
     try {
-      result = await runner.run(agent, input, { maxTurns: 6, signal });
+      result = await runner.run(agent, input, {
+        maxTurns: 6,
+        signal,
+        errorHandlers: {
+          invalidFinalOutput: ({ context, runData }) => {
+            observed.usage = stageUsageOf(runData.state as UsageSource)
+              ?? stageUsageOf({ usage: context.usage, _generatedItems: runData.newItems });
+            return undefined;
+          },
+        },
+      });
     } catch (error) {
       // 先记账再分类：下面每条分支都会抛，记账写进分支就会漏掉其中几条。
       // 记账本身失败绝不拖垮 Attempt —— 少一条用量事件，远好过因为记账把 Run 打死。
-      const spent = usageOf(error);
+      const spent = usageOf(error) ?? observed.usage;
       if (spent) {
         try {
           onComplete?.({ runId, role, ...spent, outcome: "failed" });
@@ -146,16 +177,18 @@ export function createQwenExecutor(onComplete?: (metrics: StageMetrics) => void)
       throw new StageError("provider_error", `${role} returned no final output`);
     }
     const usage = result.runContext.usage;
-    onComplete?.({
-      runId,
-      role,
+    const spent: StageUsage = {
       requests: usage.requests,
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
       totalTokens: usage.totalTokens,
       toolCalls: result.newItems.filter((item) => item.type === "tool_call_item").length,
-      outcome: "completed",
-    });
+    };
+    // 成功也要记账，而且要落到与失败同一条通路上：`onUsage` 把用量交还给 runTask，
+    // 由它按 Attempt 累加、再由 harness 落成唯一一条 `sdk.usage`。
+    // `onComplete` 只是进程内遥测（canary 报告），不写库 —— 两者不重复记账。
+    onUsage?.(spent);
+    onComplete?.({ runId, role, ...spent, outcome: "completed" });
     return result.finalOutput;
   };
 }
