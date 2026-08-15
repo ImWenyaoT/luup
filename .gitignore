@@ -6,7 +6,20 @@
 # 会话工具状态
 .claude/
 
+# TS 栈依赖与构建产物
+node_modules/
+/.pnpm-store/
+dist/
+coverage/
+*.tsbuildinfo
+/outputs/runtime/
+/outputs/playwright/
+/outputs/e2e/
+/*.db
+
 # 运行期瞬态。边界纪律（architecture.md「存储裁决」）：
-# runs/ 与 memory/ 是 source of truth，永不 ignore；
-# 只有「删掉重算即可」的瞬态才 ignore——现栈仅剩跨进程锁（backend/app/services/launch.py）。
-runs/.active.json
+# runs-ts/ 与 memory/ 是 source of truth，runs/ 是 Python 期的只读归档，三者永不 ignore；
+# 只有「删掉重算即可」的瞬态才 ignore——批跑停批时留下的欠账便签：欠了哪些题的权威在
+# sqlite（runs.science125_id + status），这个文件只是给人复制粘贴 `--ids` 用的，
+# 删掉重跑一次就有。
+/outputs/batch-remaining.json

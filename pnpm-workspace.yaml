@@ -1,0 +1,18 @@
+packages:
+  # 可执行入口一层。harness 本体是根包（`src/`），只有交付面单独成包。
+  - 'apps/*'
+
+allowBuilds:
+  esbuild: true
+  # lefthook 的 postinstall 只是把当前平台的二进制链到 node_modules/.bin。
+  lefthook: true
+  sharp: true
+
+minimumReleaseAgeExclude:
+  - fast-xml-parser@5.10.0
+  - is-unsafe@2.0.0
+  - lucide-react@1.26.0
+  - '@openai/agents@0.14.3'
+  - '@openai/agents-core@0.14.3'
+  - '@openai/agents-openai@0.14.3'
+  - '@openai/agents-realtime@0.14.3'

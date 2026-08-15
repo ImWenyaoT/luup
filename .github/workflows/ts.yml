@@ -1,0 +1,77 @@
+name: TS
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # 根包（harness 本体）的门矩阵，与 `pnpm run ci` 同序。覆盖率地板写在
+  # vitest.config.ts，不在这里复写一份——两处数字会分叉。
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+      - name: Enable pnpm
+        # 不装 pnpm/action-setup：corepack 直接认 package.json 的 packageManager，
+        # 版本只有一个事实源，也少钉一个 action。
+        run: corepack enable pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Type check
+        run: pnpm run typecheck
+      - name: Lint
+        run: pnpm run lint
+      - name: Test
+        run: pnpm run test:coverage
+      - name: Build
+        run: pnpm run build
+
+  # 交付形态的端到端：确定性 runtime + 单进程托管静态产物，零 LLM 调用、零外部网络。
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+      - name: Enable pnpm
+        run: corepack enable pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Install Playwright browsers
+        run: pnpm --filter @luup/frontend exec playwright install --with-deps chromium
+      - name: Test
+        # playwright.config.ts 的 webServer 自己 build 再起 src/main.ts，这里不重复 build。
+        run: pnpm run test:e2e
+      - name: Upload Playwright traces
+        if: ${{ failure() }}
+        # CI 的 reporter 是 `github`，不产 HTML 报告；失败时值得捞的是 trace，
+        # 它落在 playwright.config.ts 的 outputDir（仓根 outputs/playwright/results）。
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-traces
+          path: outputs/playwright/results/
+          include-hidden-files: true
+          retention-days: 7

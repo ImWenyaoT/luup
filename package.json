@@ -1,0 +1,45 @@
+{
+  "name": "luup",
+  "private": true,
+  "packageManager": "pnpm@11.15.1",
+  "engines": {
+    "node": ">=24",
+    "pnpm": ">=11.15.1"
+  },
+  "scripts": {
+    "setup": "pnpm install --frozen-lockfile",
+    "dev": "pnpm --filter @luup/frontend dev",
+    "dev:api": "LUUP_RUNTIME=deterministic node --env-file-if-exists=.env --experimental-strip-types --watch src/main.ts",
+    "dev:api:live": "node --env-file-if-exists=.env --experimental-strip-types --watch src/main.ts",
+    "build": "pnpm --filter @luup/frontend build",
+    "start": "pnpm build && node --env-file-if-exists=.env --experimental-strip-types src/main.ts",
+    "canary": "node --env-file-if-exists=.env --experimental-strip-types src/canary.ts",
+    "batch": "node --env-file-if-exists=.env --experimental-strip-types src/batch/runner.ts",
+    "eval": "node --experimental-strip-types src/eval/metrics.ts",
+    "typecheck": "tsc --noEmit && pnpm --filter @luup/frontend typecheck",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "pnpm --filter @luup/frontend test:e2e",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "knip": "knip --treat-config-hints-as-errors",
+    "ci": "pnpm run typecheck && pnpm run lint && pnpm build && pnpm test:coverage",
+    "docs:pdf": "pandoc docs/technical-solution.md -o docs/technical-solution.pdf --pdf-engine=xelatex --toc --toc-depth=2 -V documentclass=ctexart -V CJKmainfont='Noto Sans CJK SC' -V mainfont='DejaVu Sans' -V monofont='DejaVu Sans Mono' -V geometry:a4paper -V geometry:margin=2cm -V linkcolor=black -V toccolor=black"
+  },
+  "type": "module",
+  "dependencies": {
+    "@openai/agents": "0.14.3",
+    "fast-xml-parser": "^5.10.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "@vitest/coverage-v8": "4.1.10",
+    "knip": "6.32.2",
+    "lefthook": "2.1.10",
+    "oxlint": "1.78.0",
+    "oxlint-tsgolint": "7.0.2001",
+    "typescript": "^6.0.3",
+    "vitest": "4.1.10"
+  }
+}

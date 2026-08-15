@@ -1,0 +1,24 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "exclude": ["duplicates"],
+  "ignoreBinaries": [
+    "pandoc"
+  ],
+  "ignoreDependencies": [
+    "lefthook",
+    "lucide-react"
+  ],
+  "workspaces": {
+    ".": {
+      "entry": [
+        "src/eval/scoring.ts",
+        "test/**/*.test.ts"
+      ],
+      "project": ["src/**/*.ts", "test/**/*.ts"]
+    },
+    "apps/web": {
+      "entry": ["tests/**/*.spec.ts"],
+      "project": ["src/**/*.{ts,tsx}", "src/**/*.css", "tests/**/*.ts", "*.ts"]
+    }
+  }
+}
