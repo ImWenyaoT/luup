@@ -108,30 +108,41 @@ function buildStageInput(spec: {
 
 /** 用本次调用真正发生过的检索，改写 Research Artifact 里所有证据字段。
  *
- * 三道门，对齐 Python 期 `app/harness.py`（ADR-0004 已删）对 ResearchArtifact 的校验：
+ * 检索台账是每次检索的权威记录，harness 自己持有；模型往 `queries` 里写的那份是**转录**，
+ * 不是决定。所以三段分工：
  *
- * 1. `queries` 必须**恰好**冻结本次调用的每一次检索 —— 集合相等，不是子集。
- *    少报一次就能把「查过但结果不利」的检索藏起来，多报一次就是凭空捏造检索动作。
+ * 1. `queries` 由台账实录**整体填充**，模型写的降为参考输入。集合不一致时落一条漂移
+ *    事件、两向各自计数（漏报 = 台账有而模型没写，虚报 = 模型写了而台账没有），
+ *    虚报条目直接丢弃 —— 它们不对应任何真实检索，进不了证据面。
+ *    这里曾经是一道死刑门（集合不等即 `ContractError`）。它证伪于 v2 批：turn 预算
+ *    6→12 之后模型检索更多、需转录的记录更多，漏报率反而从 6% 升到 24%。转录负担与
+ *    检索量同向增长，提示词收敛不了 —— 与 `withFrozenQuestion`、引用元数据回填同一模式，
+ *    抄写不可变数据本来就不该由模型负责。
  * 2. 每条 query 的 metadata 由代码写定（source_type / query / status / result_summary），
  *    模型改不动 —— 否则它可以把 `empty` 写成 `succeeded`。
  * 3. 每条 citation 必须逐字出自它所属那次检索的返回值；claims 可以再加上输入 Artifact
  *    里已冻结的证据 —— 论断能基于上一轮的结论继续，检索记录不能。
+ *    **这一段是模型的选择行为，不是转录**：引一条从没跑过的检索是捏造，照旧判死。
  */
 function canonicalizeResearch(
   proposed: Research,
   scoped: EvidenceRecord[],
   inherited: ReadonlySet<string>,
+  onDrift: (drift: ArtifactDrift) => void,
 ): Research {
   const byId = new Map(scoped.map((record) => [record.evidenceId, record]));
-  const reported = new Set(proposed.queries.map((query) => query.evidence_id));
-  const missing = scoped.filter((record) => !reported.has(record.evidenceId));
-  const unknown = [...reported].filter((id) => !byId.has(id));
-  if (missing.length > 0 || unknown.length > 0) {
-    throw new ContractError([
-      "queries must freeze exactly this attempt's searches.",
-      missing.length > 0 ? `missing: ${missing.map((item) => item.evidenceId).join(", ")}.` : "",
-      unknown.length > 0 ? `never performed: ${unknown.join(", ")}.` : "",
-    ].filter(Boolean).join(" "));
+  const reported = [...new Set(proposed.queries.map((query) => query.evidence_id))];
+  const missing = scoped.filter((record) => !reported.includes(record.evidenceId))
+    .map((record) => record.evidenceId);
+  const invented = reported.filter((id) => !byId.has(id));
+  if (missing.length > 0 || invented.length > 0) {
+    onDrift({
+      artifactType: proposed.artifact_type,
+      field: "queries",
+      before: reported.join(", "),
+      after: scoped.map((record) => record.evidenceId).join(", "),
+      transcription: { missing, invented },
+    });
   }
 
   const citations = proposed.citations.map((citation) => {
@@ -180,6 +191,9 @@ export type ArtifactDrift = {
   field: string;
   before: string;
   after: string;
+  /** 转录漂移的两向明细，只有「模型抄写台账」这类字段（目前只有 `queries`）填它。
+   *  计数与 ID 都要留：光有「发生过漂移」说不出是漏报还是虚报，两者的含义天差地别。 */
+  transcription?: { missing: string[]; invented: string[] };
 };
 
 /** 用冻结 Run question 覆写模型转述的那一份。
@@ -258,7 +272,7 @@ function acceptFor(
         if (inheritedResearch.length > 0 && !hasNovelSearch) {
           throw new ContractError("supplementary research repeated every inherited source/query");
         }
-        return canonicalizeResearch(proposed, scoped, frozenEvidenceOf(context).evidenceIds);
+        return canonicalizeResearch(proposed, scoped, frozenEvidenceOf(context).evidenceIds, onDrift);
       };
 
     case "hypothesis-generation":

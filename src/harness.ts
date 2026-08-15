@@ -210,6 +210,14 @@ export class Harness {
           field: item.field,
           before: summarize(item.before),
           after: summarize(item.after),
+          // 转录类字段（queries）多带两向明细：只知道「不一致」说不出模型是漏抄还是编造，
+          // 而这两件事的含义天差地别。计数是精确的，ID 列表与 before/after 同样截断。
+          ...(item.transcription === undefined ? {} : {
+            missing_count: item.transcription.missing.length,
+            invented_count: item.transcription.invented.length,
+            missing: summarize(item.transcription.missing.join(", ")),
+            invented: summarize(item.transcription.invented.join(", ")),
+          }),
         });
       }
       // 成功也花了钱，而且是花得最多的那一半。用量与失败路径同一形状、同一条通路：
