@@ -4,6 +4,7 @@ import { test } from "vitest";
 import { CrossrefLookupError, resolveCrossrefDoi, searchCrossref } from "../src/agent/crossref.ts";
 import { EvidenceLedger } from "../src/agent/evidence.ts";
 import { createRoles } from "../src/agent/roles/index.ts";
+import { createReviewerSearchPermit } from "../src/agent/roles/reviewer.ts";
 
 const work = (doi: string, title: string, extra: Record<string, unknown> = {}) => ({
   DOI: doi,
@@ -126,7 +127,11 @@ test("Researcher and Reviewer have retrieval surfaces, and other roles remain to
     "crossref_search",
     "structured_output",
   ]);
-  assert.deepEqual(agents.reviewer.tools.map((item: any) => item.name).sort(), ["arxiv_search", "crossref_search"]);
+  assert.deepEqual(agents.reviewer.tools.map((item: any) => item.name).sort(), [
+    "arxiv_search",
+    "crossref_search",
+    "structured_output",
+  ]);
   assert.match(agents.reviewer.instructions as string, /反证/);
   assert.match(agents.reviewer.instructions as string, /方法风险/);
   // 其余领域角色零工具；ResearchPlan 只有合成上报工具，不是检索面。
@@ -139,4 +144,11 @@ test("Researcher and Reviewer have retrieval surfaces, and other roles remain to
   );
   // 不设具名 toolChoice：Qwen 挂两个工具时拒绝 required，具名又会锁死只能用一个源
   assert.equal(agents.researcher.modelSettings.toolChoice, undefined);
+});
+
+test("Reviewer search budget is cumulative across both retrieval tools", () => {
+  const permit = createReviewerSearchPermit(2);
+  permit();
+  permit();
+  assert.throws(() => permit(), /search budget exhausted/);
 });

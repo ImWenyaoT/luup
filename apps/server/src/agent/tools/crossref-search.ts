@@ -11,7 +11,7 @@ import type { EvidenceLedger } from "../evidence.ts";
  *
  * locator 用 `doi:<DOI>`：DOI 是这类来源唯一稳定的标识，canonicalize 按它认回真身。
  */
-export function createCrossrefSearchTool(ledger: EvidenceLedger) {
+export function createCrossrefSearchTool(ledger: EvidenceLedger, beforeSearch?: () => void) {
   return tool({
     name: "crossref_search",
     description: [
@@ -23,6 +23,7 @@ export function createCrossrefSearchTool(ledger: EvidenceLedger) {
       query: z.string().min(1).describe("Search keywords in English"),
     }),
     async execute(input, _context, details) {
+      beforeSearch?.();
       const result = await searchCrossref(input.query, { rows: 5, signal: details?.signal });
       const record = ledger.record({
         tool: "crossref_search",

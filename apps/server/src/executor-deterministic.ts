@@ -220,7 +220,7 @@ export function createDeterministicRuntime(store: SqliteStore): {
       }).evidenceId;
     }
 
-    return {
+    return await reportStructuredOutput(agent, {
       artifact_type: "review",
       research_plan_artifact_id: ofType("research-plan").at(-1)!.id,
       evidence_review_artifact_id: ofType("evidence-review").at(-1)!.id,
@@ -230,7 +230,7 @@ export function createDeterministicRuntime(store: SqliteStore): {
       feedback: [],
       suggested_successor_roles: [],
       accepted: true,
-    };
+    });
   };
 
   return { execute, createLedger };

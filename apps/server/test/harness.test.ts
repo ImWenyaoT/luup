@@ -319,7 +319,7 @@ function fake(
     });
     reviews += 1;
     const rejected = reviews <= (options.rejectReviews ?? 0);
-    return {
+    return await reportStructuredOutput(agent, {
       artifact_type: "review",
       research_plan_artifact_id: ofType("research-plan").at(-1)!.id,
       evidence_review_artifact_id: ofType("evidence-review").at(-1)!.id,
@@ -329,7 +329,7 @@ function fake(
       feedback: rejected ? ["修订计划。"] : [],
       suggested_successor_roles: rejected ? ["research-plan"] : [],
       accepted: !rejected,
-    };
+    });
   };
 
   // fake 必须往 Harness 那本台账里记，否则 runTask 看到的检索记录是空的

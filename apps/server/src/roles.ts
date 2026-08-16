@@ -104,6 +104,7 @@ function buildStageInput(spec: {
     payload.rejected_candidate = spec.correction.candidate;
     if (spec.correction.frozenSearches) {
       payload.frozen_searches = spec.correction.frozenSearches;
+      payload.correction_search_policy = "reuse frozen_searches; do not run retrieval tools again";
     }
   }
   return JSON.stringify(payload);
@@ -406,7 +407,7 @@ export async function runTask(
   options: { execute: StageExecutor; ledger?: EvidenceLedger },
 ): Promise<TaskRunResult> {
   const ledger = options.ledger ?? new EvidenceLedger();
-  const { agents, capture, planCapture } = createRoles(ledger);
+  const { agents, capture, planCapture, reviewCapture } = createRoles(ledger);
   const agent = agents[context.role];
   if (
     context.role !== "researcher" &&
@@ -444,7 +445,13 @@ export async function runTask(
     // 台账跨纠错轮累积，上报窗口不跨：纠错轮要求模型重新交一份完整 Artifact，
     // 上一轮捕获到的那份必须先作废，否则守卫会把第二次上报当成重复调用拒掉。
     const outputCapture =
-      context.role === "researcher" ? capture : context.role === "research-plan" ? planCapture : undefined;
+      context.role === "researcher"
+        ? capture
+        : context.role === "research-plan"
+          ? planCapture
+          : context.role === "reviewer"
+            ? reviewCapture
+            : undefined;
     outputCapture?.beginRound();
     drift = [];
     try {

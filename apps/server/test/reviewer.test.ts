@@ -3,6 +3,7 @@ import { test } from "vitest";
 
 import { EvidenceLedger } from "../src/agent/evidence.ts";
 import { ContractError } from "../src/agent/failures.ts";
+import { reportStructuredOutput } from "../src/agent/roles/structured-output.ts";
 import { runTask, type StageExecutor } from "../src/roles.ts";
 import type { TaskContext } from "../src/store/contracts.ts";
 import { SqliteStore } from "../src/store/store.ts";
@@ -56,9 +57,9 @@ function successfulSearch(ledger: EvidenceLedger, status: "succeeded" | "partial
 
 test("a reviewer without usable independent evidence gets one correction and then fails", async () => {
   const inputs: Record<string, unknown>[] = [];
-  const execute: StageExecutor = ({ input }) => {
+  const execute: StageExecutor = ({ agent, input }) => {
     inputs.push(JSON.parse(input));
-    return Promise.resolve(review);
+    return reportStructuredOutput(agent, review);
   };
 
   const failure = await runTask(context(), { execute, ledger: new EvidenceLedger() }).then(
@@ -70,11 +71,12 @@ test("a reviewer without usable independent evidence gets one correction and the
   assert.equal((failure as { corrections?: number }).corrections, 1);
   assert.equal(inputs.length, 2);
   assert.deepEqual(inputs[1]?.frozen_searches, []);
+  assert.match(String(inputs[1]?.correction_search_policy), /do not run retrieval tools again/);
 });
 
 test("failed searches and searches with empty citations do not satisfy reviewer evidence", async () => {
   const ledger = new EvidenceLedger();
-  const execute: StageExecutor = () => {
+  const execute: StageExecutor = ({ agent }) => {
     const failed = ledger.record({
       tool: "arxiv_search",
       sourceType: "arxiv",
@@ -91,7 +93,10 @@ test("failed searches and searches with empty citations do not satisfy reviewer 
       resultSummary: "no citable records",
       citations: [],
     });
-    return Promise.resolve({ ...review, independent_evidence_ids: [failed.evidenceId, empty.evidenceId] });
+    return reportStructuredOutput(agent, {
+      ...review,
+      independent_evidence_ids: [failed.evidenceId, empty.evidenceId],
+    });
   };
 
   const failure = await runTask(context("reviewer-invalid-evidence"), { execute, ledger }).then(
@@ -106,9 +111,9 @@ test("failed searches and searches with empty citations do not satisfy reviewer 
 test("a successful or partial cited search lets the reviewer pass", async () => {
   for (const status of ["succeeded", "partial"] as const) {
     const ledger = new EvidenceLedger();
-    const execute: StageExecutor = () => {
+    const execute: StageExecutor = ({ agent }) => {
       const record = successfulSearch(ledger, status);
-      return Promise.resolve({ ...review, independent_evidence_ids: [record.evidenceId] });
+      return reportStructuredOutput(agent, { ...review, independent_evidence_ids: [record.evidenceId] });
     };
 
     const result = await runTask(context(`reviewer-${status}`), { execute, ledger });
@@ -127,9 +132,9 @@ test("reviewer search evidence is persisted on its own Attempt scope", async () 
   });
   const result = await runTask(context("reviewer-persisted"), {
     ledger: reviewerLedger,
-    execute: () => {
+    execute: ({ agent }) => {
       const record = successfulSearch(reviewerLedger);
-      return Promise.resolve({ ...review, independent_evidence_ids: [record.evidenceId] });
+      return reportStructuredOutput(agent, { ...review, independent_evidence_ids: [record.evidenceId] });
     },
   });
   assert.equal(result.artifact.artifact_type, "review");

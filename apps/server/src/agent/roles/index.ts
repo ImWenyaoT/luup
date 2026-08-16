@@ -16,20 +16,24 @@ export type Roles = {
   capture: StructuredOutput;
   /** ResearchPlan 的独立上报窗口，不能与 researcher 共用状态。 */
   planCapture: StructuredOutput;
+  /** Reviewer 的上报窗口；检索台账仍由同一个 ledger 持有。 */
+  reviewCapture: StructuredOutput;
 };
 
 export function createRoles(ledger: EvidenceLedger): Roles {
   const researcher = defineResearcher(ledger);
   const planner = definePlanner();
+  const reviewer = defineReviewer(ledger);
   return {
     agents: {
       researcher: researcher.agent,
       "hypothesis-generation": defineHypothesis(),
       "evidence-review": defineEvidenceReview(),
       "research-plan": planner.agent,
-      reviewer: defineReviewer(ledger),
+      reviewer: reviewer.agent,
     },
     capture: researcher.capture,
     planCapture: planner.capture,
+    reviewCapture: reviewer.capture,
   };
 }

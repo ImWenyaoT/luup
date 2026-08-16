@@ -3,6 +3,7 @@ import { test } from "vitest";
 
 import { ContractError, StageError } from "../src/agent/failures.ts";
 import { EvidenceLedger } from "../src/agent/evidence.ts";
+import { reportStructuredOutput } from "../src/agent/roles/structured-output.ts";
 import { createDeterministicRuntime, createDeterministicVerifier } from "../src/executor-deterministic.ts";
 import { usageOf, type StageUsage } from "../src/executor.ts";
 import { Harness } from "../src/harness.ts";
@@ -206,7 +207,7 @@ test("a successful Attempt carries the usage of every call it made", async () =>
   const spent: StageUsage = { requests: 1, inputTokens: 10, outputTokens: 4, totalTokens: 14, toolCalls: 0 };
   const ledger = new EvidenceLedger();
   let call = 0;
-  const execute: StageExecutor = ({ onUsage }) => {
+  const execute: StageExecutor = ({ agent, onUsage }) => {
     call += 1;
     // 首轮：模型调用成功（用量已经发生），产物被合同门驳回。
     if (call === 1) {
@@ -222,7 +223,7 @@ test("a successful Attempt carries the usage of every call it made", async () =>
       resultSummary: "one source",
       citations: [{ source_type: "arxiv", title: "source", locator: "arxiv:1", url: null }],
     });
-    return Promise.resolve({ ...review, independent_evidence_ids: [evidence.evidenceId] });
+    return reportStructuredOutput(agent, { ...review, independent_evidence_ids: [evidence.evidenceId] });
   };
 
   const result = await runTask(
@@ -244,7 +245,7 @@ test("a successful Attempt carries the usage of every call it made", async () =>
 
 test("an executor that reports no usage leaves the Attempt usage unknown", async () => {
   const ledger = new EvidenceLedger();
-  const execute: StageExecutor = () => {
+  const execute: StageExecutor = ({ agent }) => {
     const evidence = ledger.record({
       tool: "arxiv_search",
       sourceType: "arxiv",
@@ -253,7 +254,7 @@ test("an executor that reports no usage leaves the Attempt usage unknown", async
       resultSummary: "one source",
       citations: [{ source_type: "arxiv", title: "source", locator: "arxiv:1", url: null }],
     });
-    return Promise.resolve({ ...review, independent_evidence_ids: [evidence.evidenceId] });
+    return reportStructuredOutput(agent, { ...review, independent_evidence_ids: [evidence.evidenceId] });
   };
   const result = await runTask(
     { ...context, inputArtifacts: reviewerInputs, inputArtifactIds: ["plan", "review"] },

@@ -14,7 +14,7 @@ import type { EvidenceLedger } from "../evidence.ts";
  * 失败不抛异常：8 种 status 原样回给模型，让它自己决定改写查询还是如实上报查不到。
  * 把检索失败变成 Attempt 崩溃，模型就没有机会诚实地说「这条查不到」。
  */
-export function createArxivSearchTool(ledger: EvidenceLedger) {
+export function createArxivSearchTool(ledger: EvidenceLedger, beforeSearch?: () => void) {
   return tool({
     name: "arxiv_search",
     description: [
@@ -25,6 +25,7 @@ export function createArxivSearchTool(ledger: EvidenceLedger) {
       query: z.string().min(1).describe("Search keywords in English, e.g. 'retrieval augmented generation evaluation'"),
     }),
     async execute(input, _context, details) {
+      beforeSearch?.();
       const result = await searchArxiv(input.query, { maxResults: 5, signal: details?.signal });
       const record = ledger.record({
         tool: "arxiv_search",
