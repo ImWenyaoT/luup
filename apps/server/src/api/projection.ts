@@ -15,7 +15,7 @@ import {
 } from "../agent/contracts.ts";
 import { ATTEMPT_STATUSES, RUN_STATUSES } from "../store/schema.ts";
 
-export type DisplayScalar = string | number | boolean | null;
+type DisplayScalar = string | number | boolean | null;
 
 const EVENT_PAYLOAD_FIELDS: Record<string, readonly string[]> = {
   "run.created": [],
@@ -47,7 +47,7 @@ const EVENT_PAYLOAD_FIELDS: Record<string, readonly string[]> = {
   "artifact.field_overwritten": ["artifact_type", "field", "missing_count", "invented_count"],
   // reason 不进公共投影：它是校验器的内部错误信息，只用于排障和调门槛。
   "sdk.structured_correction": ["corrections"],
-  "sdk.usage": ["agent", "input_tokens", "output_tokens", "reasoning_tokens", "total_tokens"],
+  "sdk.usage": ["agent", "input_tokens", "output_tokens", "total_tokens"],
 };
 
 // sdk.output_rejected 带的是校验器内部错误信息，只用于排障，不该出网。
@@ -87,7 +87,7 @@ function projectPayload(kind: string, value: unknown): Record<string, DisplaySca
 
 // Task 层已经不存在了：固定五阶段里 Task 和 Attempt 是 1:1 的，
 // 顺序写在 harness 的控制流里而不是依赖图里，所以 Attempt 直接挂 Run + role。
-export const publicAttemptSchema = z.object({
+const publicAttemptSchema = z.object({
   id: z.string(),
   role: roleSchema,
   ordinal: z.number(),
@@ -98,18 +98,18 @@ export const publicAttemptSchema = z.object({
   finished_at: z.string().nullable(),
 });
 
-export const publicCitationSchema = z.object({
+const publicCitationSchema = z.object({
   title: z.string(),
   locator: z.string(),
   url: z.string().nullable().default(null),
 });
 
-export const publicEvidenceOutputSchema = z.object({
+const publicEvidenceOutputSchema = z.object({
   result_summary: z.string().nullable().default(null),
   citations: z.array(publicCitationSchema).default([]),
 });
 
-export const publicEvidenceSchema = z.object({
+const publicEvidenceSchema = z.object({
   id: z.string(),
   // 挂在哪次 Attempt 下。attempts[].id 本就出网，这是两个公开对象间的结构关联，
   // 轨迹视图按角色段分组靠它（2026-08-16 裁决，测试「证据行携带 attempt_id」看守）。
@@ -124,7 +124,7 @@ export const publicEvidenceSchema = z.object({
 });
 
 // Artifact 正文不随 snapshot 出网，只给引用；正文走单独的 artifact 端点。
-export const publicArtifactReferenceSchema = z.object({
+const publicArtifactReferenceSchema = z.object({
   id: z.string(),
   type: z.string(),
 });
@@ -136,7 +136,7 @@ const publicAssessmentSchema = z.object({
 
 // Artifact 详情也跨浏览器边界。每个角色只放 UI 真正展示的正文，证据 ID、上游 Artifact ID、
 // 原始 queries/citations 等审计字段继续留在 store 内部。
-export const publicArtifactContentSchema = z.discriminatedUnion("artifact_type", [
+const publicArtifactContentSchema = z.discriminatedUnion("artifact_type", [
   researchSchema.pick({ artifact_type: true, summary: true, claims: true, limitations: true }),
   hypothesisSchema.pick({
     artifact_type: true,
@@ -166,13 +166,13 @@ export const publicArtifactContentSchema = z.discriminatedUnion("artifact_type",
   }),
 ]);
 
-export const publicArtifactSchema = z.object({
+const publicArtifactSchema = z.object({
   id: z.string(),
   type: z.string(),
   content: publicArtifactContentSchema,
 });
 
-export const publicRunEventSchema = z.object({
+const publicRunEventSchema = z.object({
   id: z.number(),
   version: z.number(),
   kind: z.string(),
@@ -180,7 +180,7 @@ export const publicRunEventSchema = z.object({
   created_at: z.string(),
 });
 
-export const publicRunSnapshotSchema = z.object({
+const publicRunSnapshotSchema = z.object({
   id: z.string(),
   question: z.string(),
   status: z.enum(RUN_STATUSES),
@@ -194,10 +194,6 @@ export const publicRunSnapshotSchema = z.object({
   recent_events: z.array(publicRunEventSchema),
 });
 
-export type PublicAttempt = z.infer<typeof publicAttemptSchema>;
-export type PublicCitation = z.infer<typeof publicCitationSchema>;
-export type PublicEvidence = z.infer<typeof publicEvidenceSchema>;
-export type PublicArtifactReference = z.infer<typeof publicArtifactReferenceSchema>;
 export type PublicArtifact = z.infer<typeof publicArtifactSchema>;
 export type PublicRunEvent = z.infer<typeof publicRunEventSchema>;
 export type PublicRunSnapshot = z.infer<typeof publicRunSnapshotSchema>;

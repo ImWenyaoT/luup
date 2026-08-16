@@ -45,7 +45,7 @@ export type ReferenceVerifier = (input: {
 }) => Promise<ReferenceVerification>;
 
 /** arXiv 通路整体失效时那一条检查的 ID。它是「结论未取得」，不是「引用不合格」。 */
-export const RESOLVE_CHECK_ID = "B2.resolve";
+const RESOLVE_CHECK_ID = "B2.resolve";
 
 const toResolved = (record: ArxivRecord): ResolvedRecord => ({
   arxivId: record.arxivId,
@@ -55,7 +55,7 @@ const toResolved = (record: ArxivRecord): ResolvedRecord => ({
 });
 
 /** 生产反查通路：走 arXiv 官方 id_list，经模块级限速闸。 */
-export const arxivLookup: ArxivLookup = async (ids) =>
+const arxivLookup: ArxivLookup = async (ids) =>
   (await fetchArxivByIds(ids)).map(toResolved);
 
 /** 组装一个验收器。`lookup` 可注入，测试因此零网络零 LLM。 */

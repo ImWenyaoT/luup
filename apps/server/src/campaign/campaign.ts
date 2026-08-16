@@ -23,7 +23,7 @@ import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "no
 import { dirname, join } from "node:path";
 
 /** 注入给新 run 的历史条数上限。与 Python `PRIOR_ATTEMPT_LIMIT` 同值。 */
-export const PRIOR_ATTEMPT_LIMIT = 3;
+const PRIOR_ATTEMPT_LIMIT = 3;
 
 /** 每条确定性记录一行，前缀固定 ⇒ 读取端是 grep，不是解析器。 */
 export const ENTRY_PREFIX = "- [";
@@ -57,7 +57,7 @@ export function referenceLabel(reference: string): string {
 }
 
 /** 一条战役记录的摘要段：标题 + 引用 + 失败分类。三段都可缺，缺了就不写空占位。 */
-export function summarize(facts: CampaignFacts): string {
+function summarize(facts: CampaignFacts): string {
   const parts = [facts.title || "未产出 research-plan"];
   if (facts.references.length > 0) {
     parts.push(`引用 ${facts.references.map(referenceLabel).join(", ")}`);
@@ -125,7 +125,7 @@ export class CampaignMemory {
   }
 
   /** 同题最近若干条记录，供新 run 开局避开已知死路。零解析、零模型。 */
-  readPriorAttempts(questionId: number | null, limit = PRIOR_ATTEMPT_LIMIT): string[] {
+  readPriorAttempts(questionId: number | null): string[] {
     if (questionId === null || !this.#enabled()) return [];
     let text: string;
     try {
@@ -134,7 +134,7 @@ export class CampaignMemory {
       return [];
     }
     const entries = text.split("\n").map((line) => line.trim()).filter((line) => line.startsWith(ENTRY_PREFIX));
-    return entries.slice(-limit);
+    return entries.slice(-PRIOR_ATTEMPT_LIMIT);
   }
 
   /** run 终态后追加一行。总日志必写，题页在有题号时同步。 */

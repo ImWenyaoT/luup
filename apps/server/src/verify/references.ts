@@ -28,7 +28,7 @@ export const TITLE_OVERLAP_THRESHOLD = 0.8;
  * 注意它**不在** zod 契约里（researchPlanSchema 只要求 ≥1）：这是终局验收门，
  * 不是解析门。两者口径不同是有意的 —— 契约管「这份 Artifact 能不能被读懂」，
  * 验收管「这份成果能不能被接受」。 */
-export const MIN_REFERENCES = 5;
+const MIN_REFERENCES = 5;
 
 /** 一项引用验收规则的可展示结果。字段名与 Python 的 ReferenceCheck 对齐。 */
 export type ReferenceCheck = { id: string; pass: boolean; detail: string };
@@ -77,7 +77,7 @@ const ARXIV_ID = /^(?:\d{4}\.\d{4,5}(?:v\d+)?|[a-z-]+(?:\.[a-z]{2})?\/\d{7}(?:v\
  * 一致，但**故意各写一份**：评分口径必须比被评的生产代码更稳定，让离线评估反向依赖
  * 生产模块，改一次 agent 就可能改掉历史跑批的分数。规则一共几行，重复的代价小于这个耦合。
  */
-export function normalizeUrl(value: string): string | null {
+function normalizeUrl(value: string): string | null {
   let parsed: URL;
   try {
     parsed = new URL(value.trim());
@@ -119,7 +119,7 @@ export function extractArxivId(value: string): string | null {
 }
 
 /** 把标题折叠为只含可比较词元的形式，消除大小写和标点差异。 */
-export function normalizeTitle(value: string): string {
+function normalizeTitle(value: string): string {
   return value.toLowerCase().replace(TITLE_NOISE, " ").trim();
 }
 

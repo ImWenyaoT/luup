@@ -13,7 +13,6 @@ allowBuilds:
 minimumReleaseAgeExclude:
   - fast-xml-parser@5.10.0
   - is-unsafe@2.0.0
-  - lucide-react@1.26.0
   - '@openai/agents@0.16.0'
   - '@openai/agents-core@0.16.0'
   - '@openai/agents-openai@0.16.0'

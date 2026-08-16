@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { extname, join, normalize, resolve } from "node:path";
 
 import { projectArtifact, projectRunSnapshot, projectSseFrame } from "./api/projection.ts";
-import { createDeterministicRuntime, createDeterministicVerifier } from "./executors/deterministic.ts";
+import { createDeterministicRuntime, createDeterministicVerifier } from "./executor-deterministic.ts";
 import { createQwenExecutor } from "./executor.ts";
 import { Harness } from "./harness.ts";
 import { modelConfigStatus, setModelOverride } from "./seams/index.ts";

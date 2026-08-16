@@ -56,12 +56,11 @@ export function qwenModelProvider(): OpenAIProvider {
 
 /** Demo 先让五个角色共用一个已验证模型；需要对比时用环境变量覆盖即可。
  *
- * 变量名先读 `LUUP_MODEL_ID`：这是仓根 `.env.example` 声明的键，
- * 也是 Python 期就在用的那个（ADR-0004 退役该栈，但没人的 `.env` 要跟着改）。
- * `QWEN_MODEL` 是 TS 栈自己早期用过的名字，保留为回退，别人的脚本还在用。
+ * 变量名是 `LUUP_MODEL_ID`：仓根 `.env.example` 声明的键，也是 Python 期就在用的那个
+ * （ADR-0004 退役该栈，但没人的 `.env` 要跟着改）。
  */
 export function modelForRole(): string {
-  return override.modelId || process.env.LUUP_MODEL_ID || process.env.QWEN_MODEL || "qwen3.7-plus";
+  return override.modelId || process.env.LUUP_MODEL_ID || "qwen3.7-plus";
 }
 
 /** 结构化输出场景一律关思考：百炼在 structured output 上开思考会放大 token 且不稳。 */

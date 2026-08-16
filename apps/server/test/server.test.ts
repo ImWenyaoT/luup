@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "vitest";
 
-import { createDeterministicRuntime, createDeterministicVerifier } from "../src/executors/deterministic.ts";
+import { createDeterministicRuntime, createDeterministicVerifier } from "../src/executor-deterministic.ts";
 import { Harness } from "../src/harness.ts";
 import { createApp, runtimeMode } from "../src/server.ts";
 import { SqliteStore } from "../src/store/store.ts";

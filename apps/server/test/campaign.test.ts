@@ -124,7 +124,6 @@ test("prior attempts are the last three deterministic lines of the question page
   assert.equal(prior.length, 3);
   assert.match(prior[0]!, /run b/);
   assert.match(prior[2]!, /run d/);
-  assert.equal(memory.readPriorAttempts(7, 1).length, 1);
   // 没跑过的题、没有题号的 run：空数组，不是异常。
   assert.deepEqual(memory.readPriorAttempts(99), []);
   assert.deepEqual(memory.readPriorAttempts(null), []);

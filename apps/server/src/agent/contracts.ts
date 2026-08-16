@@ -15,7 +15,7 @@ export type Role = z.infer<typeof roleSchema>;
  * 这个字段随后还会由 EvidenceLedger 覆写，所以这里只做一个已验证必要的输入别名，
  * 对外和落库仍保持简单的 `web | arxiv` 两类。
  */
-export const sourceTypeSchema = z.preprocess(
+const sourceTypeSchema = z.preprocess(
   (value) => value === "crossref" ? "web" : value,
   z.enum(["web", "arxiv"]),
 );
@@ -28,11 +28,11 @@ export type SourceType = z.infer<typeof sourceTypeSchema>;
  * 别名直接写进枚举，模型侧只剩一个平铺的合法值集合；`crossref → web` 的归一
  * 仍由 `sourceTypeSchema` 在落库前完成，而且这个字段最终一律被台账整条覆写。
  */
-export const proposedSourceTypeSchema = z.enum(["web", "arxiv", "crossref"]);
+const proposedSourceTypeSchema = z.enum(["web", "arxiv", "crossref"]);
 
 /** 一次检索的结局。八个值与 Python 期 `app/models.py`（ADR-0004 已删）的 EvidenceStatus 逐字对齐，
  *  两边审计口径才能比对。 */
-export const evidenceStatusSchema = z.enum([
+const evidenceStatusSchema = z.enum([
   "succeeded",
   "empty",
   "partial",
@@ -210,7 +210,7 @@ export const reviewSchema = z.object({
 });
 
 export type Research = z.infer<typeof researchSchema>;
-export type Hypothesis = z.infer<typeof hypothesisSchema>;
+type Hypothesis = z.infer<typeof hypothesisSchema>;
 export type EvidenceReview = z.infer<typeof evidenceReviewSchema>;
 export type ResearchPlan = z.infer<typeof researchPlanSchema>;
 export type Review = z.infer<typeof reviewSchema>;

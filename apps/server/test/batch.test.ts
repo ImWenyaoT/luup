@@ -145,7 +145,7 @@ test("every run records its question id and its source identity", async (t) => {
 
   assert.equal(store.snapshot(runId)!.science125_id, 3);
   // repoRoot 是个不带 git 的临时目录：采不到出身就写 null，绝不编一个。
-  assert.equal(store.sourceIdentity(runId), null);
+  assert.equal(store.snapshot(runId)!.source_identity_json, null);
   assert.match(store.question(runId), /第 3 题/);
 });
 

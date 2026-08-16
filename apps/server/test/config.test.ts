@@ -15,7 +15,7 @@ import { SqliteStore } from "../src/store/store.ts";
 
 /** 配置面契约：环境变量是默认，web 覆盖是进程内状态，key 永不回显。 */
 
-const ENV_KEYS = ["QWEN_API_KEY", "QWEN_BASE_URL", "LUUP_MODEL_ID", "QWEN_MODEL"] as const;
+const ENV_KEYS = ["QWEN_API_KEY", "QWEN_BASE_URL", "LUUP_MODEL_ID"] as const;
 let saved: Record<string, string | undefined>;
 
 beforeEach(() => {

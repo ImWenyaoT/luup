@@ -49,6 +49,7 @@ pnpm run ci            # typecheck → lint → build → test:coverage，与 CI
 # 各门单跑
 pnpm run typecheck     # 根 program + apps/web program，全量
 pnpm run lint          # oxlint（含 typeAware 档）
+pnpm run knip          # 未使用导出/依赖，零容忍
 pnpm run test          # vitest
 pnpm run test:coverage # 覆盖率地板见 vitest.config.ts，只许涨不许降
 pnpm run build         # vite build → apps/web/dist
@@ -57,8 +58,9 @@ pnpm run test:e2e      # Playwright；确定性 runtime，零 LLM 调用
 
 CI 是 `.github/workflows/ts.yml` 的 `check` 与 `e2e` 两个 job，门与上面逐条对应。
 
-`pnpm run knip`（未使用导出/依赖）**不是门**：当前有一批既存命中（多为预留的公开类型），
-2026-08-15 结构定形时确认它在此之前就是红的，未一并处理。清完之前不要把它挂进 CI。
+knip 于 2026-08-16 清零并挂进 CI（此前长期红着的 35 条已随死代码审计一并清掉）。
+它现在是**零容忍**的门：新增未使用导出会红。想留一个暂时没人用的公开符号，
+先问它是不是真的需要存在——本仓的默认答案是删。
 
 ## 锚点
 

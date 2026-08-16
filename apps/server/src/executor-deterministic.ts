@@ -1,9 +1,9 @@
-import { EvidenceLedger, type EvidenceCitation } from "../agent/evidence.ts";
-import type { Research } from "../agent/contracts.ts";
-import { reportStructuredOutput } from "../agent/roles/structured-output.ts";
-import type { StageExecutor } from "../roles.ts";
-import type { SqliteStore } from "../store/store.ts";
-import { createReferenceVerifier, type ReferenceVerifier } from "../verify/verifier.ts";
+import { EvidenceLedger, type EvidenceCitation } from "./agent/evidence.ts";
+import type { Research } from "./agent/contracts.ts";
+import { reportStructuredOutput } from "./agent/roles/structured-output.ts";
+import type { StageExecutor } from "./roles.ts";
+import type { SqliteStore } from "./store/store.ts";
+import { createReferenceVerifier, type ReferenceVerifier } from "./verify/verifier.ts";
 
 /** 写死的检索结果。五条而不是一条，是因为终局引用验收要求 references ≥5（B3）——
  *  确定性运行时必须能走完包括验收在内的整条流水线，否则它验证不了自己声称验证的东西。

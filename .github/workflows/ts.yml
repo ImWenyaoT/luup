@@ -38,6 +38,8 @@ jobs:
         run: pnpm run typecheck
       - name: Lint
         run: pnpm run lint
+      - name: Knip
+        run: pnpm run knip
       - name: Test
         run: pnpm run test:coverage
       - name: Test (frontend units)

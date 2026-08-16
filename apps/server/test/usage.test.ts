@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "vitest";
 
 import { ContractError, StageError } from "../src/agent/failures.ts";
-import { createDeterministicRuntime, createDeterministicVerifier } from "../src/executors/deterministic.ts";
+import { createDeterministicRuntime, createDeterministicVerifier } from "../src/executor-deterministic.ts";
 import { usageOf, type StageUsage } from "../src/executor.ts";
 import { Harness } from "../src/harness.ts";
 import { runTask } from "../src/roles.ts";

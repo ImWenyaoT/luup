@@ -167,12 +167,6 @@ export class SqliteStore {
     return typeof value === "number" ? value : null;
   }
 
-  sourceIdentity(runId: string): SourceIdentity | null {
-    const row = this.#get("SELECT source_identity_json FROM runs WHERE id = ?", runId);
-    if (!row?.source_identity_json) return null;
-    return JSON.parse(String(row.source_identity_json)) as SourceIdentity;
-  }
-
   question(runId: string): string {
     const row = this.#get("SELECT question FROM runs WHERE id = ?", runId);
     if (!row) throw new Error(`unknown run: ${runId}`);

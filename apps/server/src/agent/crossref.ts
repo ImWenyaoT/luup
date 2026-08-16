@@ -1,7 +1,7 @@
 import type { EvidenceStatus } from "./contracts.ts";
 import { createRateLimiter } from "./rate-limit.ts";
 
-export type CrossrefRecord = {
+type CrossrefRecord = {
   doi: string;
   title: string;
   url: string;
@@ -24,7 +24,7 @@ const MIN_INTERVAL_MS = 1_000;
 
 // Crossref 的 polite pool：带上能联系到人的 User-Agent 就进较宽松的队列，
 // 匿名请求会被丢进 public pool，限流更紧且随时可能变。
-const CONTACT = process.env.LUUP_CONTACT_EMAIL || "hythmealot@gmail.com";
+const CONTACT = "hythmealot@gmail.com";
 const USER_AGENT = `luup/0.1 (https://github.com/ImWenyaoT/luup; mailto:${CONTACT})`;
 
 const acquire = createRateLimiter(MIN_INTERVAL_MS);

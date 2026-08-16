@@ -29,7 +29,7 @@ export type Attempt = {
   finished_at: string | null;
 };
 
-export type Citation = {
+type Citation = {
   title: string;
   locator: string;
   url: string | null;
@@ -45,9 +45,9 @@ export type Evidence = {
   output: { result_summary: string | null; citations: Citation[] };
 };
 
-export type ArtifactReference = { id: string; type: string };
+type ArtifactReference = { id: string; type: string };
 
-export type RunEvent = {
+type RunEvent = {
   id: number;
   version: number;
   kind: string;

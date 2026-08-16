@@ -24,7 +24,7 @@
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "knip": "knip --treat-config-hints-as-errors",
-    "ci": "pnpm run typecheck && pnpm run lint && pnpm build && pnpm test:coverage && pnpm --filter @luup/frontend test",
+    "ci": "pnpm run typecheck && pnpm run lint && pnpm run knip && pnpm build && pnpm test:coverage && pnpm --filter @luup/frontend test",
     "docs:pdf": "pandoc docs/technical-solution.md -o docs/technical-solution.pdf --pdf-engine=xelatex --toc --toc-depth=2 -V documentclass=ctexart -V CJKmainfont='Noto Sans CJK SC' -V mainfont='DejaVu Sans' -V monofont='DejaVu Sans Mono' -V geometry:a4paper -V geometry:margin=2cm -V linkcolor=black -V toccolor=black"
   },
   "devDependencies": {

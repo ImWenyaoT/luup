@@ -186,7 +186,7 @@ function canonicalizeResearch(
  * 覆写救回了一个本来要失败的 Attempt，这恰恰是它不能悄悄发生的理由：
  * 被替换掉的每个字段都要留成证据。落库的一层在 harness。
  */
-export type ArtifactDrift = {
+type ArtifactDrift = {
   artifactType: string;
   field: string;
   before: string;
@@ -360,7 +360,6 @@ function capturedArtifact(capture: StructuredOutput, role: Role): unknown {
 export type TaskRunResult = {
   artifact: DomainArtifact;
   corrections: number;
-  searches: EvidenceRecord[];
   /** 这个 Attempt 全部调用的合计用量。执行器不报就是 null —— 「不知道」不写成零。 */
   usage: StageUsage | null;
   /** 代码在这份产物上覆写掉的不可变字段。没发生就是空数组。 */
@@ -408,11 +407,9 @@ export async function runTask(
   // 它一个阶段要做多轮 LLM + 数次 arXiv/Crossref（含 arXiv 官方要求的 3s 间隔）
   // + 合成工具上报。canary 现场 researcher 撞 deadline 拿到 `deadline_exceeded`；
   // 修好 arXiv 超时后重跑，同一阶段实测 56s——离 60s 只剩 4 秒，等于没有余量。
-  const timeoutMs = Number(process.env.LUUP_STAGE_TIMEOUT_MS || 300_000);
-  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-    throw new Error("LUUP_STAGE_TIMEOUT_MS must be a positive number");
-  }
-  const deadline = Date.now() + timeoutMs;
+  // 300s 是注册过的硬上界（experiment-protocol.json 的 transient_backoff 修订），
+  // 所以写成常量而不是可调参——运行期能改它就等于给预注册留了后门。
+  const deadline = Date.now() + 300_000;
   // 一个业务 Attempt 共用一本检索账。纠错只是修 Artifact，不要求把刚做过的搜索再做一遍。
   ledger.beginScope(context.taskId);
   for (let round = 0; round < 2; round += 1) {
@@ -448,7 +445,6 @@ export async function runTask(
       return {
         artifact: accept(parseValue(candidate)),
         corrections,
-        searches: ledger.scopedRecords(),
         usage: spent,
         drift,
       };

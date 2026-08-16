@@ -12,7 +12,6 @@ import type { SqliteStore } from "../store/store.ts";
 import type { ReferenceVerifier } from "../verify/verifier.ts";
 
 export {
-  clearModelOverride,
   modelConfigStatus,
   modelConfigVersion,
   modelForRole,
