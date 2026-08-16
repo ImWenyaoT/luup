@@ -7,6 +7,21 @@ settings:
 importers:
 
   .:
+    devDependencies:
+      knip:
+        specifier: 6.32.2
+        version: 6.32.2
+      lefthook:
+        specifier: 2.1.10
+        version: 2.1.10
+      oxlint:
+        specifier: 1.78.0
+        version: 1.78.0(oxlint-tsgolint@7.0.2001)
+      oxlint-tsgolint:
+        specifier: 7.0.2001
+        version: 7.0.2001
+
+  apps/server:
     dependencies:
       '@openai/agents':
         specifier: 0.16.0
@@ -24,18 +39,6 @@ importers:
       '@vitest/coverage-v8':
         specifier: 4.1.10
         version: 4.1.10(vitest@4.1.10)
-      knip:
-        specifier: 6.32.2
-        version: 6.32.2
-      lefthook:
-        specifier: 2.1.10
-        version: 2.1.10
-      oxlint:
-        specifier: 1.78.0
-        version: 1.78.0(oxlint-tsgolint@7.0.2001)
-      oxlint-tsgolint:
-        specifier: 7.0.2001
-        version: 7.0.2001
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -71,7 +74,7 @@ importers:
         version: 19.2.8(react@19.2.8)
       shadcn:
         specifier: ^4.16.0
-        version: 4.16.0(@typescript/typescript6@6.0.2)(supports-color@10.2.2)
+        version: 4.16.0(supports-color@10.2.2)(typescript@6.0.3)
       tailwind-merge:
         specifier: ^3.6.0
         version: 3.6.0
@@ -98,8 +101,8 @@ importers:
         specifier: '>=3.9.6'
         version: 3.9.6
       typescript:
-        specifier: npm:@typescript/typescript6@>=6.0.2
-        version: '@typescript/typescript6@6.0.2'
+        specifier: ^6.0.3
+        version: 6.0.3
       vite:
         specifier: '>=8.1.5'
         version: 8.1.5(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0)
@@ -1186,10 +1189,6 @@ packages:
 
   '@types/ws@8.18.1':
     resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
-
-  '@typescript/typescript6@6.0.2':
-    resolution: {integrity: sha512-mbCddXd+jm7hfx7w2YU64/Av4/NqqeG3GoRZgxPcgoTxYjhrcfJRw9ULch71SS4G+Q3bOXFhRvPqjguN0Hyp5w==}
-    hasBin: true
 
   '@vitejs/plugin-react@6.0.4':
     resolution: {integrity: sha512-XcCQz0TBpBgljhj0gMuuDj49i6Ytqh5q1osT/Gp5uAVJUCTWxyskk/l1jwYYiu2xcNHHipdMz40EGfM1VdamVg==}
@@ -3722,10 +3721,6 @@ snapshots:
     dependencies:
       '@types/node': 24.13.3
 
-  '@typescript/typescript6@6.0.2':
-    dependencies:
-      '@typescript/old': typescript@6.0.3
-
   '@vitejs/plugin-react@6.0.4(vite@8.1.5(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))':
     dependencies:
       '@rolldown/pluginutils': 1.0.1
@@ -3936,14 +3931,14 @@ snapshots:
       object-assign: 4.1.1
       vary: 1.1.2
 
-  cosmiconfig@9.0.2(@typescript/typescript6@6.0.2):
+  cosmiconfig@9.0.2(typescript@6.0.3):
     dependencies:
       env-paths: 2.2.1
       import-fresh: 3.3.0
       js-yaml: 4.2.0
       parse-json: 5.2.0
     optionalDependencies:
-      typescript: '@typescript/typescript6@6.0.2'
+      typescript: 6.0.3
 
   cross-spawn@7.0.6:
     dependencies:
@@ -4971,7 +4966,7 @@ snapshots:
 
   setprototypeof@1.2.0: {}
 
-  shadcn@4.16.0(@typescript/typescript6@6.0.2)(supports-color@10.2.2):
+  shadcn@4.16.0(supports-color@10.2.2)(typescript@6.0.3):
     dependencies:
       '@babel/core': 7.29.7(supports-color@10.2.2)
       '@babel/parser': 7.29.7
@@ -4982,7 +4977,7 @@ snapshots:
       '@types/validate-npm-package-name': 4.0.2
       browserslist: 4.28.7
       commander: 14.0.3
-      cosmiconfig: 9.0.2(@typescript/typescript6@6.0.2)
+      cosmiconfig: 9.0.2(typescript@6.0.3)
       dedent: 1.7.2
       deepmerge: 4.3.1
       diff: 8.0.4

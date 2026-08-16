@@ -1,7 +1,8 @@
 packages:
-  # 可执行入口一层。harness 本体是根包（`src/`），只有交付面单独成包。
-  # dsh-app（实践参考学习件，ADR-0005）不在此列：它有自己的 workspace 与 lockfile，
-  # 依赖树（449 包 / 289MB）只在进目录单独 install 时才落地，根 ci 与日常 install 不背。
+  # 正常 TS 全栈形制（学 dsh：根零源码，只做 workspace 编排）：
+  # 可运行产物全在 apps/* —— `@luup/server`（harness 本体）与 `@luup/frontend`（交付面）。
+  # spikes/dsh（实践参考学习件，ADR-0005，原 dsh-app/）不在此列：它有自己的 workspace
+  # 与 lockfile，依赖树只在进目录单独 install 时才落地，根 ci 与日常 install 不背。
   - 'apps/*'
 
 allowBuilds:
@@ -13,7 +14,7 @@ minimumReleaseAgeExclude:
   - fast-xml-parser@5.10.0
   - is-unsafe@2.0.0
   - lucide-react@1.26.0
-  - '@openai/agents@0.14.3'
-  - '@openai/agents-core@0.14.3'
-  - '@openai/agents-openai@0.14.3'
-  - '@openai/agents-realtime@0.14.3'
+  - '@openai/agents@0.16.0'
+  - '@openai/agents-core@0.16.0'
+  - '@openai/agents-openai@0.16.0'
+  - '@openai/agents-realtime@0.16.0'

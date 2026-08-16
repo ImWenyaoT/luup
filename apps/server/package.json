@@ -1,0 +1,23 @@
+{
+  "name": "@luup/server",
+  "version": "0.1.0",
+  "description": "Luup harness backend: deterministic orchestration over @openai/agents, SQLite fact store, B1-B4 verifiers.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@openai/agents": "0.16.0",
+    "fast-xml-parser": "^5.10.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "@vitest/coverage-v8": "4.1.10",
+    "typescript": "^6.0.3",
+    "vitest": "4.1.10"
+  }
+}

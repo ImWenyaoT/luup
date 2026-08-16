@@ -17,7 +17,10 @@ pre-commit:
     # 只跑与改动相关的用例：vitest 顺着 import 图找出谁受影响。
     # `--passWithNoTests` 是因为改一个没有被任何测试覆盖到的文件不该阻止提交，
     # 那属于覆盖率地板的事，pre-push 的全量跑与 CI 会说话。
+    # root 让 glob 与 {staged_files} 都以 apps/server/ 为基准，vitest 的 bin 与配置
+    # 也在该包内解析——后端下沉为 workspace 成员后，根 node_modules 不再有 vitest。
     - name: vitest (related)
+      root: "apps/server/"
       glob: '{src,test}/**/*.ts'
       run: node_modules/.bin/vitest related --run --passWithNoTests {staged_files}
 

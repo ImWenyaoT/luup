@@ -9,7 +9,7 @@
     "lucide-react"
   ],
   "workspaces": {
-    ".": {
+    "apps/server": {
       "entry": [
         "src/eval/scoring.ts",
         "test/**/*.test.ts"

@@ -17,7 +17,7 @@ import { test } from "vitest";
 
 import { readScience125 } from "../src/domain/science125.ts";
 
-const PROTOCOL_PATH = fileURLToPath(new URL("../docs/design/experiment-protocol.json", import.meta.url));
+const PROTOCOL_PATH = fileURLToPath(new URL("../../../docs/design/experiment-protocol.json", import.meta.url));
 
 type Allocation = { stratum_size: number; allocated: number; ids: number[] };
 type Protocol = {

@@ -14,7 +14,7 @@ dsh 行号对应仓库 `/home/ail510/tian_wenyao/projects/oss/deepseek-harness`�
 | | |
 |---|---|
 | dsh | `packages/subagent/subagent-in-process-driver/src/structured.ts:49-141`（工具注册 74-97、提示词声明 26-29、终局守卫 109-111、staged→captured 提交 116-139） |
-| luup | `src/agent/roles/structured-output.ts`；接线在 `src/agent/roles/researcher.ts`、`src/roles.ts`（`capturedArtifact`、`capture.beginRound()`）；参数 schema 是 `src/agent/contracts.ts` 的 `researchProposalSchema` |
+| luup | `apps/server/src/agent/roles/structured-output.ts`；接线在 `apps/server/src/agent/roles/researcher.ts`、`apps/server/src/roles.ts`（`capturedArtifact`、`capture.beginRound()`）；参数 schema 是 `apps/server/src/agent/contracts.ts` 的 `researchProposalSchema` |
 
 **解决的问题**：researcher 是五个角色里唯一不能用 `outputType` 的 —— 它的产物要先与本轮检索
 台账对账才算数。此前它交自由文本，由 `roles.ts` 剥围栏、`JSON.parse`、再 zod 校验；
@@ -44,7 +44,7 @@ dsh 行号对应仓库 `/home/ail510/tian_wenyao/projects/oss/deepseek-harness`�
 | | |
 |---|---|
 | dsh | `packages/core/session/src/repair.ts:27` `interruptedTurnClosers()` |
-| luup | `src/store/store.ts:89`（重开数据库即把运行中的 run 判 `interrupted`）+ `src/batch/runner.ts:292,299`（批跑给挂死/出错的题补终态 `infra_timeout` / `infra_error`） |
+| luup | `apps/server/src/store/store.ts:89`（重开数据库即把运行中的 run 判 `interrupted`）+ `apps/server/src/batch/runner.ts:292,299`（批跑给挂死/出错的题补终态 `infra_timeout` / `infra_error`） |
 
 **解决的问题**：进程崩溃后，库里不能留下一个永远「running」的 run —— 那会让批跑的断点续跑
 分不清「还没跑」和「跑挂了」，也会让评估的分母虚高。
@@ -63,7 +63,7 @@ dsh 的会话可以是一整天的人机协作，丢掉不可接受。续跑要�
 | | |
 |---|---|
 | dsh | `packages/llm/llm/src/error.ts:25`（`CONTEXT_WINDOW_EXCEEDED_CODE`）、`:80`（`isContextWindowExceededError()` 的正则并集） |
-| luup | `src/executor.ts` 的 `CONTEXT_OVERFLOW_PATTERNS` / `isContextOverflow()`；错误码 `context_overflow` 在 `src/agent/failures.ts` |
+| luup | `apps/server/src/executor.ts` 的 `CONTEXT_OVERFLOW_PATTERNS` / `isContextOverflow()`；错误码 `context_overflow` 在 `apps/server/src/agent/failures.ts` |
 
 **解决的问题**：provider 说「上下文放不下了」的措辞各不相同，原先全部落进 `provider_error`
 兜底。这一类既不是 provider 宕机也不是模型写错格式，唯一能救它的动作（压缩、裁剪输入、
@@ -74,7 +74,7 @@ dsh 的会话可以是一整天的人机协作，丢掉不可接受。续跑要�
 
 `context_overflow` **不进** `INFRASTRUCTURE_FAILURE_CODES`：责任在 harness（是我们塞多了），
 该被质量分母看见。这一条与 Python 侧的 `INFRASTRUCTURE_CLASSES` 口径因此仍然一致。
-2026-08-15 补：那个常量此后只作**熔断口径**，读数口径是 `src/eval/metrics.ts` 的
+2026-08-15 补：那个常量此后只作**熔断口径**，读数口径是 `apps/server/src/eval/metrics.ts` 的
 `INFRASTRUCTURE_CLASSES`（五个码），两者不再是同一个集合；本裁决在两处都成立 ——
 `context_overflow` 归 quality，见 `criteria.md` 的失败分类口径一条。
 
@@ -83,9 +83,9 @@ dsh 的会话可以是一整天的人机协作，丢掉不可接受。续跑要�
 | | |
 |---|---|
 | dsh | `packages/core/agent-default-model/src/index.ts:64` `AgentDefaultModelConfig`（模型选择集中在一个 Service 里，agent 不自己拼 provider） |
-| luup | `src/seams/model.ts`；接缝索引 `src/seams/index.ts` |
+| luup | `apps/server/src/seams/model.ts`；接缝索引 `apps/server/src/seams/index.ts` |
 
-**解决的问题**：模型接线原先散在 `src/executor.ts`（凭据 + 端点）与 `src/agent/config.ts`
+**解决的问题**：模型接线原先散在 `apps/server/src/executor.ts`（凭据 + 端点）与 `apps/server/src/agent/config.ts`
 （模型 id + modelSettings）两处。合成一个文件之后，`process.env.QWEN_*` 只在这里读，
 换 provider 只改这一个文件 —— 继承 Python 期 `app/agent/model.py`（ADR-0004 已删）的地位。
 
@@ -100,10 +100,10 @@ dsh 的会话可以是一整天的人机协作，丢掉不可接受。续跑要�
 | compaction 全套 | `packages/compaction/`（compaction / compaction-basic / tool-result-pruner / command-compact 四个包） | luup 单个 Attempt 至多两次模型调用、角色之间不共享对话，上下文根本长不到需要压缩；真撞上了现在也有 `context_overflow` 这个可数的信号，等它出现再说 |
 | 并发调度池 | `packages/core/agent-loop/src/tool-calls.ts:113`（有界滚动池 + 独占屏障 + 启动前重分类） | luup 的编排是写死的五阶段串行，researcher 还显式关了 `parallelToolCalls`；一个没有并发的流水线不需要调度器 |
 | scope 分层 | `packages/core/scope/`（cordis Context 树，逐层 provider 覆盖） | 分层的价值在「多个 agent 同时活着、各自要不同的 provider」。luup 一个 run 一条流水线，每个接缝只有一个生产实现加一个离线替身 —— 两个实现撑不起一层作用域机制 |
-| guard 注册表 | `packages/core/tools/src/index.ts:1110` `tools.guard()`（全局层 + 作用域链、单调否决） | 注册表解决的是「多条守卫谁先谁后、谁能翻案」。luup 现在总共一条守卫（捕获后拒绝再上报），仲裁机制没有仲裁对象。deny-only 的**纪律**照收：守卫只拒绝或弃权，永不放行别人拒过的调用 —— 写成 `src/agent/roles/structured-output.ts` 注册处的注释，不写成代码 |
+| guard 注册表 | `packages/core/tools/src/index.ts:1110` `tools.guard()`（全局层 + 作用域链、单调否决） | 注册表解决的是「多条守卫谁先谁后、谁能翻案」。luup 现在总共一条守卫（捕获后拒绝再上报），仲裁机制没有仲裁对象。deny-only 的**纪律**照收：守卫只拒绝或弃权，永不放行别人拒过的调用 —— 写成 `apps/server/src/agent/roles/structured-output.ts` 注册处的注释，不写成代码 |
 
 ## 复核
 
 台账里每条 dsh 引用都带 file:line，可以直接对照原文。luup 侧的落点全部有测试：
-合成工具三条（`test/structured-output.test.ts`）、错误码归一一条（同文件）、
-崩溃恢复两条（`test/harness.test.ts`、`test/batch.test.ts`）、接缝由 `tsc --noEmit` 兜底。
+合成工具三条（`apps/server/test/structured-output.test.ts`）、错误码归一一条（同文件）、
+崩溃恢复两条（`apps/server/test/harness.test.ts`、`apps/server/test/batch.test.ts`）、接缝由 `tsc --noEmit` 兜底。

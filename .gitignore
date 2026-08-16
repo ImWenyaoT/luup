@@ -20,7 +20,7 @@ coverage/
 # 历史批证据已迁 git tag `archive/phase-a-evidence-20260816`（协议修订 #6）；
 # 正式批入库时重建 `runs-ts/`，届时同样永不 ignore。
 # `outputs/` 整个是派生物——批跑与 e2e 的 sqlite、playwright 结果、评估导出的 markdown
-# （`src/eval/scoring.ts --out`）、停批欠账便签。欠账的权威在 sqlite
+# （`apps/server/src/eval/scoring.ts --out`）、停批欠账便签。欠账的权威在 sqlite
 # （`runs.science125_id + status`），便签只是给人复制 `--ids` 用，删掉重跑一次就有。
 /outputs/
 /*.db
@@ -33,7 +33,7 @@ coverage/
 *.db-journal
 *.writer-lock.db
 
-# 原子写的孤儿：`src/campaign/campaign.ts` 先写 `<记忆页>.<pid>.tmp` 再 rename，进程被杀即残留。
+# 原子写的孤儿：`apps/server/src/campaign/campaign.ts` 先写 `<记忆页>.<pid>.tmp` 再 rename，进程被杀即残留。
 *.tmp
 
 # 无人值守批跑的控制台副本。正本是显式重定向进 `runs-ts/*.log` 的那份（入库、是证据），

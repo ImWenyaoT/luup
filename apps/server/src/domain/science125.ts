@@ -33,7 +33,7 @@ const UNCLASSIFIED = "(未分类)";
 
 /** 相对模块自身定位，不看 cwd：批跑既可能从仓根起，也可能从别处起。 */
 export function defaultScience125Path(): string {
-  return fileURLToPath(new URL("../../data/science125.json", import.meta.url));
+  return fileURLToPath(new URL("../../../../data/science125.json", import.meta.url));
 }
 
 function readRaw(path: string): Record<string, unknown> | null {

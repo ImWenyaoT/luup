@@ -8,23 +8,24 @@
 ## 设计边界
 
 - `Agent = Model + Harness`；工具、状态、预算、证据与确定性验证由 Harness 拥有。
-- 五阶段固定串行，两条上界（补证 ≤2 轮、修订 ≤2 轮）写在 `src/harness.ts` 的控制流里，
+- 五阶段固定串行，两条上界（补证 ≤2 轮、修订 ≤2 轮）写在 `apps/server/src/harness.ts` 的控制流里，
   不交给任务依赖图算。
 - 运行事实存 `node:sqlite` 单文件；战役记忆 `memory/` 维持文件制，append-only。
-- 公开运行状态固定为 `running → completed | review_rejected | failed`（`src/store/schema.ts`）。
+- 公开运行状态固定为 `running → completed | review_rejected | failed`（`apps/server/src/store/schema.ts`）。
 - Reviewer 必须检索到上游未见的新信息；无法证明即失败。
 
 ## 仓库
 
 ```text
-src/       harness 本体、领域、工具、评估（根单包）
-apps/web/  Vite/React 交付面，产物由同一个 Node 进程托管
-data/      science125.json，冻结题库
-docs/      产品契约、架构、验收标准、ADR、赛题与报告材料
-runs-ts/   Phase A 批跑的证据归档
-runs/      Python 期运行归档，只读（ADR-0004）
-memory/    跨 run 的战役记忆（事实数据）
+apps/server/  后端 @luup/server：harness 本体、领域、工具、评估 + 用例
+apps/web/     Vite/React 交付面 @luup/frontend，产物由同一个 Node 进程托管
+data/         science125.json，冻结题库
+docs/         产品契约、架构、验收标准、ADR、赛题与报告材料
+memory/       跨 run 的战役记忆（事实数据）
+spikes/dsh/   deepseek-harness 参考学习件（ADR-0005），独立 workspace
 ```
+
+历史批次证据在 git tag `archive/phase-a-evidence-20260816`（协议修订 #6）。
 
 ## 快速开始
 
@@ -94,10 +95,10 @@ pnpm run test:e2e      # Playwright；首次先 pnpm --filter @luup/frontend exe
 
 每个 run 在 SQLite 里至少留下：冻结的问题、逐阶段 Attempt 与 Artifact、证据台账
 （每次检索的 query、结果与结局）、事件流、token 用量、终态与失败分类。
-`src/api/projection.ts` 是它对外的字段 allowlist——审计字段不出网。
+`apps/server/src/api/projection.ts` 是它对外的字段 allowlist——审计字段不出网。
 
 引用只允许使用本 run 已经 arXiv 实检并落库的 paper card；标题、作者、第一作者与数量由
-`src/verify/` 的 B1–B4 fail-closed 验证。
+`apps/server/src/verify/` 的 B1–B4 fail-closed 验证。
 
 ## 文档
 
