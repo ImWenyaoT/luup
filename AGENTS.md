@@ -14,8 +14,6 @@ test/        根包用例；vitest，进程隔离（pool: forks）
 apps/web/    Vite/React 交付面（`@luup/frontend`），构建产物由 src/server.ts 同端口托管
 data/        science125.json，冻结题库，只读
 docs/        产品契约、架构、判据、ADR、赛题与报告材料
-runs-ts/     Phase A 批跑的证据归档
-runs/        Python 期运行归档，只读（ADR-0004）
 memory/      跨 run 的战役记忆，文件事实源，append-only
 dsh-app/     deepseek-harness 参考学习件（ADR-0005）；独立 workspace 独立 lockfile，
              不在根 workspace 内，依赖树只在进目录 pnpm install 时落地
@@ -23,6 +21,8 @@ dsh-app/     deepseek-harness 参考学习件（ADR-0005）；独立 workspace �
 
 运行期事实存在 SQLite 单文件里（默认 `outputs/runtime/typescript-runs.db`，`LUUP_DATABASE`
 可覆盖），不是目录制——`src/store/` 是它的唯一写者。`outputs/` 是派生物，不入库。
+历史批次证据（pilot/v2/v3 部分批与 Python 期 `runs/`）在 git tag
+`archive/phase-a-evidence-20260816`，不在工作树（协议修订 #6）；正式批入库时重建 `runs-ts/`。
 
 `src/` 下的分区：`agent/`（角色契约、工具、失败分类）、`api/`（对外投影）、`batch/`（125 题批跑）、
 `campaign/`（战役记忆读写）、`domain/`（题库）、`eval/`（离线指标）、`seams/`（可替换接线）、

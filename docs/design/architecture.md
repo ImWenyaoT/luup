@@ -88,7 +88,9 @@ wire type 手写在 `apps/web/src/types.ts`，**不从服务端模块导入类�
   **没有跟着换存储**——它是给人读的，也是竞赛材料的一部分；消融语义「关掉一个目录」
   可陈述，「关掉一张表的某几行」不可陈述。它只提供线索，引用仍必须在本 run 重新核验。
 - `data/science125.json`：冻结的 125 题输入源，只读。
-- `runs/`：Python 期的运行归档，只读，不再写入也不再读取（ADR-0004）。
+- 历史批证据（`runs-ts/` 的 pilot/v2/v3 部分批与 Python 期 `runs/`，ADR-0004）：已迁至
+  git tag `archive/phase-a-evidence-20260816`，不在工作树（协议修订 #6，2026-08-16）；
+  运营级聚合先行转录进 `memory/lessons.md`。正式批入库时重建 `runs-ts/`。
 - `outputs/`、`dist/`、`node_modules/`、覆盖率报告：可重建派生物，不提交。
 
 ## 运行与并发

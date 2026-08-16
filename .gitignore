@@ -16,15 +16,16 @@ coverage/
 *.tsbuildinfo
 
 # 运行期瞬态。边界纪律（architecture.md「存储裁决」）：
-# `runs-ts/`、`memory/`、`data/` 是 source of truth，`runs/` 是 Python 期只读归档（ADR-0004），
-# 四者永不 ignore；只有「删掉重算即可」的瞬态才 ignore。
+# `memory/`、`data/` 是 source of truth，永不 ignore；只有「删掉重算即可」的瞬态才 ignore。
+# 历史批证据已迁 git tag `archive/phase-a-evidence-20260816`（协议修订 #6）；
+# 正式批入库时重建 `runs-ts/`，届时同样永不 ignore。
 # `outputs/` 整个是派生物——批跑与 e2e 的 sqlite、playwright 结果、评估导出的 markdown
 # （`src/eval/scoring.ts --out`）、停批欠账便签。欠账的权威在 sqlite
 # （`runs.science125_id + status`），便签只是给人复制 `--ids` 用，删掉重跑一次就有。
 /outputs/
 /*.db
 
-# SQLite 边车。主件是证据要入库（`runs-ts/*.db` 已跟踪），边车只在进程活着时有意义，
+# SQLite 边车。主件是证据要入库（批证据 db 入 `runs-ts/` 跟踪），边车只在进程活着时有意义，
 # 所以按后缀精确匹配——不写 `*.db*`，那会连主件一起吞掉。
 # 四种形状实测自一次 e2e（`store.ts` 单写者锁 + `schema.ts` 的 `journal_mode = WAL`）。
 *.db-wal
@@ -35,6 +36,6 @@ coverage/
 # 原子写的孤儿：`src/campaign/campaign.ts` 先写 `<记忆页>.<pid>.tmp` 再 rename，进程被杀即残留。
 *.tmp
 
-# 无人值守批跑的控制台副本。正本是显式重定向进 `runs-ts/*.log` 的那份（已跟踪、是证据），
+# 无人值守批跑的控制台副本。正本是显式重定向进 `runs-ts/*.log` 的那份（入库、是证据），
 # 所以这里只忽略 nohup 的兜底文件，不忽略 `*.log`。
 nohup.out
