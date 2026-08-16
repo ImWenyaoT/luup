@@ -60,14 +60,14 @@ pnpm build     # → apps/web/dist
 pnpm start     # http://127.0.0.1:8000，build 也会被它再跑一遍
 ```
 
-改前端时用 dev server（`/api` 代理到 8000），另一终端起 API：
+开发用一条命令，前后端一起起（vite 热更新 + `/api` 代理到 8000）：
 
 ```sh
-pnpm dev:api   # 确定性 runtime，不花钱
-pnpm dev       # http://127.0.0.1:5173
+pnpm dev       # 前端 http://127.0.0.1:5173 + API :8000（确定性 runtime，不花钱）
 ```
 
-`pnpm dev:api:live` 是同一个服务的 live 版本，会真的调 Qwen。
+也可分开起：`pnpm dev:api`（仅后端）、`pnpm dev:web`（仅前端）。
+`pnpm dev:api:live` 是后端的 live 版本，会真的调 Qwen。
 
 ### 跑题
 

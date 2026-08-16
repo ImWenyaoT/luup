@@ -3,10 +3,9 @@
 !.env.example
 .DS_Store
 
-# 会话工具状态：本机 agent 工具的私有配置，因人而异，跟踪它只会制造无意义 diff。
-# `.agents/`、`.codex/` 本仓尚未出现，先行忽略——同类落点，等出现再补等于先脏一次。
-.claude/
-.agents/
+# 会话工具状态：私有配置不入库；共享工作流入库。
+.claude/*
+!.claude/skills
 .codex/
 
 # 依赖与构建产物

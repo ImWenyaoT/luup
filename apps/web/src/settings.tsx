@@ -57,8 +57,9 @@ export function Settings() {
   if (status === "unreachable") {
     return (
       <p className="text-xs text-destructive">
-        设置读取失败：后端不可达。vite 开发页只有前端，请另开一个终端跑{" "}
-        <code className="font-mono">pnpm run dev:api</code>（或直接 <code className="font-mono">pnpm start</code> 走单进程交付形态）。
+        设置读取失败：后端不可达。用 <code className="font-mono">pnpm dev</code>{" "}
+        一条命令同起前后端；若你单独跑了 <code className="font-mono">dev:web</code>，另开终端补{" "}
+        <code className="font-mono">pnpm run dev:api</code>（或 <code className="font-mono">pnpm start</code> 走单进程交付形态）。
       </p>
     );
   }

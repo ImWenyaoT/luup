@@ -8,9 +8,10 @@
   },
   "scripts": {
     "setup": "pnpm install --frozen-lockfile",
-    "dev": "pnpm --filter @luup/frontend dev",
+    "dev": "pnpm run \"/^dev:(api|web)$/\"",
     "dev:api": "LUUP_RUNTIME=deterministic node --env-file-if-exists=.env --experimental-strip-types --watch apps/server/src/main.ts",
     "dev:api:live": "node --env-file-if-exists=.env --experimental-strip-types --watch apps/server/src/main.ts",
+    "dev:web": "pnpm --filter @luup/frontend dev",
     "build": "pnpm --filter @luup/frontend build",
     "start": "pnpm build && node --env-file-if-exists=.env --experimental-strip-types apps/server/src/main.ts",
     "canary": "node --env-file-if-exists=.env --experimental-strip-types apps/server/src/canary.ts",
