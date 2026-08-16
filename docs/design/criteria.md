@@ -34,7 +34,7 @@
 ## C. 多智能体闭环（对应评分：技术深度 30）
 
 - C1 最终交付由确定性 verifier 判定；Reviewer 必须通过独立检索或工具验证引入新信息，不能只重读同一文本。
-- C2 使用 OpenAI Agents SDK 的 Scientist / Reviewer 两 specialist，由普通 Python Harness 主从式调度；不设 subagent 数量门槛。每个独立角色必须以信息增量或消融收益证明存在价值。
+- C2 使用 OpenAI Agents SDK 的 Scientist / Reviewer 两类 specialist（TS 栈实现为五角色固定流水线，见 experiment-protocol.json 修订 #1），由普通 TypeScript Harness 主从式调度；不设 subagent 数量门槛。〔2026-08-16：切栈（ADR-0004）漏改补正，原文「普通 Python Harness」「两 specialist」；实现事实以 `src/harness.ts` 与 canary 实测为准。〕每个独立角色必须以信息增量或消融收益证明存在价值。
 - C3 上下文不完全共享：subagent 之间通过显式 handoff 工件（文件/结构化摘要）传递，trace 可证。
 - C4 循环有预算与终止条件（最大轮数 + 失败即如实报告失败，不硬编）。
 - C5 文献检索不引入 vector DB 或 embedding 基础设施；跨 run memory 只有在消融证明收益后才进入最小架构。

@@ -24,7 +24,7 @@
 
 1. **Scientist**：检索证据，提出假设并写成可验证的研究计划。
 2. **Reviewer**：通过独立检索或确定性工具引入新信息，指出证据、推导和验证设计的缺口。
-3. **Harness**：由普通 Python 控制流与 OpenAI Agents SDK 共同负责调度、预算、持久化和最终验收；Agent 的自我宣称不能决定通过。
+3. **Harness**：由普通 TypeScript 控制流与 OpenAI Agents SDK 共同负责调度、预算、持久化和最终验收；Agent 的自我宣称不能决定通过。〔2026-08-16：切栈（ADR-0004）漏改补正，原文「普通 Python 控制流」。〕
 
 Harness 是确定性薄管理者，不是第三个 LLM Agent。Scientist 是否需要再拆出 Literature Agent，必须由同预算消融实验证明；在此之前默认不拆。
 
