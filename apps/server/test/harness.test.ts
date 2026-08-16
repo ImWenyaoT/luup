@@ -265,12 +265,9 @@ function fake(
         await new Promise((done) => setTimeout(done, 10));
       }
       const frozenId = ofType("research").flatMap((item) => item.content.citations.map((c: any) => c.evidence_id))[0];
-      return {
+      return await reportStructuredOutput(agent, {
         artifact_type: "research-plan",
-        problem_statement:
-          options.invalidPlanOnce === true && plans === 1
-            ? "Measure unsupported citations."
-            : "测量科研 Agent 的无来源引用率。",
+        problem_statement: "测量科研 Agent 的无来源引用率。",
         rationale: "冻结证据使引用可靠性可被检验。",
         technical_details: "先冻结证据，再逐条核验引用。",
         datasets: ["preregistered questions"],
@@ -294,7 +291,9 @@ function fake(
           status: "pending_verification",
           validation_basis: "formula_derivation",
           feasibility_argument:
-            "令证据门组与基线组的无来源引用率分别为 r_gate 与 r_base；若预期 r_gate < r_base，且任务完成率差异处于预设容许范围内，则可用同一验收规则判定设计可行。这里只是公式与逻辑推导，不代表实验已执行。",
+            options.invalidPlanOnce === true && plans === 1
+              ? "可行"
+              : "令证据门组与基线组的无来源引用率分别为 r_gate 与 r_base；若预期 r_gate < r_base，且任务完成率差异处于预设容许范围内，则可用同一验收规则判定设计可行。这里只是公式与逻辑推导，不代表实验已执行。",
           expected_outcomes: [{ metric: "无来源引用率", statement: "证据门组的无来源引用率更低。" }],
         },
         references:
@@ -307,7 +306,7 @@ function fake(
               ],
         input_artifact_ids: payload.input_artifacts.map((item: any) => item.id),
         verification_evidence_ids: [frozenId],
-      };
+      });
     }
 
     const independentEvidence = ledger.record({

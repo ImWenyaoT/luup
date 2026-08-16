@@ -406,9 +406,14 @@ export async function runTask(
   options: { execute: StageExecutor; ledger?: EvidenceLedger },
 ): Promise<TaskRunResult> {
   const ledger = options.ledger ?? new EvidenceLedger();
-  const { agents, capture } = createRoles(ledger);
+  const { agents, capture, planCapture } = createRoles(ledger);
   const agent = agents[context.role];
-  if (context.role !== "researcher" && context.role !== "reviewer" && agent.tools.length !== 0) {
+  if (
+    context.role !== "researcher" &&
+    context.role !== "research-plan" &&
+    context.role !== "reviewer" &&
+    agent.tools.length !== 0
+  ) {
     throw new Error(`${context.role} cannot use tools`);
   }
   // 漂移记录**按轮作废**：只有被接受的那一轮的覆写才是事实。首轮记下一条覆写、
@@ -438,7 +443,9 @@ export async function runTask(
   for (let round = 0; round < 2; round += 1) {
     // 台账跨纠错轮累积，上报窗口不跨：纠错轮要求模型重新交一份完整 Artifact，
     // 上一轮捕获到的那份必须先作废，否则守卫会把第二次上报当成重复调用拒掉。
-    capture.beginRound();
+    const outputCapture =
+      context.role === "researcher" ? capture : context.role === "research-plan" ? planCapture : undefined;
+    outputCapture?.beginRound();
     drift = [];
     try {
       // 先存原始输出再解析：解析失败时纠错提示里也要带上模型写的那份原文，
@@ -466,7 +473,7 @@ export async function runTask(
         },
       });
       // researcher 交作业走合成工具，最终文本只是收尾回执，产物在上报窗口里。
-      candidate = context.role === "researcher" ? capturedArtifact(capture, context.role) : returned;
+      candidate = outputCapture ? capturedArtifact(outputCapture, context.role) : returned;
       return {
         artifact: accept(parseValue(candidate)),
         corrections,

@@ -168,7 +168,7 @@ export function createDeterministicRuntime(store: SqliteStore): {
     if (role === "research-plan") {
       const cited = ofType("research").flatMap((item) => (item.content as Research).citations);
       const frozen = cited[0]!;
-      return {
+      return await reportStructuredOutput(agent, {
         artifact_type: "research-plan",
         problem_statement: "测量科研 Agent 的无来源引用率。",
         rationale: "冻结证据使引用可靠性可被检验。",
@@ -204,7 +204,7 @@ export function createDeterministicRuntime(store: SqliteStore): {
         references: [...new Set(cited.map((item) => item.url!))],
         input_artifact_ids: inputs.map((item) => item.id),
         verification_evidence_ids: [frozen.evidence_id],
-      };
+      });
     }
 
     // Reviewer 的独立检索必须进入同一本台账；记录固定来源即可保持离线执行零网络。

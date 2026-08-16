@@ -107,6 +107,32 @@ test("finishing without calling the tool is a contract violation, not a correcti
   assert.match((failure as Error).message, new RegExp(STRUCTURED_OUTPUT_TOOL));
 });
 
+test("a research planner must submit through its structured output tool", async () => {
+  const context: TaskContext = {
+    runId: "run",
+    taskId: "plan-attempt",
+    role: "research-plan",
+    goal: "形成研究计划",
+    question: "问题",
+    inputArtifactIds: [],
+    inputArtifacts: [],
+  };
+  let calls = 0;
+  const failure = await runTask(context, {
+    execute: () => {
+      calls += 1;
+      return Promise.resolve("研究计划已经完成。");
+    },
+  }).then(
+    () => null,
+    (error: unknown) => error,
+  );
+
+  assert.equal(calls, 1);
+  assert.equal(classifyFailure(failure).code, "invalid_output");
+  assert.match((failure as Error).message, new RegExp(STRUCTURED_OUTPUT_TOOL));
+});
+
 /** Phase A 只读诊断（n=46）里 researcher 撞死的那条序列：两次 arxiv、三次 crossref、
  *  上报一次被 zod 驳回、改对再报一次。关掉并发工具调用之后，每一步各占一个 turn ——
  *  7 > 6，于是 18 个 failed 里有 15 个是同一句 `reached the Agent turn limit`。 */
@@ -124,8 +150,8 @@ test("the turn budget keeps researcher headroom while reviewer has a restricted 
     } else if (role === "researcher") {
       assert.equal(maxTurnsFor(role), 12);
     } else {
-      assert.equal(role, "reviewer");
-      // Reviewer 只需完成少量独立检索后交付评审，保持已有 6-turn 上限，避免无界增加费用。
+      assert.ok(role === "reviewer" || role === "research-plan");
+      // Reviewer 做受限检索；ResearchPlan 用合成工具上报。两者 6 turns 都有修正余量。
       assert.equal(maxTurnsFor(role), 6);
     }
   }

@@ -129,10 +129,14 @@ test("Researcher and Reviewer have retrieval surfaces, and other roles remain to
   assert.deepEqual(agents.reviewer.tools.map((item: any) => item.name).sort(), ["arxiv_search", "crossref_search"]);
   assert.match(agents.reviewer.instructions as string, /反证/);
   assert.match(agents.reviewer.instructions as string, /方法风险/);
-  // 其余角色零工具 —— 这是「只有 Researcher/Reviewer 可检索」的落点，不靠提示词
-  for (const role of ["hypothesis-generation", "evidence-review", "research-plan"] as const) {
+  // 其余领域角色零工具；ResearchPlan 只有合成上报工具，不是检索面。
+  for (const role of ["hypothesis-generation", "evidence-review"] as const) {
     assert.equal(agents[role].tools.length, 0, `${role} must not have tools`);
   }
+  assert.deepEqual(
+    agents["research-plan"].tools.map((tool) => tool.name),
+    ["structured_output"],
+  );
   // 不设具名 toolChoice：Qwen 挂两个工具时拒绝 required，具名又会锁死只能用一个源
   assert.equal(agents.researcher.modelSettings.toolChoice, undefined);
 });

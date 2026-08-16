@@ -14,18 +14,22 @@ export type Roles = {
   agents: Record<Role, Agent<any, any>>;
   /** researcher 的上报面。它与上面那个 researcher Agent 是同一份状态，不能分开创建。 */
   capture: StructuredOutput;
+  /** ResearchPlan 的独立上报窗口，不能与 researcher 共用状态。 */
+  planCapture: StructuredOutput;
 };
 
 export function createRoles(ledger: EvidenceLedger): Roles {
   const researcher = defineResearcher(ledger);
+  const planner = definePlanner();
   return {
     agents: {
       researcher: researcher.agent,
       "hypothesis-generation": defineHypothesis(),
       "evidence-review": defineEvidenceReview(),
-      "research-plan": definePlanner(),
+      "research-plan": planner.agent,
       reviewer: defineReviewer(ledger),
     },
     capture: researcher.capture,
+    planCapture: planner.capture,
   };
 }
