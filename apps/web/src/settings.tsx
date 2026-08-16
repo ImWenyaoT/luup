@@ -17,7 +17,7 @@ const CREDENTIAL_LABEL: Record<ConfigStatus["credential"], string> = {
 };
 
 export function Settings() {
-  const [status, setStatus] = useState<ConfigStatus | null>(null);
+  const [status, setStatus] = useState<ConfigStatus | null | "unreachable">(null);
   const [apiKey, setApiKey] = useState("");
   const [modelId, setModelId] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
@@ -25,7 +25,8 @@ export function Settings() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    fetchConfig().then(setStatus).catch(() => setStatus(null));
+    // 拉不到配置绝不能静默消失：那会让「后端没起」与「老版本 UI」在空闲态无法区分。
+    fetchConfig().then(setStatus).catch(() => setStatus("unreachable"));
   }, []);
 
   async function save() {
@@ -53,6 +54,14 @@ export function Settings() {
   }
 
   if (status === null) return null;
+  if (status === "unreachable") {
+    return (
+      <p className="text-xs text-destructive">
+        设置读取失败：后端不可达。vite 开发页只有前端，请另开一个终端跑{" "}
+        <code className="font-mono">pnpm run dev:api</code>（或直接 <code className="font-mono">pnpm start</code> 走单进程交付形态）。
+      </p>
+    );
+  }
   const missing = status.credential === "absent" && status.runtime === "live";
 
   return (
