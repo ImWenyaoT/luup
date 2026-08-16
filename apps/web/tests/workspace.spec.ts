@@ -10,11 +10,22 @@ test('completes a deterministic research run through the Node server', async ({ 
   await page.getByRole('button', { name: '开始研究' }).click()
 
   await expect(page.getByText('已完成')).toBeVisible()
-  await expect(page.getByText('证据链 · 1 次检索')).toBeVisible()
+  await expect(page.getByText('执行轨迹 · 1 次检索')).toBeVisible()
   await expect(page.getByText('arxiv:2309.15217v2')).toBeVisible()
 
   const stages = page.getByRole('list').first().getByRole('listitem')
   await expect(stages).toHaveCount(5)
+
+  // 折叠是降采样：摘要行保留计数；展开后引用完整回来。
+  await page.getByRole('button', { name: /检索证据/ }).click()
+  await expect(page.getByText(/… 1 次检索 · \d+ 条引用/)).toBeVisible()
+  await expect(page.getByText('arxiv:2309.15217v2')).not.toBeVisible()
+  await page.getByRole('button', { name: /检索证据/ }).click()
+  await expect(page.getByText('arxiv:2309.15217v2')).toBeVisible()
+
+  // 未执行过的角色段是禁用态，点不动也不该抛错。
+  await expect(page.getByRole('button', { name: '全部折叠' })).toBeVisible()
+
   await expect(page.getByText('冻结产物')).toBeVisible()
   await expect(page).toHaveURL(/\?run=[a-z0-9]+$/)
 
@@ -28,7 +39,7 @@ test('completes a deterministic research run through the Node server', async ({ 
   await expect(page.getByText('临时不可用')).toBeVisible()
   await expect(page.getByText('已完成')).toBeVisible({ timeout: 8_000 })
   await expect(page.getByText('临时不可用')).not.toBeVisible()
-  await expect(page.getByText('证据链 · 1 次检索')).toBeVisible()
+  await expect(page.getByText('执行轨迹 · 1 次检索')).toBeVisible()
   await expect(page.getByText(/^version:/)).not.toBeVisible()
   await page.getByText('技术详情').first().click()
   await expect(page.getByText(/^version:/)).toBeVisible()
@@ -38,7 +49,7 @@ test('completes a deterministic research run through the Node server', async ({ 
   await page.getByRole('button', { name: '开始研究' }).click()
   await expect(page.getByText('question 不能超过 4000 个字符。')).toBeVisible()
   await expect(page.getByText('已完成')).toBeVisible()
-  await expect(page.getByText('证据链 · 1 次检索')).toBeVisible()
+  await expect(page.getByText('执行轨迹 · 1 次检索')).toBeVisible()
 
   // 旧 Artifact 先失败、新 Run 后成功时，旧错误不能挂到新 Run 下。
   await page.route('**/api/artifacts/*', async (route) => {
@@ -56,14 +67,14 @@ test('completes a deterministic research run through the Node server', async ({ 
       return response
     }
   })
-  await page.getByRole('button', { name: 'research-plan' }).click()
+  await page.getByRole('button', { name: 'research-plan', exact: true }).click()
   await page.getByPlaceholder('提出一个可以设计实验去检验的研究问题').fill('第二个研究问题')
   await page.getByRole('button', { name: '开始研究' }).click()
   await expect(page.getByText('旧 Artifact 失败')).toBeVisible()
   await expect(page.getByText('旧 Artifact 失败')).not.toBeVisible()
   await expect(page.getByText('已完成')).toBeVisible()
 
-  await page.getByRole('button', { name: 'research-plan' }).click()
+  await page.getByRole('button', { name: 'research-plan', exact: true }).click()
   await expect(page.getByText('降低无来源引用率并保持任务完成率。')).toBeVisible()
   await expect(page.getByText('证据门组显著更低。')).toBeVisible()
 

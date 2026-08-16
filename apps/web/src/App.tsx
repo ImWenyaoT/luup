@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ApiError, createRun, fetchArtifact, fetchRun, subscribe } from "./api";
 import { ArtifactView } from "./artifact-view";
-import { ROLE_LABEL, ROLE_ORDER, TERMINAL, type Artifact, type Snapshot } from "./types";
+import { Trajectory } from "./trajectory";
+import { TERMINAL, type Artifact, type Snapshot } from "./types";
 
 const STATUS_LABEL: Record<string, string> = {
   running: "进行中",
@@ -170,8 +171,7 @@ export function App() {
       {snapshot !== null && (
         <>
           <RunHeader snapshot={snapshot} />
-          <Pipeline snapshot={snapshot} />
-          <EvidenceChain snapshot={snapshot} />
+          <Trajectory snapshot={snapshot} />
           <Artifacts
             snapshot={snapshot}
             onOpen={(id) => void openArtifact(id)}
@@ -198,76 +198,6 @@ function RunHeader({ snapshot }: { snapshot: Snapshot }) {
         <div className="mt-1 font-mono">version: {snapshot.version}</div>
       </details>
     </div>
-  );
-}
-
-/** 五阶段进度。补证与修订会让同一个角色出现第二次 —— 那正是两条有界回路的痕迹。 */
-function Pipeline({ snapshot }: { snapshot: Snapshot }) {
-  return (
-    <section className="space-y-2">
-      <h2 className="font-mono text-xs uppercase tracking-widest text-muted-foreground">固定五阶段</h2>
-      <ol className="grid gap-2 sm:grid-cols-5">
-        {ROLE_ORDER.map((role) => {
-          const attempts = snapshot.attempts.filter((item) => item.role === role);
-          const last = attempts.at(-1);
-          const tone = last?.status === "completed"
-            ? "border-teal-600/60 bg-teal-50/60"
-            : last?.status === "failed"
-              ? "border-destructive/50 bg-destructive/5"
-              : last?.status === "running"
-                ? "border-foreground/40"
-                : "border-dashed opacity-50";
-          return (
-            <li key={role} className={`rounded-md border px-3 py-2 ${tone}`}>
-              <div className="text-xs font-medium">{ROLE_LABEL[role]}</div>
-              <div className="mt-1 font-mono text-[11px] text-muted-foreground">
-                {attempts.length === 0 ? "待执行" : `${attempts.length} 次尝试`}
-                {last && last.corrections > 0 && ` · 纠错 ${last.corrections}`}
-                {last?.failure_code && ` · ${last.failure_code}`}
-              </div>
-            </li>
-          );
-        })}
-      </ol>
-    </section>
-  );
-}
-
-/** 证据链：每一次检索都是一条记录，它下面挂着那次检索返回的可引用条目。 */
-function EvidenceChain({ snapshot }: { snapshot: Snapshot }) {
-  if (snapshot.tool_evidence.length === 0) return null;
-  return (
-    <section className="space-y-2">
-      <h2 className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-        证据链 · {snapshot.tool_evidence.length} 次检索
-      </h2>
-      <ul className="space-y-2">
-        {snapshot.tool_evidence.map((evidence) => (
-          <li key={evidence.id} className="rounded-md border px-3 py-2">
-            <div className="flex flex-wrap items-baseline gap-2">
-              <span className="font-mono text-[11px] text-teal-700">{evidence.id}</span>
-              <Badge variant="outline">{evidence.tool_name}</Badge>
-              <span className="font-mono text-[11px] text-muted-foreground">{evidence.status}</span>
-              <details className="text-xs text-muted-foreground">
-                <summary className="cursor-pointer">技术详情</summary>
-                <div className="mt-1">query: {evidence.query}</div>
-              </details>
-            </div>
-            <ul className="mt-2 space-y-1 border-l pl-3">
-              {evidence.output.citations.map((citation) => (
-                <li key={citation.locator} className="text-xs">
-                  <span className="font-mono text-[11px] text-muted-foreground">{citation.locator}</span>
-                  {" · "}
-                  {citation.url === null
-                    ? citation.title
-                    : <a className="underline underline-offset-2" href={citation.url} target="_blank" rel="noreferrer">{citation.title}</a>}
-                </li>
-              ))}
-            </ul>
-          </li>
-        ))}
-      </ul>
-    </section>
   );
 }
 

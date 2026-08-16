@@ -37,6 +37,7 @@ export type Citation = {
 
 export type Evidence = {
   id: string;
+  attempt_id: string;
   tool_name: string;
   query: string;
   status: string;

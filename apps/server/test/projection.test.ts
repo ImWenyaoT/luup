@@ -85,9 +85,12 @@ function internalSnapshot(): Record<string, unknown> {
   };
 }
 
+// `attempt_id` 曾在此清单里（外键一刀切进「内部」）。2026-08-16 裁决改放行：
+// attempts[].id 本就全量出网，证据行挂到公开对象上不构成新泄露，而轨迹视图的
+// 角色段分组依赖这条关联。见下「证据行携带 attempt_id」用例。
 const INTERNAL_FIELD_NAMES = [
   "content_json", "output_json", "input_artifact_ids", "input_artifact_ids_json",
-  "error_type", "budget_json", "updated_at", "run_id", "attempt_id",
+  "error_type", "budget_json", "updated_at", "run_id",
   "output_artifact_id", "successor_of", "documents", "document_id",
 ];
 
@@ -159,6 +162,16 @@ test("Attempt 只投影声明过的字段", () => {
 test("Crossref 证据公开，内部工具证据被过滤", () => {
   const projected = projectRunSnapshot(internalSnapshot());
   assert.deepEqual(projected.tool_evidence.map((row) => row.id), ["ev_1"]);
+});
+
+test("证据行携带 attempt_id，且指向公开的 attempt", () => {
+  const projected = projectRunSnapshot(internalSnapshot());
+  const [evidence] = projected.tool_evidence;
+  assert.equal(evidence!.attempt_id, "attempt_1");
+  assert.ok(
+    projected.attempts.some((attempt) => attempt.id === evidence!.attempt_id),
+    "attempt_id 必须能在公开 attempts 里找到——它是两个公开对象间的结构关联，不是内部字段",
+  );
 });
 
 test("证据输出只放行摘要和引文白名单字段", () => {

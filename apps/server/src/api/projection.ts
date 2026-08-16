@@ -111,6 +111,9 @@ export const publicEvidenceOutputSchema = z.object({
 
 export const publicEvidenceSchema = z.object({
   id: z.string(),
+  // 挂在哪次 Attempt 下。attempts[].id 本就出网，这是两个公开对象间的结构关联，
+  // 轨迹视图按角色段分组靠它（2026-08-16 裁决，测试「证据行携带 attempt_id」看守）。
+  attempt_id: z.string(),
   tool_name: z.string(),
   query: z.string(),
   status: z.string(),
