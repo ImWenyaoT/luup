@@ -25,6 +25,7 @@ import { createQwenExecutor } from "../executor.ts";
 import { Harness } from "../harness.ts";
 import { findQuestion, science125Text, type Science125Question } from "../domain/science125.ts";
 import type { StageExecutor } from "../roles.ts";
+import { modelConfigStatus } from "../seams/index.ts";
 import type { MemoryArm, SourceIdentity } from "../store/contracts.ts";
 import { SqliteStore } from "../store/store.ts";
 
@@ -74,6 +75,20 @@ const INFRA_TIMEOUT: FailureCode = "infra_timeout";
 
 /** 让批次退出码保持 0 的状态；其余都是欠着的题。 */
 const CLEAN: ReadonlySet<string> = new Set(["passed", "skipped", "planned"]);
+
+export type BatchRuntimePreflight = {
+  nodeVersion: string;
+  dryRun: boolean;
+};
+
+/** 正式 live batch 的运行时门；dry-run 是规划动作，不受 Node major 限制。 */
+export function validateBatchNodeRuntime({ nodeVersion, dryRun }: BatchRuntimePreflight): string | null {
+  if (dryRun) return null;
+  const match = /^v?(\d+)(?:\.|$)/.exec(nodeVersion);
+  const major = match ? Number(match[1]) : Number.NaN;
+  if (major === 24) return null;
+  return `正式 live batch 要求 Node major 24；当前版本是 ${nodeVersion}，请切换到 Node 24（.nvmrc 为 24.18.0）。`;
+}
 
 export type QuestionStatus = "passed" | "failed" | "skipped" | "error" | "missing" | "planned";
 
@@ -179,6 +194,14 @@ export function compactIds(ids: readonly number[]): string {
   return parts.join(",");
 }
 
+/** 批次启动前一次性确认所有题号，避免滚动池已经为前面的题花钱后才发现尾部写错。 */
+export function preflightQuestionIds(questionIds: readonly number[]): void {
+  const invalid = [...new Set(questionIds.filter((id) => !Number.isSafeInteger(id) || findQuestion(id) === null))];
+  if (invalid.length > 0) {
+    throw new Error(`批次题号无效：${invalid.join(", ")}。有效题号范围为 1-125。`);
+  }
+}
+
 /** 哪个 build 产出了这些 Run。取不到就是 null —— 采集失败绝不能让一道题跑不起来。
  *
  * `--untracked-files=no`：批跑自己会往 `outputs/` 写文件，把未跟踪文件算进去
@@ -253,6 +276,7 @@ export function parseConcurrency(spec: string | undefined): number {
  * 而 `completed` 与 `failedByClass` 都在排空之后才定稿。
  */
 export async function runBatch(questionIds: readonly number[], options: BatchOptions): Promise<BatchReport> {
+  preflightQuestionIds(questionIds);
   const log = options.log ?? ((line: string) => process.stdout.write(`${line}\n`));
   const repoRoot = resolve(options.repoRoot ?? process.cwd());
   const limit = boundConcurrency(options.concurrency ?? 1);
@@ -291,8 +315,8 @@ export async function runBatch(questionIds: readonly number[], options: BatchOpt
     const outcome = landed.outcome;
     outcomes.push(outcome);
     log(
-      `[batch] ${outcomes.length}/${total} s${landed.slot} q${outcome.questionId} | ${outcome.status} | `
-      + `${outcome.seconds.toFixed(1)}s${outcome.detail ? ` | ${outcome.detail}` : ""}`,
+      `[batch] ${outcomes.length}/${total} s${landed.slot} q${outcome.questionId} | ${outcome.status} | ` +
+        `${outcome.seconds.toFixed(1)}s${outcome.detail ? ` | ${outcome.detail}` : ""}`,
     );
 
     if (!halted) {
@@ -310,8 +334,8 @@ export async function runBatch(questionIds: readonly number[], options: BatchOpt
           // 串行时在飞的只有刚结算的这一道，池子已经空了，这行不打——日志与并发前逐字相同。
           if (inflight.size > 0) {
             log(
-              `[batch] 熔断触发：${halted.reason}。停止派发新题，等在飞的 ${inflight.size} 题结算完再退出`
-              + "（不取消：它们的钱已经花了）",
+              `[batch] 熔断触发：${halted.reason}。停止派发新题，等在飞的 ${inflight.size} 题结算完再退出` +
+                "（不取消：它们的钱已经花了）",
             );
           }
         }
@@ -332,8 +356,8 @@ export async function runBatch(questionIds: readonly number[], options: BatchOpt
       failedByClass: tallyFailures(outcomes),
     };
     log(
-      `[batch] 熔断停批：${stopped.reason}。已完成 ${stopped.completed}/${stopped.total}，`
-      + `剩余 --ids ${stopped.remaining || "（无）"}`,
+      `[batch] 熔断停批：${stopped.reason}。已完成 ${stopped.completed}/${stopped.total}，` +
+        `剩余 --ids ${stopped.remaining || "（无）"}`,
     );
   }
 
@@ -356,10 +380,7 @@ export function remainingPath(repoRoot: string): string {
   return resolve(repoRoot, "outputs/batch-remaining.json");
 }
 
-async function runOne(
-  questionId: number,
-  options: BatchOptions & { repoRoot: string },
-): Promise<QuestionOutcome> {
+async function runOne(questionId: number, options: BatchOptions & { repoRoot: string }): Promise<QuestionOutcome> {
   const { store } = options;
   const settled = store.completedRunForQuestion(questionId);
   if (settled !== null) {
@@ -391,15 +412,17 @@ async function runOne(
   const controller = new AbortController();
   // 同步抛出的执行器（构造凭据失败之类）必须也变成 rejection：直接调用的话，
   // 它会绕过下面整套超时与隔离，把一道题的故障升级成整批中断。
-  const attempt = track((async () =>
-    options.runQuestion({ runId, questionId, question, signal: controller.signal }))());
+  const attempt = track(
+    (async () => options.runQuestion({ runId, questionId, question, signal: controller.signal }))(),
+  );
   const timeoutMs = options.timeoutMs ?? RUN_TIMEOUT_MS;
   if (!(await settleWithin(attempt.done, timeoutMs))) {
     controller.abort();
     // 取消本身也可能不落地，所以这段等待同样有上界；等不到就自己给 Run 补终态。
     const unwound = await settleWithin(attempt.done, options.graceMs ?? CANCEL_GRACE_MS);
-    const detail = `单题超过 ${(timeoutMs / 1000).toFixed(0)}s 未终态，已取消`
-      + (unwound ? "" : `；取消未在宽限期内完成，该题可能仍在写这个 run`);
+    const detail =
+      `单题超过 ${(timeoutMs / 1000).toFixed(0)}s 未终态，已取消` +
+      (unwound ? "" : `；取消未在宽限期内完成，该题可能仍在写这个 run`);
     // merge 不 rewrite：这道题自己赶在取消之后收了尾的话，那份终态是它的事实。
     store.settleAbandonedRun(runId, INFRA_TIMEOUT);
     return outcome(questionId, "failed", elapsed(), detail, INFRA_TIMEOUT, runId);
@@ -449,8 +472,12 @@ type Settled<T> = { state: "fulfilled"; value: T } | { state: "rejected"; reason
 function track<T>(promise: Promise<T>): { done: Promise<void>; peek: () => Settled<T> | null } {
   let outcome: Settled<T> | null = null;
   const done = promise.then(
-    (value) => { outcome = { state: "fulfilled", value }; },
-    (reason: unknown) => { outcome = { state: "rejected", reason }; },
+    (value) => {
+      outcome = { state: "fulfilled", value };
+    },
+    (reason: unknown) => {
+      outcome = { state: "rejected", reason };
+    },
   );
   return { done, peek: () => outcome };
 }
@@ -473,8 +500,10 @@ function tally(outcomes: readonly QuestionOutcome[]): string {
     const key = item.classification === null ? item.status : `${item.status}/${item.classification}`;
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
-  return [...counts].sort(([left], [right]) => left.localeCompare(right))
-    .map(([name, count]) => `${name} ${count}`).join("，");
+  return [...counts]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([name, count]) => `${name} ${count}`)
+    .join("，");
 }
 
 function tallyFailures(outcomes: readonly QuestionOutcome[]): Record<string, number> {
@@ -521,7 +550,10 @@ export function createHarnessRunner(store: SqliteStore, memory: CampaignMemory |
   };
 }
 
-export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
+export async function main(
+  argv: string[] = process.argv.slice(2),
+  runtime: { nodeVersion?: string } = {},
+): Promise<number> {
   let parsed;
   try {
     parsed = parseArgs({
@@ -559,6 +591,18 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
 
   const dryRun = parsed.values["dry-run"] === true;
   const noMemory = parsed.values["no-memory"] === true;
+  const runtimeError = validateBatchNodeRuntime({
+    nodeVersion: runtime.nodeVersion ?? process.version,
+    dryRun,
+  });
+  if (runtimeError) {
+    process.stdout.write(`[batch] ${runtimeError}\n`);
+    return 2;
+  }
+  if (!dryRun && modelConfigStatus().credential === "absent") {
+    process.stdout.write("[batch] 缺少 QWEN_API_KEY，非 dry-run 批跑已拒绝启动。\n");
+    return 2;
+  }
   const dbPath = parsed.values.db || process.env.LUUP_DATABASE || "outputs/runtime/typescript-runs.db";
   const repoRoot = resolve(parsed.values["repo-root"] ?? process.cwd());
   const store = new SqliteStore(dbPath);

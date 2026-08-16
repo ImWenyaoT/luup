@@ -53,8 +53,10 @@ test("creates a run and drives it to completed", async () => {
 
   const settled = await settle(base, snapshot.id);
   assert.equal(settled.status, "completed");
-  assert.deepEqual(settled.artifacts.map((a: any) => a.type),
-    ["research", "hypothesis", "evidence-review", "research-plan", "review"]);
+  assert.deepEqual(
+    settled.artifacts.map((a: any) => a.type),
+    ["research", "hypothesis", "evidence-review", "research-plan", "review"],
+  );
   // 快照里不带 Artifact 正文，也不带任何内部字段
   assert.ok(!JSON.stringify(settled).includes("content_json"));
   assert.equal(settled.attempts.length, 5);
@@ -62,10 +64,40 @@ test("creates a run and drives it to completed", async () => {
   const artifact = await (await fetch(`${base}/api/artifacts/${settled.final_artifact_id}`)).json();
   assert.equal(artifact.type, "research-plan");
   assert.equal(artifact.content.results.status, "pending_verification");
+  assert.equal(artifact.content.results.validation_basis, "formula_derivation");
+  assert.match(artifact.content.results.feasibility_argument, /r_gate < r_base/);
   // Artifact 详情也必须走运行时白名单，不能把内部追溯字段直接交给浏览器。
   const serializedArtifact = JSON.stringify(artifact);
   assert.ok(!serializedArtifact.includes("input_artifact_ids"));
   assert.ok(!serializedArtifact.includes("verification_evidence_ids"));
+
+  const markdownResponse = await fetch(`${base}/api/artifacts/${settled.final_artifact_id}/markdown`);
+  assert.equal(markdownResponse.status, 200);
+  assert.equal(markdownResponse.headers.get("content-type"), "text/markdown; charset=utf-8");
+  const markdown = await markdownResponse.text();
+  for (const value of [
+    "测量科研 Agent 的无来源引用率。",
+    "冻结证据使引用可靠性可被检验。",
+    "先冻结证据，再逐条核验引用是否落在冻结集合内。",
+    "preregistered question set",
+    "Frozen Research Artifacts",
+    "降低无来源引用率并保持任务完成率。",
+    "可审计证据门对科研 Agent 引用可靠性的影响",
+    "本研究通过配对对照实验检验冻结证据 ID 对无来源引用率的影响。",
+    "固定问题集与模型，做配对盲评。",
+    "同一问题集下对比三组，报告置信区间。",
+    "无来源引用率",
+    "证据门组显著更低。",
+    "Validation basis: formula_derivation",
+    "Feasibility argument:",
+    "r_gate < r_base",
+  ]) {
+    assert.ok(markdown.includes(value), `Markdown 缺少字段值：${value}`);
+  }
+
+  const researchId = settled.artifacts.find((item: any) => item.type === "research")!.id;
+  assert.equal((await fetch(`${base}/api/artifacts/${researchId}/markdown`)).status, 404);
+  assert.equal((await fetch(`${base}/api/artifacts/unknown/markdown`)).status, 404);
   await close(server, store);
 });
 
@@ -99,11 +131,15 @@ test("runs at most two distinct Runs at once", async () => {
   const address = server.address() as { port: number };
   const base = `http://127.0.0.1:${address.port}`;
 
-  await Promise.all(["one", "two", "three"].map((question) => fetch(`${base}/api/runs`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ question }),
-  })));
+  await Promise.all(
+    ["one", "two", "three"].map((question) =>
+      fetch(`${base}/api/runs`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ question }),
+      }),
+    ),
+  );
   assert.equal(active, 2);
   assert.equal(maximum, 2);
   releases.splice(0).forEach((release) => release());
@@ -111,6 +147,35 @@ test("runs at most two distinct Runs at once", async () => {
   assert.equal(maximum, 2);
   releases.splice(0).forEach((release) => release());
   await new Promise((done) => setTimeout(done, 10));
+  await close(server, store);
+});
+
+test("reports an unexpected background failure and settles a still-running Run", async () => {
+  const store = new SqliteStore(":memory:");
+  const errors: Array<[string, unknown]> = [];
+  const harness = {
+    createRun: (question: string) => store.createRun(question),
+    execute: async () => {
+      throw new Error("executor exploded");
+    },
+  } as unknown as Harness;
+  const server = createApp({ store, harness, reportError: (message, error) => errors.push([message, error]) });
+  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+  const address = server.address() as { port: number };
+  const base = `http://127.0.0.1:${address.port}`;
+  const created = await (
+    await fetch(`${base}/api/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ question: "q" }),
+    })
+  ).json();
+
+  const settled = await settle(base, created.id);
+  assert.equal(settled.status, "failed");
+  assert.equal(settled.error_code, "runtime_error");
+  assert.equal(errors[0]?.[0], "background run failed");
+  assert.match(String(errors[0]?.[1]), /executor exploded/);
   await close(server, store);
 });
 
@@ -195,7 +260,9 @@ test("rejects a malformed request target without stopping the server", async () 
     const socket = createConnection({ host: "127.0.0.1", port });
     let text = "";
     socket.setEncoding("utf8");
-    socket.on("data", (chunk) => { text += chunk; });
+    socket.on("data", (chunk) => {
+      text += chunk;
+    });
     socket.on("end", () => resolve(text));
     socket.on("error", reject);
     socket.end("GET http://[ HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
@@ -209,7 +276,9 @@ test("rejects a malformed request target without stopping the server", async () 
 test("does not expose internal exception details in a 500 response", async () => {
   const store = new SqliteStore(":memory:");
   const harness = {
-    createRun: () => { throw new Error("/private/secret/runs.db"); },
+    createRun: () => {
+      throw new Error("/private/secret/runs.db");
+    },
   } as unknown as Harness;
   const server = createApp({ store, harness });
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
@@ -227,11 +296,13 @@ test("does not expose internal exception details in a 500 response", async () =>
 
 test("streams events over SSE and closes at the terminal state", async () => {
   const { base, server, store } = await listen();
-  const created = await (await fetch(`${base}/api/runs`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ question: "q" }),
-  })).json();
+  const created = await (
+    await fetch(`${base}/api/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ question: "q" }),
+    })
+  ).json();
 
   const response = await fetch(`${base}/api/runs/${created.id}/events`);
   assert.equal(response.headers.get("content-type"), "text/event-stream; charset=utf-8");
@@ -248,11 +319,13 @@ test("streams events over SSE and closes at the terminal state", async () => {
 
 test("resumes from a cursor and validates it", async () => {
   const { base, server, store } = await listen();
-  const created = await (await fetch(`${base}/api/runs`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ question: "q" }),
-  })).json();
+  const created = await (
+    await fetch(`${base}/api/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ question: "q" }),
+    })
+  ).json();
   const settled = await settle(base, created.id);
 
   const tail = await (await fetch(`${base}/api/runs/${created.id}/events?after=${settled.version - 1}`)).text();
@@ -268,11 +341,13 @@ test("resumes from a cursor and validates it", async () => {
 
 test("stops the SSE loop when the client disconnects", async () => {
   const { base, server, store } = await listen();
-  const created = await (await fetch(`${base}/api/runs`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ question: "q" }),
-  })).json();
+  const created = await (
+    await fetch(`${base}/api/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ question: "q" }),
+    })
+  ).json();
   await settle(base, created.id);
 
   // 终态之后再开一条流并立刻掐断。若循环不监听 close，这里会留下一个

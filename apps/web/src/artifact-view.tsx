@@ -41,10 +41,7 @@ function renderBody(content: ArtifactContent) {
     case "evidence-review":
       return (
         <div className="space-y-3">
-          <List
-            label="逐条判定"
-            items={content.assessments.map((item) => `[${item.verdict}] ${item.claim}`)}
-          />
+          <List label="逐条判定" items={content.assessments.map((item) => `[${item.verdict}] ${item.claim}`)} />
           <List label="缺口" items={content.gaps.length > 0 ? content.gaps : ["无"]} />
         </div>
       );
@@ -52,17 +49,24 @@ function renderBody(content: ArtifactContent) {
       return (
         <div className="space-y-3">
           <Field label="问题">{content.problem_statement}</Field>
+          <Field label="理由">{content.rationale}</Field>
+          <Field label="技术细节">{content.technical_details}</Field>
+          <List label="数据集" items={content.datasets} />
+          <Field label="来源">{content.source}</Field>
           <Field label="目标">{content.target}</Field>
+          <Field label="论文标题">{content.paper_title}</Field>
+          <Field label="论文摘要">{content.paper_abstract}</Field>
           <Field label="方法">{content.methods}</Field>
           {/* 每一项都带着自己的 evidence_id —— 绑定关系写在类型里，不是靠另一张对照表 */}
+          <Field label="实验设计">{content.experiments.design}</Field>
           <List
             label="基线"
             items={content.experiments.baselines.map((item) => `${item.name} [${item.evidence_id}]`)}
           />
-          <List
-            label="指标"
-            items={content.experiments.metrics.map((item) => `${item.name} [${item.evidence_id}]`)}
-          />
+          <List label="指标" items={content.experiments.metrics.map((item) => `${item.name} [${item.evidence_id}]`)} />
+          <Field label="结果状态">{content.results.status}</Field>
+          <Field label="可行性验证依据">{content.results.validation_basis}</Field>
+          <Field label="可行性论证">{content.results.feasibility_argument}</Field>
           <List
             label="预期结果"
             items={content.results.expected_outcomes.map((item) => `${item.metric}：${item.statement}`)}
@@ -75,10 +79,11 @@ function renderBody(content: ArtifactContent) {
         <div className="space-y-3">
           <Field label="结论">{content.accepted ? "接受" : "拒绝"}</Field>
           <Field label="评分">
-            {`科学价值 ${content.scores.scientific_value}`
-              + ` · 技术深度 ${content.scores.technical_depth}`
-              + ` · 应用潜力 ${content.scores.application_potential}`}
+            {`科学价值 ${content.scores.scientific_value}` +
+              ` · 技术深度 ${content.scores.technical_depth}` +
+              ` · 应用潜力 ${content.scores.application_potential}`}
           </Field>
+          <List label="独立检索证据" items={content.independent_evidence_ids} />
           <List label="弱点" items={content.weaknesses.length > 0 ? content.weaknesses : ["无"]} />
           <List label="建议" items={content.feedback.length > 0 ? content.feedback : ["无"]} />
         </div>
@@ -105,7 +110,9 @@ function List({ label, items }: { label: string; items: string[] }) {
       <div className="font-mono text-[11px] uppercase tracking-widest text-muted-foreground">{label}</div>
       <ul className="mt-1 space-y-1">
         {items.map((item) => (
-          <li key={item} className="text-sm">· {item}</li>
+          <li key={item} className="text-sm">
+            · {item}
+          </li>
         ))}
       </ul>
     </div>

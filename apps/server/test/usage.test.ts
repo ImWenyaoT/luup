@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "vitest";
 
 import { ContractError, StageError } from "../src/agent/failures.ts";
+import { EvidenceLedger } from "../src/agent/evidence.ts";
 import { createDeterministicRuntime, createDeterministicVerifier } from "../src/executor-deterministic.ts";
 import { usageOf, type StageUsage } from "../src/executor.ts";
 import { Harness } from "../src/harness.ts";
@@ -30,12 +31,16 @@ const context: TaskContext = {
 };
 
 test("usage already spent is read back from the SDK error", () => {
-  const error = withState(new Error("boom"), {
-    requests: 2,
-    inputTokens: 100,
-    outputTokens: 40,
-    totalTokens: 140,
-  }, 3);
+  const error = withState(
+    new Error("boom"),
+    {
+      requests: 2,
+      inputTokens: 100,
+      outputTokens: 40,
+      totalTokens: 140,
+    },
+    3,
+  );
 
   assert.deepEqual(usageOf(error), {
     requests: 2,
@@ -58,9 +63,7 @@ test("a failed Attempt carries the usage of both of its calls", async () => {
   const execute: StageExecutor = () => {
     call += 1;
     // executor 已经把用量挂在它抛出的分类异常上；这里模拟那一步。
-    const error = call === 1
-      ? new ContractError("模型写错了")
-      : new StageError("provider_error", "provider 挂了");
+    const error = call === 1 ? new ContractError("模型写错了") : new StageError("provider_error", "provider 挂了");
     return Promise.reject(Object.assign(error, { usage: spent }));
   };
 
@@ -73,7 +76,11 @@ test("a failed Attempt carries the usage of both of its calls", async () => {
   assert.equal(failure?.corrections, 1);
   // 只带最后一次调用的用量，就等于把纠错轮之前烧掉的 token 从账上抹掉。
   assert.deepEqual(failure?.usage, {
-    requests: 2, inputTokens: 20, outputTokens: 8, totalTokens: 28, toolCalls: 2,
+    requests: 2,
+    inputTokens: 20,
+    outputTokens: 8,
+    totalTokens: 28,
+    toolCalls: 2,
   });
 });
 
@@ -115,7 +122,10 @@ test("failAttempt records the usage already spent as one sdk.usage event", () =>
   const events = store.eventsAfter(runId, 0);
   const usage = events.find((event) => event.kind === "sdk.usage");
   assert.deepEqual(usage?.payload, {
-    agent: "reviewer", input_tokens: 20, output_tokens: 8, total_tokens: 28,
+    agent: "reviewer",
+    input_tokens: 20,
+    output_tokens: 8,
+    total_tokens: 28,
   });
   // 用量发生在失败之前，事件顺序要说得通。
   assert.ok(usage!.version < events.find((event) => event.kind === "attempt.failed")!.version);
@@ -137,7 +147,10 @@ test("a stage failure inside the Harness lands its usage in the database", async
   const events = store.eventsAfter(runId, 0);
   const usage = events.find((event) => event.kind === "sdk.usage");
   assert.deepEqual(usage?.payload, {
-    agent: "researcher", input_tokens: 31, output_tokens: 5, total_tokens: 36,
+    agent: "researcher",
+    input_tokens: 31,
+    output_tokens: 5,
+    total_tokens: 36,
   });
   assert.ok(usage!.version < events.find((event) => event.kind === "attempt.failed")!.version);
   store.close();
@@ -150,7 +163,10 @@ test("a Harness failure without usage facts writes no usage event", async () => 
   const runId = store.createRun("问题");
   await new Harness(store, execute).execute(runId);
 
-  assert.equal(store.eventsAfter(runId, 0).some((event) => event.kind === "sdk.usage"), false);
+  assert.equal(
+    store.eventsAfter(runId, 0).some((event) => event.kind === "sdk.usage"),
+    false,
+  );
   store.close();
 });
 
@@ -161,7 +177,10 @@ test("failAttempt invents no usage event when there is no usage fact", () => {
 
   store.failAttempt(runId, attemptId, { code: "provider_error", reason: "boom" }, "StageError", 0);
 
-  assert.equal(store.eventsAfter(runId, 0).some((event) => event.kind === "sdk.usage"), false);
+  assert.equal(
+    store.eventsAfter(runId, 0).some((event) => event.kind === "sdk.usage"),
+    false,
+  );
   store.close();
 });
 
@@ -175,6 +194,7 @@ const review = {
   artifact_type: "review",
   research_plan_artifact_id: "will be overwritten",
   evidence_review_artifact_id: "will be overwritten",
+  independent_evidence_ids: ["ev_reviewer"],
   scores: { scientific_value: 4, technical_depth: 4, application_potential: 4 },
   weaknesses: [],
   feedback: [],
@@ -184,6 +204,7 @@ const review = {
 
 test("a successful Attempt carries the usage of every call it made", async () => {
   const spent: StageUsage = { requests: 1, inputTokens: 10, outputTokens: 4, totalTokens: 14, toolCalls: 0 };
+  const ledger = new EvidenceLedger();
   let call = 0;
   const execute: StageExecutor = ({ onUsage }) => {
     call += 1;
@@ -193,27 +214,50 @@ test("a successful Attempt carries the usage of every call it made", async () =>
       return Promise.reject(new ContractError("产物违反后置约束"));
     }
     onUsage?.(spent);
-    return Promise.resolve(review);
+    const evidence = ledger.record({
+      tool: "arxiv_search",
+      sourceType: "arxiv",
+      query: "reviewer search",
+      status: "succeeded",
+      resultSummary: "one source",
+      citations: [{ source_type: "arxiv", title: "source", locator: "arxiv:1", url: null }],
+    });
+    return Promise.resolve({ ...review, independent_evidence_ids: [evidence.evidenceId] });
   };
 
   const result = await runTask(
     { ...context, inputArtifacts: reviewerInputs, inputArtifactIds: ["plan", "review"] },
-    { execute },
+    { execute, ledger },
   );
 
   assert.equal(call, 2);
   assert.equal(result.corrections, 1);
   // 被驳回的那一轮同样烧掉了 token —— 只记交出 Artifact 的那次就是漏账。
   assert.deepEqual(result.usage, {
-    requests: 2, inputTokens: 20, outputTokens: 8, totalTokens: 28, toolCalls: 0,
+    requests: 2,
+    inputTokens: 20,
+    outputTokens: 8,
+    totalTokens: 28,
+    toolCalls: 0,
   });
 });
 
 test("an executor that reports no usage leaves the Attempt usage unknown", async () => {
-  const execute: StageExecutor = () => Promise.resolve(review);
+  const ledger = new EvidenceLedger();
+  const execute: StageExecutor = () => {
+    const evidence = ledger.record({
+      tool: "arxiv_search",
+      sourceType: "arxiv",
+      query: "reviewer search",
+      status: "succeeded",
+      resultSummary: "one source",
+      citations: [{ source_type: "arxiv", title: "source", locator: "arxiv:1", url: null }],
+    });
+    return Promise.resolve({ ...review, independent_evidence_ids: [evidence.evidenceId] });
+  };
   const result = await runTask(
     { ...context, inputArtifacts: reviewerInputs, inputArtifactIds: ["plan", "review"] },
-    { execute },
+    { execute, ledger },
   );
   assert.equal(result.usage, null);
 });
@@ -224,14 +268,20 @@ test("publishArtifact records the usage as one event ahead of the published arti
   const attemptId = store.startAttempt(runId, "reviewer");
 
   store.publishArtifact(runId, attemptId, review as any, [], 0, {
-    agent: "reviewer", inputTokens: 20, outputTokens: 8, totalTokens: 28,
+    agent: "reviewer",
+    inputTokens: 20,
+    outputTokens: 8,
+    totalTokens: 28,
   });
 
   const events = store.eventsAfter(runId, 0);
   const usage = events.filter((event) => event.kind === "sdk.usage");
   assert.equal(usage.length, 1);
   assert.deepEqual(usage[0]!.payload, {
-    agent: "reviewer", input_tokens: 20, output_tokens: 8, total_tokens: 28,
+    agent: "reviewer",
+    input_tokens: 20,
+    output_tokens: 8,
+    total_tokens: 28,
   });
   // 与失败路径同一形状：用量发生在终态事件之前。
   assert.ok(usage[0]!.version < events.find((event) => event.kind === "artifact.published")!.version);
@@ -245,7 +295,10 @@ test("publishArtifact invents no usage event when there is no usage fact", () =>
 
   store.publishArtifact(runId, attemptId, review as any, [], 0);
 
-  assert.equal(store.eventsAfter(runId, 0).some((event) => event.kind === "sdk.usage"), false);
+  assert.equal(
+    store.eventsAfter(runId, 0).some((event) => event.kind === "sdk.usage"),
+    false,
+  );
   store.close();
 });
 

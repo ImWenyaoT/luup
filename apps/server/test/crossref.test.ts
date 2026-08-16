@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
 
-import { searchCrossref } from "../src/agent/crossref.ts";
+import { CrossrefLookupError, resolveCrossrefDoi, searchCrossref } from "../src/agent/crossref.ts";
 import { EvidenceLedger } from "../src/agent/evidence.ts";
 import { createRoles } from "../src/agent/roles/index.ts";
 
@@ -30,6 +30,42 @@ test("maps a Crossref result to a DOI-backed citable record", async () => {
   assert.equal(record.url, "https://doi.org/10.1234/abcd");
   assert.equal(record.published, "2024-3-1");
   assert.deepEqual(record.authors, ["Ada Lovelace"]);
+});
+
+test("resolves one DOI through the exact works path with the Crossref User-Agent", async () => {
+  let requested = "";
+  let userAgent = "";
+  const record = await resolveCrossrefDoi("10.1234/ABC%2FDEF", {
+    minIntervalMs: 0,
+    fetchImpl: (async (url: URL, init?: RequestInit) => {
+      requested = url.toString();
+      userAgent = String((init?.headers as Record<string, string>)?.["user-agent"]);
+      return new Response(JSON.stringify({ message: work("10.1234/abc/def", "Exact DOI Work") }));
+    }) as unknown as typeof fetch,
+  });
+
+  assert.equal(record?.doi, "10.1234/abc/def");
+  assert.match(requested, /\/works\/10\.1234%2Fabc%2Fdef$/);
+  assert.equal(new URL(requested).search, "");
+  assert.match(userAgent, /mailto:/);
+});
+
+test("classifies a missing DOI as absent and Crossref 429/5xx as infrastructure errors", async () => {
+  const missing = await resolveCrossrefDoi("10.1234/missing", {
+    minIntervalMs: 0,
+    fetchImpl: (async () => new Response("", { status: 404 })) as unknown as typeof fetch,
+  });
+  assert.equal(missing, null);
+
+  for (const status of [429, 503]) {
+    await assert.rejects(
+      resolveCrossrefDoi("10.1234/down", {
+        minIntervalMs: 0,
+        fetchImpl: (async () => new Response("", { status })) as unknown as typeof fetch,
+      }),
+      CrossrefLookupError,
+    );
+  }
 });
 
 test("drops works without a DOI and reports partial", async () => {
@@ -69,21 +105,32 @@ test("does not fetch after its Attempt signal is cancelled", async () => {
   const controller = new AbortController();
   controller.abort();
   let called = false;
-  await assert.rejects(searchCrossref("q", {
-    signal: controller.signal,
-    fetchImpl: (async () => { called = true; return new Response(""); }) as unknown as typeof fetch,
-    minIntervalMs: 0,
-  }));
+  await assert.rejects(
+    searchCrossref("q", {
+      signal: controller.signal,
+      fetchImpl: (async () => {
+        called = true;
+        return new Response("");
+      }) as unknown as typeof fetch,
+      minIntervalMs: 0,
+    }),
+  );
   assert.equal(called, false);
 });
 
-test("only Researcher has a retrieval surface, and it has both sources", () => {
+test("Researcher and Reviewer have retrieval surfaces, and other roles remain tool-free", () => {
   const { agents } = createRoles(new EvidenceLedger());
   // 检索面两个源，外加一个上报面 —— structured_output 不是来源，是交作业的通道
-  assert.deepEqual(agents.researcher.tools.map((item: any) => item.name).sort(),
-    ["arxiv_search", "crossref_search", "structured_output"]);
-  // 其余角色零工具 —— 这是「只有 Researcher 可检索」的落点，不靠提示词
-  for (const role of ["hypothesis-generation", "evidence-review", "research-plan", "reviewer"] as const) {
+  assert.deepEqual(agents.researcher.tools.map((item: any) => item.name).sort(), [
+    "arxiv_search",
+    "crossref_search",
+    "structured_output",
+  ]);
+  assert.deepEqual(agents.reviewer.tools.map((item: any) => item.name).sort(), ["arxiv_search", "crossref_search"]);
+  assert.match(agents.reviewer.instructions as string, /反证/);
+  assert.match(agents.reviewer.instructions as string, /方法风险/);
+  // 其余角色零工具 —— 这是「只有 Researcher/Reviewer 可检索」的落点，不靠提示词
+  for (const role of ["hypothesis-generation", "evidence-review", "research-plan"] as const) {
     assert.equal(agents[role].tools.length, 0, `${role} must not have tools`);
   }
   // 不设具名 toolChoice：Qwen 挂两个工具时拒绝 required，具名又会锁死只能用一个源

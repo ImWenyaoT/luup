@@ -80,9 +80,7 @@ export function normalizeText(value: string): string {
 }
 
 function asDict(value: unknown): JsonObject {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as JsonObject)
-    : {};
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as JsonObject) : {};
 }
 
 function asList(value: unknown): unknown[] {
@@ -168,12 +166,14 @@ export function collectRunFacts(db: DatabaseSync, runId: string): RunFacts {
 
   // tool_evidence 只挂 attempt，所以这一层 JOIN 还得留着；attempt 自己带 run_id，
   // 原来那道 `JOIN tasks` 随 tasks 表一起没了。
-  const evidenceRows = db.prepare(
-    `SELECT te.id, te.tool_name, te.query, te.output_json
+  const evidenceRows = db
+    .prepare(
+      `SELECT te.id, te.tool_name, te.query, te.output_json
      FROM tool_evidence AS te
      JOIN attempts AS a ON a.id = te.attempt_id
      WHERE a.run_id = ?`,
-  ).all(runId) as Row[];
+    )
+    .all(runId) as Row[];
 
   const toolNames = new Set<string>();
   const arxivQueries: string[] = [];
@@ -197,9 +197,9 @@ export function collectRunFacts(db: DatabaseSync, runId: string): RunFacts {
 
   // artifacts 直接带 run_id，JOIN 去掉。时间戳只有毫秒精度，同毫秒的多条会并列，
   // 所以补一个 rowid 兜底，保证「后写的覆盖先写的」这条依赖顺序的规则是确定的。
-  const artifactRows = db.prepare(
-    "SELECT type, content_json FROM artifacts WHERE run_id = ? ORDER BY created_at, rowid",
-  ).all(runId) as Row[];
+  const artifactRows = db
+    .prepare("SELECT type, content_json FROM artifacts WHERE run_id = ? ORDER BY created_at, rowid")
+    .all(runId) as Row[];
 
   const artifactTypes = new Set<string>();
   let plan: JsonObject = {};
@@ -275,10 +275,7 @@ export function scoreEvidenceTraceable(facts: RunFacts): number {
     const normalized = normalizeUrl(reference);
     if (normalized !== null) normalizedReferences.push(normalized);
   }
-  if (
-    normalizedReferences.length > 0
-    && normalizedReferences.every((item) => facts.evidenceUrls.has(item))
-  ) {
+  if (normalizedReferences.length > 0 && normalizedReferences.every((item) => facts.evidenceUrls.has(item))) {
     score += 1;
   }
 
@@ -363,8 +360,9 @@ export function scoreRun(facts: RunFacts): RunScore {
 export function loadRunScores(dbPath: string): RunScore[] {
   const db = new DatabaseSync(dbPath, { readOnly: true });
   try {
-    const runIds = (db.prepare("SELECT id FROM runs ORDER BY created_at, rowid").all() as Row[])
-      .map((row) => textColumn(row, "id"));
+    const runIds = (db.prepare("SELECT id FROM runs ORDER BY created_at, rowid").all() as Row[]).map((row) =>
+      textColumn(row, "id"),
+    );
     return runIds.map((runId) => scoreRun(collectRunFacts(db, runId)));
   } finally {
     db.close();
@@ -406,7 +404,7 @@ export function summarize(scores: readonly RunScore[], label: string): ScoreSumm
 
 function summaryRows(summary: ScoreSummary): string[] {
   const count = summary.count || 1; // 只用于算百分比，避免除零
-  const pct = (value: number, full: number) => (value / full * 100).toFixed(1);
+  const pct = (value: number, full: number) => ((value / full) * 100).toFixed(1);
   return [
     `| 工具选择 | 1 | ${summary.toolSelection} | ${pct(summary.toolSelection, count)}% |`,
     `| 参数质量 | 1 | ${summary.parameterQuality} | ${pct(summary.parameterQuality, count)}% |`,
@@ -433,8 +431,8 @@ export function renderMarkdown(scores: readonly RunScore[], dbPath: string): str
     // 这条限制必须印在报告正文里，不能只留在代码注释中。交付文档会跨批次取每题最好的
     // 一次，那是为了让评委读到系统产出过的最好方案；评分不能这么干 —— 跨批次挑最好
     // 就是 best-of-N，会把过程指标抬到系统单次跑根本达不到的水平。
-    "评分只读**一个**跑批库，不跨批次合并：跨批次取每题最好的一次是 best-of-N，"
-    + "会让过程指标高于系统单次跑批的真实水平。下面的数字来自这一个库的一次跑批。",
+    "评分只读**一个**跑批库，不跨批次合并：跨批次取每题最好的一次是 best-of-N，" +
+      "会让过程指标高于系统单次跑批的真实水平。下面的数字来自这一个库的一次跑批。",
     "",
   ];
 
@@ -461,9 +459,9 @@ export function renderMarkdown(scores: readonly RunScore[], dbPath: string): str
   );
   for (const item of scores) {
     lines.push(
-      `| ${item.runId.slice(0, 8)} | ${item.status} | ${item.toolSelection} | `
-      + `${item.parameterQuality} | ${item.evidenceTraceable} | `
-      + `${item.processComplete} | ${item.vetoed ? "是" : "否"} | ${total(item)} |`,
+      `| ${item.runId.slice(0, 8)} | ${item.status} | ${item.toolSelection} | ` +
+        `${item.parameterQuality} | ${item.evidenceTraceable} | ` +
+        `${item.processComplete} | ${item.vetoed ? "是" : "否"} | ${total(item)} |`,
     );
   }
   lines.push("");

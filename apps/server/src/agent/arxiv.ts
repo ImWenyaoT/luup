@@ -173,9 +173,10 @@ export async function searchArxiv(
   return {
     query,
     status,
-    resultSummary: status === "partial"
-      ? `arXiv returned ${records.length} citable record(s), ${entries.length - records.length} unusable`
-      : `arXiv returned ${records.length} citable record(s)`,
+    resultSummary:
+      status === "partial"
+        ? `arXiv returned ${records.length} citable record(s), ${entries.length - records.length} unusable`
+        : `arXiv returned ${records.length} citable record(s)`,
     records,
     execution,
   };
@@ -220,10 +221,9 @@ export async function fetchArxivByIds(
   } catch (error) {
     // 取消一路抛回调用方，不伪装成一次反查失败。
     if (options.signal?.aborted) throw error;
-    throw new ArxivLookupError(
-      `arXiv lookup failed: ${error instanceof Error ? error.message : String(error)}`,
-      { cause: error },
-    );
+    throw new ArxivLookupError(`arXiv lookup failed: ${error instanceof Error ? error.message : String(error)}`, {
+      cause: error,
+    });
   }
   if (!response.ok) throw new ArxivLookupError(`arXiv lookup returned HTTP ${response.status}`);
 

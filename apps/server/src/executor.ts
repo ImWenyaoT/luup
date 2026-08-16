@@ -119,20 +119,20 @@ export function isContextOverflow(detail: string): boolean {
  * researcher 取 12 的推导 = 检索 5 + 上报 1 + 修正余量 6。余量与检索预算同量级，
  * 才谈得上「查完之后每一步都还能错一次」；给 7、8 只是把同一堵墙挪近一点。
  *
- * 另外四个角色**没有工具**（`roles.ts` 的 runTask 开头就断言这件事），产物即最终输出，
- * 正常路径一个 turn 就结束，6 已经是宽松余量。跟着抬高它们不会救回任何一次失败 ——
- * 无工具角色撞 turn limit 只可能是模型在空转，多给的 turn 是纯粹多付的预算。
+ * hypothesis-generation / evidence-review / research-plan 三个角色没有工具，产物即最终输出，
+ * 正常路径一个 turn 就结束。Reviewer 只有受限的独立检索面，6 turns 足够完成一次检索并交付；
+ * 继续抬高不会救回合同失败，只会让模型空转时多付预算。
  *
  * 抬高不会失控，兜底在外层而不在这个数：阶段 deadline 300s（`roles.ts` 的 `timeoutMs`）
  * 与单题 40 分钟（`batch/runner.ts` 的 `RUN_TIMEOUT_MS`）。两者用尽是不同的失败码
  * （`deadline_exceeded`），与 turn 用尽（`invalid_output`）在报告里也分得开。
  */
 const MAX_TURNS_BY_ROLE: Record<Role, number> = {
-  "researcher": 12,
+  researcher: 12,
   "hypothesis-generation": 6,
   "evidence-review": 6,
   "research-plan": 6,
-  "reviewer": 6,
+  reviewer: 6,
 };
 
 /** 角色的 turn 上限。`Record<Role, ...>` 保证少写一个角色是编译期错误。 */
@@ -197,11 +197,7 @@ export const TRANSIENT_RETRY: ModelSettings = {
   retry: {
     // 2 次之后仍失败就不是抖动，是停机；继续重试只是把整批的墙钟烧在一个死掉的端点上。
     maxRetries: 2,
-    policy: retryPolicies.any(
-      retryPolicies.providerSuggested(),
-      retryPolicies.networkError(),
-      TRANSIENT_STATUS,
-    ),
+    policy: retryPolicies.any(retryPolicies.providerSuggested(), retryPolicies.networkError(), TRANSIENT_STATUS),
     backoff: { initialDelayMs: 2_000, multiplier: 4, maxDelayMs: 8_000, jitter: true },
   },
 };
@@ -222,13 +218,20 @@ export function createQwenExecutor(
   let cached: { runner: Runner; version: number } | null = null;
   const runnerFor = (): Runner => {
     if (modelProvider) {
-      cached ??= { runner: new Runner({ modelProvider, tracingDisabled: true, modelSettings: TRANSIENT_RETRY }), version: -1 };
+      cached ??= {
+        runner: new Runner({ modelProvider, tracingDisabled: true, modelSettings: TRANSIENT_RETRY }),
+        version: -1,
+      };
       return cached.runner;
     }
     const version = modelConfigVersion();
     if (cached === null || cached.version !== version) {
       cached = {
-        runner: new Runner({ modelProvider: qwenModelProvider(), tracingDisabled: true, modelSettings: TRANSIENT_RETRY }),
+        runner: new Runner({
+          modelProvider: qwenModelProvider(),
+          tracingDisabled: true,
+          modelSettings: TRANSIENT_RETRY,
+        }),
         version,
       };
     }
@@ -251,8 +254,9 @@ export function createQwenExecutor(
         signal,
         errorHandlers: {
           invalidFinalOutput: ({ context, runData }) => {
-            observed.usage = stageUsageOf(runData.state as UsageSource)
-              ?? stageUsageOf({ usage: context.usage, _generatedItems: runData.newItems });
+            observed.usage =
+              stageUsageOf(runData.state as UsageSource) ??
+              stageUsageOf({ usage: context.usage, _generatedItems: runData.newItems });
             return undefined;
           },
         },
@@ -275,20 +279,13 @@ export function createQwenExecutor(
       };
       // 执行层失败不给纠错机会：换个提示词重发一次也不会让超时或 provider 报错消失。
       if (signal.aborted) {
-        fail(new StageError(
-          "deadline_exceeded",
-          `${role} exceeded the Attempt deadline`,
-          { cause: error },
-        ));
+        fail(new StageError("deadline_exceeded", `${role} exceeded the Attempt deadline`, { cause: error }));
       }
       // SDK 把「模型没按约定输出」和「provider 坏了」分成了不同的错误类，这里必须跟着分：
       // ModelBehaviorError（含 outputType 校验失败）是模型写错了，该给一次纠错机会；
       // 全都归成 provider_error 会让这类失败一次机会都没有就终止 Attempt。
       if (error instanceof ModelBehaviorError || error instanceof ModelRefusalError) {
-        fail(new ContractError(
-          `${role} 的输出不符合约定：${error.message}`,
-          { cause: error },
-        ));
+        fail(new ContractError(`${role} 的输出不符合约定：${error.message}`, { cause: error }));
       }
       // 模型一直调用工具却不交最终答案，是 Agent 没完成，不是 provider 宕机。
       if (error instanceof MaxTurnsExceededError) {
@@ -296,20 +293,24 @@ export function createQwenExecutor(
       }
       // 上下文超长必须在 provider_error 兜底之前认出来，否则它就永远混在兜底里。
       if (isContextOverflow(providerDetail(error))) {
-        fail(new StageError(
-          "context_overflow",
-          `${role} exceeded the model context window: ${error instanceof Error ? error.message : String(error)}`,
-          { cause: error },
-        ));
+        fail(
+          new StageError(
+            "context_overflow",
+            `${role} exceeded the model context window: ${error instanceof Error ? error.message : String(error)}`,
+            { cause: error },
+          ),
+        );
       }
       // 走到这里的瞬时故障已经退避重试过（`TRANSIENT_RETRY`）并且仍然失败，或者
       // 判据认定它根本不瞬时（4xx 语义错误）。两种都是终态：`provider_error` 的语义
       // 因此从「provider 报错了」收紧为「provider 报错且重试救不回来」。
-      return fail(new StageError(
-        "provider_error",
-        `${role} provider call failed: ${error instanceof Error ? error.message : String(error)}`,
-        { cause: error },
-      ));
+      return fail(
+        new StageError(
+          "provider_error",
+          `${role} provider call failed: ${error instanceof Error ? error.message : String(error)}`,
+          { cause: error },
+        ),
+      );
     }
     if (result.finalOutput === undefined) {
       throw new StageError("provider_error", `${role} returned no final output`);

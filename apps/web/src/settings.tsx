@@ -26,7 +26,9 @@ export function Settings() {
 
   useEffect(() => {
     // 拉不到配置绝不能静默消失：那会让「后端没起」与「老版本 UI」在空闲态无法区分。
-    fetchConfig().then(setStatus).catch(() => setStatus("unreachable"));
+    fetchConfig()
+      .then(setStatus)
+      .catch(() => setStatus("unreachable"));
   }, []);
 
   async function save() {
@@ -57,9 +59,9 @@ export function Settings() {
   if (status === "unreachable") {
     return (
       <p className="text-xs text-destructive">
-        设置读取失败：后端不可达。用 <code className="font-mono">pnpm dev</code>{" "}
-        一条命令同起前后端；若你单独跑了 <code className="font-mono">dev:web</code>，另开终端补{" "}
-        <code className="font-mono">pnpm run dev:api</code>（或 <code className="font-mono">pnpm start</code> 走单进程交付形态）。
+        设置读取失败：后端不可达。用 <code className="font-mono">pnpm dev</code> 一条命令同起前后端；若你单独跑了{" "}
+        <code className="font-mono">dev:web</code>，另开终端补 <code className="font-mono">pnpm run dev:api</code>（或{" "}
+        <code className="font-mono">pnpm start</code> 走单进程交付形态）。
       </p>
     );
   }
@@ -84,9 +86,11 @@ export function Settings() {
             autoComplete="off"
             value={apiKey}
             onChange={(event) => setApiKey(event.target.value)}
-            placeholder={status.credential === "absent"
-              ? "粘贴百炼 API Key（只存进程内存，不落盘）"
-              : "API Key（留空则沿用当前配置）"}
+            placeholder={
+              status.credential === "absent"
+                ? "粘贴百炼 API Key（只存进程内存，不落盘）"
+                : "API Key（留空则沿用当前配置）"
+            }
             className="h-9 w-full rounded-md border bg-transparent px-3 font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
           <div className="grid gap-2 sm:grid-cols-2">

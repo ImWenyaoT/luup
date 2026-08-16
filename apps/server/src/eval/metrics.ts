@@ -135,10 +135,12 @@ export function loadRunFacts(dbPath: string): RunFacts[] {
       (db.prepare("PRAGMA table_info(runs)").all() as Array<{ name: string }>).map((item) => item.name),
     );
     const arm = columns.has("memory_arm") ? "memory_arm" : "NULL AS memory_arm";
-    const runs = db.prepare(
-      `SELECT id, science125_id, status, error_code, source_identity_json, ${arm} `
-      + "FROM runs ORDER BY created_at, rowid",
-    ).all() as Row[];
+    const runs = db
+      .prepare(
+        `SELECT id, science125_id, status, error_code, source_identity_json, ${arm} ` +
+          "FROM runs ORDER BY created_at, rowid",
+      )
+      .all() as Row[];
     return runs.map((run) => collectRunFacts(db, run));
   } finally {
     db.close();
@@ -147,16 +149,18 @@ export function loadRunFacts(dbPath: string): RunFacts[] {
 
 function collectRunFacts(db: DatabaseSync, run: Row): RunFacts {
   const runId = String(run.id);
-  const attempts = db.prepare(
-    "SELECT role, status, corrections FROM attempts WHERE run_id = ?",
-  ).all(runId) as Row[];
-  const queries = (db.prepare(
-    `SELECT te.query FROM tool_evidence AS te JOIN attempts AS a ON a.id = te.attempt_id
+  const attempts = db.prepare("SELECT role, status, corrections FROM attempts WHERE run_id = ?").all(runId) as Row[];
+  const queries = (
+    db
+      .prepare(
+        `SELECT te.query FROM tool_evidence AS te JOIN attempts AS a ON a.id = te.attempt_id
      WHERE a.run_id = ? AND te.tool_name = ?`,
-  ).all(runId, ARXIV_TOOL) as Row[]).map((row) => normalizeQuery(String(row.query)));
-  const injection = db.prepare(
-    "SELECT payload_json FROM events WHERE run_id = ? AND kind = ? ORDER BY version LIMIT 1",
-  ).get(runId, INJECTION_EVENT) as Row | undefined;
+      )
+      .all(runId, ARXIV_TOOL) as Row[]
+  ).map((row) => normalizeQuery(String(row.query)));
+  const injection = db
+    .prepare("SELECT payload_json FROM events WHERE run_id = ? AND kind = ? ORDER BY version LIMIT 1")
+    .get(runId, INJECTION_EVENT) as Row | undefined;
 
   const questionId = run.science125_id;
   return {
@@ -186,7 +190,7 @@ export type Proportion = { rate: number | null; se: number | null };
 export function proportion(successes: number, total: number): Proportion {
   if (total <= 0) return { rate: null, se: null };
   const rate = successes / total;
-  return { rate, se: Math.sqrt(rate * (1 - rate) / total) };
+  return { rate, se: Math.sqrt((rate * (1 - rate)) / total) };
 }
 
 const ratio = (part: number, total: number): number | null => (total > 0 ? part / total : null);
@@ -290,8 +294,7 @@ export function memoryInjection(facts: readonly RunFacts[]) {
     byArm: {
       on: known.filter((item) => item.memoryArm === "on").reduce((sum, item) => sum + item.injected!, 0),
       off: known.filter((item) => item.memoryArm === "off").reduce((sum, item) => sum + item.injected!, 0),
-      unlabelled: known.filter((item) => item.memoryArm === null)
-        .reduce((sum, item) => sum + item.injected!, 0),
+      unlabelled: known.filter((item) => item.memoryArm === null).reduce((sum, item) => sum + item.injected!, 0),
     },
     // 消融失效：off 臂却读到了记忆。这些 run 不是对照，必须剔出配对。
     ablationIneffectiveRuns: facts.filter((item) => !ablationEffective(item)).map((item) => item.runId),
@@ -324,8 +327,9 @@ export function failureClasses(facts: readonly RunFacts[]) {
   const classified = failed.filter((item) => !isRejected(item));
   const infrastructure = classified.filter((item) => INFRASTRUCTURE_CLASSES.has(item.errorCode ?? ""));
   const quality = classified.filter((item) => QUALITY_CLASSES.has(item.errorCode ?? ""));
-  const unclassified = classified.filter((item) =>
-    !INFRASTRUCTURE_CLASSES.has(item.errorCode ?? "") && !QUALITY_CLASSES.has(item.errorCode ?? ""));
+  const unclassified = classified.filter(
+    (item) => !INFRASTRUCTURE_CLASSES.has(item.errorCode ?? "") && !QUALITY_CLASSES.has(item.errorCode ?? ""),
+  );
   return {
     failed: failed.length,
     reviewRejected: rejected.length,
@@ -344,7 +348,8 @@ export function cohorts(facts: readonly RunFacts[]): Record<string, ReturnType<t
     else groups.set(item.cohort, [item]);
   }
   return Object.fromEntries(
-    [...groups].sort(([left], [right]) => left.localeCompare(right))
+    [...groups]
+      .sort(([left], [right]) => left.localeCompare(right))
       .map(([label, group]) => [label, deliveryRate(group)]),
   );
 }
@@ -373,7 +378,7 @@ function exactBinomial(b: number, c: number): number {
 
 function choose(n: number, k: number): number {
   let result = 1;
-  for (let index = 0; index < k; index += 1) result = result * (n - index) / (index + 1);
+  for (let index = 0; index < k; index += 1) result = (result * (n - index)) / (index + 1);
   return result;
 }
 
@@ -397,7 +402,11 @@ export function memoryArmComparison(facts: readonly RunFacts[]): McNemar | null 
     const on = group.filter((item) => item.memoryArm === "on").at(-1);
     if (!off || !on) continue;
     rows.push({
-      questionId, off: off.runId, on: on.runId, offPass: off.deliverable, onPass: on.deliverable,
+      questionId,
+      off: off.runId,
+      on: on.runId,
+      offPass: off.deliverable,
+      onPass: on.deliverable,
     });
   }
   if (rows.length === 0 && excluded.length === 0) return null;
@@ -467,49 +476,49 @@ export function renderMarkdown(report: MetricsReport): string {
     "| 分母 | Run 数 | 交付 | 率 ± SE |",
     "| --- | ---: | ---: | ---: |",
     `| 全部 | ${stats.delivery.runs} | ${stats.delivery.deliverable} | ${pm(stats.delivery)} |`,
-    `| 剔除 infra 类 | ${stats.delivery.excludingInfrastructure.runs} | `
-    + `${stats.delivery.excludingInfrastructure.deliverable} | ${pm(stats.delivery.excludingInfrastructure)} |`,
+    `| 剔除 infra 类 | ${stats.delivery.excludingInfrastructure.runs} | ` +
+      `${stats.delivery.excludingInfrastructure.deliverable} | ${pm(stats.delivery.excludingInfrastructure)} |`,
     "",
     "## 按代码版本分组",
     "",
     "| cohort | Run 数 | 交付 | 率 ± SE |",
     "| --- | ---: | ---: | ---: |",
-    ...Object.entries(stats.sourceIdentity).map(([label, group]) =>
-      `| \`${label}\` | ${group.runs} | ${group.deliverable} | ${pm(group)} |`),
+    ...Object.entries(stats.sourceIdentity).map(
+      ([label, group]) => `| \`${label}\` | ${group.runs} | ${group.deliverable} | ${pm(group)} |`,
+    ),
     "",
     "## 过程指标",
     "",
     "| 指标 | 分子 / 分母 | 率 |",
     "| --- | ---: | ---: |",
-    `| Pass^2（同题相邻两 run，机会样本） | ${stats.passSquared.both} / ${stats.passSquared.pairs} | `
-    + `${pct(stats.passSquared.rate)} |`,
-    `| 结构化纠错 | ${stats.corrections.correctedAttempts} / ${stats.corrections.attempts} Attempt | `
-    + `${pct(stats.corrections.rate)} |`,
+    `| Pass^2（同题相邻两 run，机会样本） | ${stats.passSquared.both} / ${stats.passSquared.pairs} | ` +
+      `${pct(stats.passSquared.rate)} |`,
+    `| 结构化纠错 | ${stats.corrections.correctedAttempts} / ${stats.corrections.attempts} Attempt | ` +
+      `${pct(stats.corrections.rate)} |`,
     `| Reviewer 否决 | ${stats.review.rejected} / ${stats.review.reviewed} 已评审 | ${pct(stats.review.rate)} |`,
-    `| 重复检索 | ${stats.searchHealth.arxivCalls - stats.searchHealth.distinctQueries} / `
-    + `${stats.searchHealth.arxivCalls} 次 arXiv | ${pct(stats.searchHealth.repeatedRate)} |`,
+    `| 重复检索 | ${stats.searchHealth.arxivCalls - stats.searchHealth.distinctQueries} / ` +
+      `${stats.searchHealth.arxivCalls} 次 arXiv | ${pct(stats.searchHealth.repeatedRate)} |`,
     "",
     "## 记忆注入与消融生效门",
     "",
-    `- 有注入事件的 run：${stats.memoryInjection.runsWithInjectionEvent}`
-    + `（缺事件 ${stats.memoryInjection.runsWithoutInjectionEvent}）`,
-    `- 注入条数合计：${stats.memoryInjection.entries}`
-    + `（on ${stats.memoryInjection.byArm.on} / off ${stats.memoryInjection.byArm.off}`
-    + ` / 未标臂 ${stats.memoryInjection.byArm.unlabelled}）`,
-    `- 消融失效的 run：${stats.memoryInjection.ablationIneffectiveRuns.length}`
-    + (stats.memoryInjection.ablationIneffectiveRuns.length > 0
-      ? ` — ${stats.memoryInjection.ablationIneffectiveRuns.join("、")}`
-      : "（off 臂注入恒为 0，消融成立）"),
+    `- 有注入事件的 run：${stats.memoryInjection.runsWithInjectionEvent}` +
+      `（缺事件 ${stats.memoryInjection.runsWithoutInjectionEvent}）`,
+    `- 注入条数合计：${stats.memoryInjection.entries}` +
+      `（on ${stats.memoryInjection.byArm.on} / off ${stats.memoryInjection.byArm.off}` +
+      ` / 未标臂 ${stats.memoryInjection.byArm.unlabelled}）`,
+    `- 消融失效的 run：${stats.memoryInjection.ablationIneffectiveRuns.length}` +
+      (stats.memoryInjection.ablationIneffectiveRuns.length > 0
+        ? ` — ${stats.memoryInjection.ablationIneffectiveRuns.join("、")}`
+        : "（off 臂注入恒为 0，消融成立）"),
     "",
     "## 失败分类",
     "",
     `- 未交付：${stats.failureClasses.failed}`,
     `- 质量类 ${stats.failureClasses.quality.count}：${JSON.stringify(stats.failureClasses.quality.byClass)}`,
-    `- 环境类 ${stats.failureClasses.infrastructure.count}：`
-    + JSON.stringify(stats.failureClasses.infrastructure.byClass),
+    `- 环境类 ${stats.failureClasses.infrastructure.count}：` +
+      JSON.stringify(stats.failureClasses.infrastructure.byClass),
     `- Reviewer 否决（review_rejected，不是 failure code）：${stats.failureClasses.reviewRejected}`,
-    `- 未分类 ${stats.failureClasses.unclassified.count}：`
-    + JSON.stringify(stats.failureClasses.unclassified.byClass),
+    `- 未分类 ${stats.failureClasses.unclassified.count}：` + JSON.stringify(stats.failureClasses.unclassified.byClass),
     "",
     "> 桶归属按「谁能修」裁决：环境类（infra_error / infra_timeout / missing_credential /",
     "> provider_error / deadline_exceeded）剔出质量分母；质量类（invalid_output / verifier_refs /",
@@ -524,8 +533,7 @@ export function renderMarkdown(report: MetricsReport): string {
   } else {
     lines.push(
       `- 配对题数：${paired.questions.length}`,
-      `- b（off 挂 ∧ on 过）：${paired.b}；c（off 过 ∧ on 挂）：${paired.c}；`
-      + `不一致对：${paired.discordant}`,
+      `- b（off 挂 ∧ on 过）：${paired.b}；c（off 过 ∧ on 挂）：${paired.c}；` + `不一致对：${paired.discordant}`,
       `- 一致通过：${paired.concordantPass}；一致失败：${paired.concordantFail}`,
       `- regressionRate = c/(concordantPass+c)：${pct(paired.regressionRate)}`,
       `- 被剔除的 off run：${paired.excludedRuns.length}`,

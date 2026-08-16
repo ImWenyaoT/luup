@@ -1,9 +1,9 @@
 {
   "name": "@luup/server",
   "version": "0.1.0",
+  "private": true,
   "description": "Luup harness backend: deterministic orchestration over @openai/agents, SQLite fact store, B1-B4 verifiers.",
   "type": "module",
-  "private": true,
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

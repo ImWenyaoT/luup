@@ -51,6 +51,14 @@ export type ResolvedRecord = {
   year: number | null;
 };
 
+/** DOI 精确反查回来的权威记录。 */
+export type DoiResolvedRecord = {
+  doi: string;
+  title: string;
+  authors: string[];
+  year: number | null;
+};
+
 /** 一条引用连同它在本 run 里的归属与可反查性。 */
 export type ReferenceTarget = {
   /** 计划里原样写下的引用字符串。 */
@@ -63,6 +71,8 @@ export type ReferenceTarget = {
   rawArxivId: string | null;
   /** 比对用的归一化 arXiv id（去掉版本号、小写）。 */
   arxivId: string | null;
+  /** 反查用的规范化 DOI（小写、URL 编码已解码）。 */
+  doi: string | null;
 };
 
 const TITLE_NOISE = /[^a-z0-9一-鿿]+/g;
@@ -70,6 +80,7 @@ const AUTHOR_NOISE = /[^a-z0-9一-鿿'-]+/g;
 const WORD_CHAR = /[a-z0-9一-鿿]/;
 // 新式 `2301.12345v2` 与旧式 `hep-th/9901001v1` 两种写法，和 arXiv 官方 id 规范一致。
 const ARXIV_ID = /^(?:\d{4}\.\d{4,5}(?:v\d+)?|[a-z-]+(?:\.[a-z]{2})?\/\d{7}(?:v\d+)?)$/i;
+const DOI = /^10\.\d{4,9}\/\S+$/i;
 
 /** 把 URL 归一化成可比较的形式；不是绝对 http(s) 地址就返回 null。
  *
@@ -118,6 +129,36 @@ export function extractArxivId(value: string): string | null {
   return ARXIV_ID.test(candidate) ? candidate : null;
 }
 
+/** 规范化 DOI：接受 DOI locator 或 doi.org 路径中的 URL 编码，统一为小写。 */
+export function normalizeDoi(value: string): string | null {
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(value.trim());
+  } catch {
+    return null;
+  }
+  const normalized = decoded
+    .replace(/^doi:\s*/i, "")
+    .trim()
+    .toLowerCase();
+  return DOI.test(normalized) ? normalized : null;
+}
+
+/** 从 plan 引用或冻结卡片 locator 中提取 DOI。 */
+export function extractDoi(value: string): string | null {
+  const raw = value.trim();
+  if (/^doi:/i.test(raw)) return normalizeDoi(raw);
+
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (parsed.hostname.toLowerCase() !== "doi.org") return null;
+  return normalizeDoi(parsed.pathname.slice(1));
+}
+
 /** 把标题折叠为只含可比较词元的形式，消除大小写和标点差异。 */
 function normalizeTitle(value: string): string {
   return value.toLowerCase().replace(TITLE_NOISE, " ").trim();
@@ -144,7 +185,10 @@ export function surnameOf(author: string): string {
   const comma = raw.indexOf(",");
   const head = comma > 0 ? raw.slice(0, comma) : raw;
   const folded = head.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
-  const tokens = folded.replace(AUTHOR_NOISE, " ").split(" ").filter((token) => WORD_CHAR.test(token));
+  const tokens = folded
+    .replace(AUTHOR_NOISE, " ")
+    .split(" ")
+    .filter((token) => WORD_CHAR.test(token));
   return tokens.at(-1) ?? "";
 }
 
@@ -154,9 +198,7 @@ export function surnameOf(author: string): string {
  * upstreamTraceabilityIssues 同源：台账里可能有检索到却从未写进任何冻结 Artifact 的条目，
  * 让引用去核验那种条目，追溯链就断在 Artifact 之外了。
  */
-export function collectFrozenCards(
-  citations: readonly FrozenCitation[],
-): Map<string, FrozenCitation> {
+export function collectFrozenCards(citations: readonly FrozenCitation[]): Map<string, FrozenCitation> {
   const cards = new Map<string, FrozenCitation>();
   for (const citation of citations) {
     if (typeof citation.url !== "string") continue;
@@ -174,15 +216,25 @@ export function resolveTargets(
 ): ReferenceTarget[] {
   return references.map((reference) => {
     const normalizedUrl = normalizeUrl(reference);
-    const card = normalizedUrl === null ? null : cards.get(normalizedUrl) ?? null;
+    const referenceDoi = extractDoi(reference);
+    let card = normalizedUrl === null ? null : (cards.get(normalizedUrl) ?? null);
+    if (card === null && referenceDoi !== null) {
+      card =
+        [...cards.values()].find(
+          (candidate) =>
+            extractDoi(candidate.locator) === referenceDoi || extractDoi(candidate.url ?? "") === referenceDoi,
+        ) ?? null;
+    }
     // id 优先从引用本身提取；引用是 DOI 之类时退回卡片的 locator（`arxiv:<id>`）。
     const rawArxivId = extractArxivId(reference) ?? (card ? extractArxivId(card.locator) : null);
+    const rawDoi = referenceDoi ?? (card ? extractDoi(card.locator) : null);
     return {
       reference,
       normalizedUrl,
       card,
       rawArxivId,
       arxivId: rawArxivId === null ? null : normalizeArxivId(rawArxivId),
+      doi: rawDoi,
     };
   });
 }
@@ -197,24 +249,22 @@ export function checkReferenceCount(references: readonly string[]): ReferenceChe
 }
 
 /** B1：每条引用都必须落在本 run 冻结证据的 URL 集合里。 */
-export function checkFrozenMembership(
-  targets: readonly ReferenceTarget[],
-  cardCount: number,
-): ReferenceCheck[] {
+export function checkFrozenMembership(targets: readonly ReferenceTarget[], cardCount: number): ReferenceCheck[] {
   return targets.map((target) => ({
     id: `B1.${target.reference}`,
     pass: target.card !== null,
-    detail: target.card !== null
-      ? `在本次运行的冻结证据里（${target.card.source_type} 来源）`
-      : target.normalizedUrl === null
-        ? "不是合法的 http(s) 引用地址，无法归属到任何冻结证据"
-        : `未在本次运行的冻结证据里命中（冻结来源共 ${cardCount} 条）——必须先检索并冻结`,
+    detail:
+      target.card !== null
+        ? `在本次运行的冻结证据里（${target.card.source_type} 来源）`
+        : target.normalizedUrl === null
+          ? "不是合法的 http(s) 引用地址，无法归属到任何冻结证据"
+          : `未在本次运行的冻结证据里命中（冻结来源共 ${cardCount} 条）——必须先检索并冻结`,
   }));
 }
 
 /** B2：冻结卡片的标题与 arXiv 独立反查结果的重合度。
  *
- * 只对提得出 arXiv id 且有冻结卡片的引用执行；提不出 id 的（Crossref/网页）没有反查通路，
+ * 只对提得出 arXiv id 且有冻结卡片的引用执行；DOI 由 Crossref 的独立通路处理，普通网页没有反查通路，
  * 没有卡片的已由 B1 报告，此处不再伪造一条判定。
  */
 export function checkResolvedTitles(
@@ -237,8 +287,9 @@ export function checkResolvedTitles(
     checks.push({
       id: `B2.${target.arxivId}`,
       pass: score >= TITLE_OVERLAP_THRESHOLD,
-      detail: `标题重合度 ${score.toFixed(2)}（阈值 ${TITLE_OVERLAP_THRESHOLD}）`
-        + `｜冻结证据「${target.card.title}」｜arXiv「${remote.title}」`,
+      detail:
+        `标题重合度 ${score.toFixed(2)}（阈值 ${TITLE_OVERLAP_THRESHOLD}）` +
+        `｜冻结证据「${target.card.title}」｜arXiv「${remote.title}」`,
     });
   }
   return checks;
@@ -284,11 +335,83 @@ export function checkResolvedMetadata(
     checks.push({
       id: `B4.${target.arxivId}`,
       pass: problems.length === 0,
-      detail: problems.length === 0
-        ? "作者与年份与 arXiv 独立反查一致，第一作者一致"
-        : `${problems.join("；")} —— 冻结证据与 arXiv 事实不符，该引用不可接受`,
+      detail:
+        problems.length === 0
+          ? "作者与年份与 arXiv 独立反查一致，第一作者一致"
+          : `${problems.join("；")} —— 冻结证据与 arXiv 事实不符，该引用不可接受`,
     });
   }
   return checks;
 }
 
+/** DOI B2：冻结卡片标题必须与精确 Crossref DOI 反查一致。 */
+export function checkResolvedDoiTitles(
+  targets: readonly ReferenceTarget[],
+  resolved: ReadonlyMap<string, DoiResolvedRecord>,
+): ReferenceCheck[] {
+  const checks: ReferenceCheck[] = [];
+  for (const target of targets) {
+    if (target.doi === null || target.card === null) continue;
+    const remote = resolved.get(target.doi);
+    if (remote === undefined) {
+      checks.push({
+        id: `B2.doi.${target.doi}`,
+        pass: false,
+        detail: "Crossref DOI 独立反查无结果（该 DOI 不存在或响应缺少记录）",
+      });
+      continue;
+    }
+    const score = titleOverlap(target.card.title, remote.title);
+    checks.push({
+      id: `B2.doi.${target.doi}`,
+      pass: score >= TITLE_OVERLAP_THRESHOLD,
+      detail:
+        `标题重合度 ${score.toFixed(2)}（阈值 ${TITLE_OVERLAP_THRESHOLD}）` +
+        `｜冻结证据「${target.card.title}」｜Crossref「${remote.title}」`,
+    });
+  }
+  return checks;
+}
+
+/** DOI B4：冻结卡片的作者与年份必须与精确 Crossref DOI 反查一致。 */
+export function checkResolvedDoiMetadata(
+  targets: readonly ReferenceTarget[],
+  resolved: ReadonlyMap<string, DoiResolvedRecord>,
+): ReferenceCheck[] {
+  const checks: ReferenceCheck[] = [];
+  for (const target of targets) {
+    if (target.doi === null || target.card === null) continue;
+    const remote = resolved.get(target.doi);
+    if (remote === undefined) continue;
+
+    const claimedAuthors = target.card.authors ?? [];
+    const problems: string[] = [];
+    if (claimedAuthors.length === 0) problems.push("冻结证据未登记作者，无法执行 DOI 作者核验");
+    if (target.card.year != null && remote.year !== null && target.card.year !== remote.year) {
+      problems.push(`年份不符（冻结证据 ${target.card.year}，Crossref ${remote.year}）`);
+    }
+    const truth = new Set(remote.authors.map(surnameOf).filter(Boolean));
+    if (remote.authors.length > 0 && truth.size === 0) {
+      problems.push("Crossref 返回的作者无法解析，无法执行 DOI 作者核验");
+    }
+    const claimed = claimedAuthors.map(surnameOf).filter(Boolean);
+    const bogus = claimed.filter((name) => !truth.has(name));
+    if (truth.size > 0 && bogus.length > 0) {
+      problems.push(`作者不符：${bogus.join(", ")} 不在该 DOI 文献作者中（Crossref: ${remote.authors.join(", ")}）`);
+    }
+    const firstTruth = surnameOf(remote.authors[0] ?? "");
+    const firstClaimed = surnameOf(claimedAuthors[0] ?? "");
+    if (firstTruth && firstClaimed !== firstTruth) {
+      problems.push(`第一作者不符（冻结证据「${claimedAuthors[0] ?? ""}」，Crossref「${remote.authors[0]}」）`);
+    }
+    checks.push({
+      id: `B4.doi.${target.doi}`,
+      pass: problems.length === 0,
+      detail:
+        problems.length === 0
+          ? "作者与年份与 Crossref DOI 独立反查一致，第一作者一致"
+          : `${problems.join("；")} —— 冻结证据与 Crossref DOI 事实不符，该引用不可接受`,
+    });
+  }
+  return checks;
+}

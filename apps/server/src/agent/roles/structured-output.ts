@@ -99,10 +99,13 @@ export function createStructuredOutput(schema: z.ZodObject<any>): StructuredOutp
     // 判据是**捕获成功**而不是「调过这个工具」：参数写错时工具返回的是错误结果，
     // 那一轮必须继续跑，模型才有机会在同一个 turn 里改对。捕获之后立刻收束，
     // 顺带堵死「交完作业又去检索一次」—— 那种检索会落进本轮台账，把 queries 冻结门撞死。
-    toolUseBehavior: () => captured === undefined
-      ? { isFinalOutput: false, isInterrupted: undefined }
-      : { isFinalOutput: true, isInterrupted: undefined, finalOutput: "structured output recorded" },
-    beginRound: () => { captured = undefined; },
+    toolUseBehavior: () =>
+      captured === undefined
+        ? { isFinalOutput: false, isInterrupted: undefined }
+        : { isFinalOutput: true, isInterrupted: undefined, finalOutput: "structured output recorded" },
+    beginRound: () => {
+      captured = undefined;
+    },
     captured: () => captured,
   };
 }

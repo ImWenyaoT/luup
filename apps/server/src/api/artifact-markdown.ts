@@ -1,0 +1,57 @@
+import type { PublicArtifact } from "./projection.ts";
+
+export type PublicResearchPlan = Extract<PublicArtifact["content"], { artifact_type: "research-plan" }>;
+
+/** 把已通过公共白名单的 ResearchPlan 投影成确定性的提交材料草稿。 */
+export function renderResearchPlanMarkdown(plan: PublicResearchPlan): string {
+  const lines = [
+    `# ${plan.paper_title}`,
+    "",
+    "## Problem statement",
+    plan.problem_statement,
+    "",
+    "## Rationale",
+    plan.rationale,
+    "",
+    "## Technical details",
+    plan.technical_details,
+    "",
+    "## Datasets",
+    ...plan.datasets.map((dataset) => `- ${dataset}`),
+    "",
+    "## Source",
+    plan.source,
+    "",
+    "## Target",
+    plan.target,
+    "",
+    "## Paper abstract",
+    plan.paper_abstract,
+    "",
+    "## Methods",
+    plan.methods,
+    "",
+    "## Experiments",
+    `### Design\n${plan.experiments.design}`,
+    "",
+    "### Baselines",
+    ...plan.experiments.baselines.map((item) => `- ${item.name} [${item.evidence_id}]`),
+    "",
+    "### Metrics",
+    ...plan.experiments.metrics.map((item) => `- ${item.name} [${item.evidence_id}]`),
+    "",
+    "## Results",
+    `Status: ${plan.results.status}`,
+    `Validation basis: ${plan.results.validation_basis}`,
+    "",
+    "Feasibility argument:",
+    plan.results.feasibility_argument,
+    "",
+    ...plan.results.expected_outcomes.map((item) => `- ${item.metric}: ${item.statement}`),
+    "",
+    "## References",
+    ...plan.references.map((reference) => `- ${reference}`),
+    "",
+  ];
+  return lines.join("\n");
+}

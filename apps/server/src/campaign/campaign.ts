@@ -69,8 +69,10 @@ function summarize(facts: CampaignFacts): string {
 /** `memory/log.md` 的一段。格式与 Python `campaign.record_run` 对齐。 */
 export function formatLogEntry(facts: CampaignFacts, locator: string, now: Date): string {
   const label = facts.questionId === null ? "q-" : `q${facts.questionId}`;
-  return `\n## [${now.toISOString().slice(0, 10)}] run | ${label} | ${verdictOf(facts.status)}\n`
-    + `- ${locator}｜${summarize(facts)}\n`;
+  return (
+    `\n## [${now.toISOString().slice(0, 10)}] run | ${label} | ${verdictOf(facts.status)}\n` +
+    `- ${locator}｜${summarize(facts)}\n`
+  );
 }
 
 /** `memory/questions/q<id>.md` 的一行。前缀就是 `ENTRY_PREFIX`，读取端据此 grep。 */
@@ -80,46 +82,64 @@ export function formatQuestionEntry(facts: CampaignFacts, now: Date): string {
 }
 
 function pageSeed(questionId: number): string {
-  return `# q${questionId}\n\n`
-    + `Science-125 第 ${questionId} 题的跨 run 战役页。**append-only**：由 Harness 在 run 收尾时`
-    + "确定性追加一行，旧记录不改写、不删除。\n";
+  return (
+    `# q${questionId}\n\n` +
+    `Science-125 第 ${questionId} 题的跨 run 战役页。**append-only**：由 Harness 在 run 收尾时` +
+    "确定性追加一行，旧记录不改写、不删除。\n"
+  );
 }
 
 /** 读旧内容后原子替换整页，使并发读者不会看到半条追加记录。 */
-function append(path: string, block: string, seed = ""): void {
+function append(path: string, block: string, seed: string, reportError: (error: unknown) => void): void {
   let existing = seed;
   try {
     existing = readFileSync(path, "utf8");
-  } catch {
-    // 页不存在就用种子开篇；其余读失败（权限、编码）同样不该让一个跑完的 run 崩掉。
+  } catch (error) {
+    if (!isMissing(error)) {
+      reportError(error);
+      return;
+    }
   }
   if (existing && !existing.endsWith("\n")) existing += "\n";
-  mkdirSync(dirname(path), { recursive: true });
-  const temporary = `${path}.${process.pid}.tmp`;
-  writeFileSync(temporary, existing + block, "utf8");
-  renameSync(temporary, path);
+  try {
+    mkdirSync(dirname(path), { recursive: true });
+    const temporary = `${path}.${process.pid}.tmp`;
+    writeFileSync(temporary, existing + block, "utf8");
+    renameSync(temporary, path);
+  } catch (error) {
+    reportError(error);
+  }
+}
+
+function isMissing(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException | null)?.code === "ENOENT";
 }
 
 /** 战役记忆的读写通道。构造它就是「记忆开」，不构造（传 null）就是消融臂。 */
 export class CampaignMemory {
   readonly #dir: string;
   readonly #locate: (runId: string) => string;
+  readonly #reportError: (error: unknown) => void;
 
   constructor(options: {
     /** `memory/` 目录。不存在就整条通道静默失效 —— 删掉它流水线必须照常跑通。 */
     memoryDir: string;
     /** run 的仓库相对定位符。战役记忆比写它的 checkout 活得久，不能记绝对路径。 */
     locate: (runId: string) => string;
+    /** 记忆是旁路，失败不打死 Run，但必须进入可观测通道。 */
+    reportError?: (error: unknown) => void;
   }) {
     this.#dir = options.memoryDir;
     this.#locate = options.locate;
+    this.#reportError = options.reportError ?? ((error) => console.error("campaign memory failed", error));
   }
 
   /** 目录缺席即整条通道失效。这是「可删除性红线」在代码里的落点。 */
   #enabled(): boolean {
     try {
       return statSync(this.#dir).isDirectory();
-    } catch {
+    } catch (error) {
+      if (!isMissing(error)) this.#reportError(error);
       return false;
     }
   }
@@ -130,22 +150,27 @@ export class CampaignMemory {
     let text: string;
     try {
       text = readFileSync(join(this.#dir, "questions", `q${questionId}.md`), "utf8");
-    } catch {
+    } catch (error) {
+      if (!isMissing(error)) this.#reportError(error);
       return [];
     }
-    const entries = text.split("\n").map((line) => line.trim()).filter((line) => line.startsWith(ENTRY_PREFIX));
+    const entries = text
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith(ENTRY_PREFIX));
     return entries.slice(-PRIOR_ATTEMPT_LIMIT);
   }
 
   /** run 终态后追加一行。总日志必写，题页在有题号时同步。 */
   recordRun(facts: CampaignFacts, now: Date = new Date()): void {
     if (!this.#enabled()) return;
-    append(join(this.#dir, "log.md"), formatLogEntry(facts, this.#locate(facts.runId), now));
+    append(join(this.#dir, "log.md"), formatLogEntry(facts, this.#locate(facts.runId), now), "", this.#reportError);
     if (facts.questionId === null) return;
     append(
       join(this.#dir, "questions", `q${facts.questionId}.md`),
       formatQuestionEntry(facts, now),
       pageSeed(facts.questionId),
+      this.#reportError,
     );
   }
 }

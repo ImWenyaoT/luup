@@ -56,14 +56,12 @@ export function createDeterministicVerifier(): ReferenceVerifier {
   return createReferenceVerifier({
     lookup: async (ids) => {
       const wanted = new Set(ids.map((id) => id.replace(/v\d+$/, "")));
-      return SOURCES
-        .map((source) => ({
-          arxivId: source.locator.replace(/^arxiv:/, ""),
-          title: source.title,
-          authors: source.authors ?? [],
-          year: source.year ?? null,
-        }))
-        .filter((record) => wanted.has(record.arxivId.replace(/v\d+$/, "")));
+      return SOURCES.map((source) => ({
+        arxivId: source.locator.replace(/^arxiv:/, ""),
+        title: source.title,
+        authors: source.authors ?? [],
+        year: source.year ?? null,
+      })).filter((record) => wanted.has(record.arxivId.replace(/v\d+$/, "")));
     },
   });
 }
@@ -104,25 +102,30 @@ export function createDeterministicRuntime(store: SqliteStore): {
         resultSummary: `arXiv returned ${SOURCES.length} citable record(s)`,
         citations: SOURCES,
       });
-      const inherited = ofType("research")
-        .flatMap((item) => (item.content as Research).citations.map((c) => c.evidence_id));
+      const inherited = ofType("research").flatMap((item) =>
+        (item.content as Research).citations.map((c) => c.evidence_id),
+      );
       // 与真模型走同一条上报通道：产物经由 structured_output 工具提交，
       // 所以离线运行时也要过那份参数 schema。直接 return 会绕开它。
       return await reportStructuredOutput(agent, {
         artifact_type: "research",
         question: payload.question,
         summary: "已冻结一条可核验的来源，支撑后续假设与实验设计。",
-        claims: [{
-          statement: "引用可核验性可以被自动评测。",
-          evidence_ids: [...new Set([search.evidenceId, ...inherited])],
-        }],
-        queries: [{
-          evidence_id: search.evidenceId,
-          source_type: "arxiv",
-          query: "retrieval augmented generation evaluation",
-          status: "succeeded",
-          result_summary: `arXiv returned ${SOURCES.length} citable record(s)`,
-        }],
+        claims: [
+          {
+            statement: "引用可核验性可以被自动评测。",
+            evidence_ids: [...new Set([search.evidenceId, ...inherited])],
+          },
+        ],
+        queries: [
+          {
+            evidence_id: search.evidenceId,
+            source_type: "arxiv",
+            query: "retrieval augmented generation evaluation",
+            status: "succeeded",
+            result_summary: `arXiv returned ${SOURCES.length} citable record(s)`,
+          },
+        ],
         citations: SOURCES.map((source) => ({ evidence_id: search.evidenceId, ...source })),
         limitations: ["确定性运行时只登记一条固定来源。"],
       });
@@ -149,12 +152,14 @@ export function createDeterministicRuntime(store: SqliteStore): {
         artifact_type: "evidence-review",
         hypothesis_artifact_id: ofType("hypothesis").at(-1)!.id,
         research_artifact_ids: [research.id],
-        assessments: [{
-          claim: "引用可核验性可以被自动评测。",
-          verdict: "supports",
-          rationale: "已冻结来源给出了可用的评测框架。",
-          evidence_ids: (research.content as Research).citations.map((item) => item.evidence_id),
-        }],
+        assessments: [
+          {
+            claim: "引用可核验性可以被自动评测。",
+            verdict: "supports",
+            rationale: "已冻结来源给出了可用的评测框架。",
+            evidence_ids: (research.content as Research).citations.map((item) => item.evidence_id),
+          },
+        ],
         gaps: [],
         supported: true,
       };
@@ -187,6 +192,9 @@ export function createDeterministicRuntime(store: SqliteStore): {
         },
         results: {
           status: "pending_verification",
+          validation_basis: "formula_derivation",
+          feasibility_argument:
+            "令证据门组与基线组的无来源引用率分别为 r_gate 与 r_base；若预期 r_gate < r_base，且任务完成率差异处于预设容许范围内，则可用同一验收规则判定设计可行。这里只是公式与逻辑推导，不代表实验已执行。",
           expected_outcomes: [
             { metric: "无来源引用率", statement: "证据门组显著更低。" },
             { metric: "任务完成率", statement: "证据门组不显著劣于基线。" },
@@ -199,10 +207,24 @@ export function createDeterministicRuntime(store: SqliteStore): {
       };
     }
 
+    // Reviewer 的独立检索必须进入同一本台账；记录固定来源即可保持离线执行零网络。
+    let independentEvidenceId: string | undefined;
+    if (role === "reviewer") {
+      independentEvidenceId = ledger.record({
+        tool: "arxiv_search",
+        sourceType: "arxiv",
+        query: "counterevidence and methodological risks",
+        status: "succeeded",
+        resultSummary: "arXiv returned one independent citable record",
+        citations: [SOURCES[0]!],
+      }).evidenceId;
+    }
+
     return {
       artifact_type: "review",
       research_plan_artifact_id: ofType("research-plan").at(-1)!.id,
       evidence_review_artifact_id: ofType("evidence-review").at(-1)!.id,
+      independent_evidence_ids: independentEvidenceId ? [independentEvidenceId] : [],
       scores: { scientific_value: 4, technical_depth: 4, application_potential: 4 },
       weaknesses: [],
       feedback: [],

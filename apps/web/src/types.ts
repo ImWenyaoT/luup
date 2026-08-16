@@ -11,12 +11,7 @@
 
 export type RunStatus = "running" | "completed" | "review_rejected" | "failed";
 
-export type Role =
-  | "researcher"
-  | "hypothesis-generation"
-  | "evidence-review"
-  | "research-plan"
-  | "reviewer";
+export type Role = "researcher" | "hypothesis-generation" | "evidence-review" | "research-plan" | "reviewer";
 
 export type Attempt = {
   id: string;
@@ -73,38 +68,50 @@ type Grounded = { name: string; evidence_id: string };
 
 export type ArtifactContent =
   | {
-    artifact_type: "research";
-    summary: string;
-    claims: { statement: string; evidence_ids: string[] }[];
-    limitations: string[];
-  }
+      artifact_type: "research";
+      summary: string;
+      claims: { statement: string; evidence_ids: string[] }[];
+      limitations: string[];
+    }
   | {
-    artifact_type: "hypothesis";
-    hypothesis: string;
-    falsifiable_predictions: string[];
-    boundaries: string[];
-  }
+      artifact_type: "hypothesis";
+      hypothesis: string;
+      falsifiable_predictions: string[];
+      boundaries: string[];
+    }
   | {
-    artifact_type: "evidence-review";
-    assessments: { claim: string; verdict: string }[];
-    gaps: string[];
-  }
+      artifact_type: "evidence-review";
+      assessments: { claim: string; verdict: string }[];
+      gaps: string[];
+    }
   | {
-    artifact_type: "research-plan";
-    problem_statement: string;
-    target: string;
-    methods: string;
-    experiments: { baselines: Grounded[]; metrics: Grounded[]; design: string };
-    results: { expected_outcomes: { metric: string; statement: string }[] };
-    references: string[];
-  }
+      artifact_type: "research-plan";
+      problem_statement: string;
+      rationale: string;
+      technical_details: string;
+      datasets: string[];
+      source: string;
+      target: string;
+      paper_title: string;
+      paper_abstract: string;
+      methods: string;
+      experiments: { baselines: Grounded[]; metrics: Grounded[]; design: string };
+      results: {
+        status: "pending_verification";
+        validation_basis: "formula_derivation";
+        feasibility_argument: string;
+        expected_outcomes: { metric: string; statement: string }[];
+      };
+      references: string[];
+    }
   | {
-    artifact_type: "review";
-    accepted: boolean;
-    scores: { scientific_value: number; technical_depth: number; application_potential: number };
-    weaknesses: string[];
-    feedback: string[];
-  };
+      artifact_type: "review";
+      accepted: boolean;
+      independent_evidence_ids: string[];
+      scores: { scientific_value: number; technical_depth: number; application_potential: number };
+      weaknesses: string[];
+      feedback: string[];
+    };
 
 export type Artifact = {
   id: string;
@@ -121,11 +128,11 @@ export const ROLE_ORDER: Role[] = [
 ];
 
 export const ROLE_LABEL: Record<Role, string> = {
-  "researcher": "检索证据",
+  researcher: "检索证据",
   "hypothesis-generation": "生成假设",
   "evidence-review": "审查证据",
   "research-plan": "研究计划",
-  "reviewer": "独立评审",
+  reviewer: "独立评审",
 };
 
 export const TERMINAL: ReadonlySet<RunStatus> = new Set(["completed", "review_rejected", "failed"]);

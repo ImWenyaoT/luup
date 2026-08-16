@@ -55,7 +55,10 @@ test("reports empty for a feed with no entries", async () => {
 test("refuses an empty query without touching the network", async () => {
   let called = false;
   const result = await searchArxiv("   ", {
-    fetchImpl: (async () => { called = true; return new Response(""); }) as unknown as typeof fetch,
+    fetchImpl: (async () => {
+      called = true;
+      return new Response("");
+    }) as unknown as typeof fetch,
     minIntervalMs: 0,
   });
   assert.equal(result.status, "refused");
@@ -81,7 +84,9 @@ test("maps an aborted request to timeout and a transport error to failed", async
   assert.equal(timedOut.status, "timeout");
 
   const failed = await searchArxiv("q", {
-    fetchImpl: (async () => { throw new Error("ECONNREFUSED"); }) as unknown as typeof fetch,
+    fetchImpl: (async () => {
+      throw new Error("ECONNREFUSED");
+    }) as unknown as typeof fetch,
     minIntervalMs: 0,
   });
   assert.equal(failed.status, "failed");
@@ -97,11 +102,16 @@ test("does not fetch after its Attempt signal is cancelled", async () => {
   const controller = new AbortController();
   controller.abort();
   let called = false;
-  await assert.rejects(searchArxiv("q", {
-    signal: controller.signal,
-    fetchImpl: (async () => { called = true; return new Response(""); }) as unknown as typeof fetch,
-    minIntervalMs: 0,
-  }));
+  await assert.rejects(
+    searchArxiv("q", {
+      signal: controller.signal,
+      fetchImpl: (async () => {
+        called = true;
+        return new Response("");
+      }) as unknown as typeof fetch,
+      minIntervalMs: 0,
+    }),
+  );
   assert.equal(called, false);
 });
 
@@ -112,10 +122,7 @@ test("serialises calls at least 3 seconds apart", async () => {
     return new Response(atom(entry("2401.00002v1", "Rate limit probe")));
   }) as unknown as typeof fetch;
 
-  await Promise.all([
-    searchArxiv("first", { fetchImpl }),
-    searchArxiv("second", { fetchImpl }),
-  ]);
+  await Promise.all([searchArxiv("first", { fetchImpl }), searchArxiv("second", { fetchImpl })]);
 
   assert.equal(stamps.length, 2);
   // 官方要求同源间隔 ≥3 秒。留 100ms 容差给定时器抖动。

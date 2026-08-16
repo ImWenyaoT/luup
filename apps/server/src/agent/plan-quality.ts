@@ -12,16 +12,22 @@ export type FrozenEvidence = { evidenceIds: ReadonlySet<string>; urls: ReadonlyS
 export function upstreamTraceabilityIssues(plan: ResearchPlan, frozen: FrozenEvidence): string[] {
   const issues: string[] = [];
   if (plan.verification_evidence_ids.length === 0) {
-    issues.push("verification_evidence_ids \u4e0d\u80fd\u4e3a\u7a7a\uff0c\u8ba1\u5212\u5fc5\u987b\u7ed1\u5b9a\u51bb\u7ed3\u8bc1\u636e");
+    issues.push(
+      "verification_evidence_ids \u4e0d\u80fd\u4e3a\u7a7a\uff0c\u8ba1\u5212\u5fc5\u987b\u7ed1\u5b9a\u51bb\u7ed3\u8bc1\u636e",
+    );
   }
   for (const id of plan.verification_evidence_ids) {
     if (!frozen.evidenceIds.has(id)) {
-      issues.push(`verification_evidence_ids \u7684\u201c${id}\u201d\u4e0d\u5728\u4efb\u4f55\u51bb\u7ed3 Research Artifact \u91cc`);
+      issues.push(
+        `verification_evidence_ids \u7684\u201c${id}\u201d\u4e0d\u5728\u4efb\u4f55\u51bb\u7ed3 Research Artifact \u91cc`,
+      );
     }
   }
   for (const url of plan.references) {
     if (!frozen.urls.has(url)) {
-      issues.push(`references \u7684\u201c${url}\u201d\u6ca1\u6709\u51fa\u73b0\u5728\u4efb\u4f55\u51bb\u7ed3 Research Artifact \u7684\u5f15\u7528\u91cc`);
+      issues.push(
+        `references \u7684\u201c${url}\u201d\u6ca1\u6709\u51fa\u73b0\u5728\u4efb\u4f55\u51bb\u7ed3 Research Artifact \u7684\u5f15\u7528\u91cc`,
+      );
     }
   }
   return issues;
@@ -30,6 +36,13 @@ export function upstreamTraceabilityIssues(plan: ResearchPlan, frozen: FrozenEvi
 export function researchPlanQualityIssues(plan: ResearchPlan): string[] {
   // 中文正文这条已由 contracts.ts 的 chineseProse 在 schema 层守住，这里不再抄一遍。
   const issues: string[] = [];
+  const minimumFeasibilityArgumentLength = 20;
+
+  if (plan.results.feasibility_argument.length < minimumFeasibilityArgumentLength) {
+    issues.push(
+      `results.feasibility_argument 可行性论证过短，至少需要 ${minimumFeasibilityArgumentLength} 个字符，说明假设、指标关系与判定逻辑`,
+    );
+  }
 
   // 每一项都带着自己的 evidence_id（schema 保证），这里只需确认它确实是本计划核验过的
   // 冻结证据。「必须有出处」这条已经由类型守住，不再需要逐字匹配另一张表。
@@ -46,8 +59,7 @@ export function researchPlanQualityIssues(plan: ResearchPlan): string[] {
     }
   }
   // 条数下限已由 schema 的 min(2) 守住，这里只查去重后是否还够 —— 写两条一样的不算覆盖。
-  if (new Set(plan.experiments.baselines.map((item) => item.name)).size < 2
-    || metrics.size < 2) {
+  if (new Set(plan.experiments.baselines.map((item) => item.name)).size < 2 || metrics.size < 2) {
     issues.push("experiments.baselines 与 experiments.metrics 去重后必须各覆盖至少两项");
   }
 

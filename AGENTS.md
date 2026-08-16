@@ -24,6 +24,9 @@ spikes/dsh/  deepseek-harness 参考学习件（ADR-0005，原 dsh-app/）；独
 根目录脚本是唯一入口（`pnpm run dev:api` / `batch` / `canary` 等都从根起跑，
 cwd 相对路径 `data/`、`memory/`、`outputs/` 因此稳定）。
 
+正式 live 批跑（`pnpm batch --ids ...`）要求 Node 主版本 24；`.nvmrc` 固定为 24.18.0，
+入口会在创建 SQLite 或 Harness 前拒绝其他主版本。`--dry-run` 只做规划，不受此限制。
+
 运行期事实存在 SQLite 单文件里（默认 `outputs/runtime/typescript-runs.db`，`LUUP_DATABASE`
 可覆盖），不是目录制——`apps/server/src/store/` 是它的唯一写者。`outputs/` 是派生物，不入库。
 历史批次证据（pilot/v2/v3 部分批与 Python 期 `runs/`）在 git tag
@@ -44,11 +47,12 @@ Run 记账面、记忆通道。换 provider 只改 seam，不动编排。
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm run ci            # typecheck → lint → build → test:coverage，与 CI 同序
+pnpm run ci            # typecheck → lint → format:check → knip → build → test:coverage，与 CI 同序
 
 # 各门单跑
 pnpm run typecheck     # 根 program + apps/web program，全量
 pnpm run lint          # oxlint（含 typeAware 档）
+pnpm run format:check  # oxfmt 格式检查；pnpm run format 原地修复
 pnpm run knip          # 未使用导出/依赖，零容忍
 pnpm run test          # vitest
 pnpm run test:coverage # 覆盖率地板见 vitest.config.ts，只许涨不许降

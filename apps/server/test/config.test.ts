@@ -62,9 +62,14 @@ test("配置版本随每次写入递增——executor 靠它决定重建 Runner"
 
 function app(t: { onTestFinished: (fn: () => void) => void }) {
   const store = new SqliteStore(":memory:");
-  const harness = new Harness(store, async () => { throw new Error("unused"); });
+  const harness = new Harness(store, async () => {
+    throw new Error("unused");
+  });
   const server = createApp({ store, harness });
-  t.onTestFinished(() => { server.close(); store.close(); });
+  t.onTestFinished(() => {
+    server.close();
+    store.close();
+  });
   server.listen(0);
   const { port } = server.address() as { port: number };
   return `http://127.0.0.1:${port}`;
@@ -97,7 +102,7 @@ test("PUT /api/config 设置进程内覆盖，响应与后续 GET 都不含 key"
   assert.equal(JSON.parse(text).credential, "override");
   assert.equal(modelForRole(), "qwen-test");
 
-  const status = await (await fetch(`${base}/api/config`)).json() as { credential: string };
+  const status = (await (await fetch(`${base}/api/config`)).json()) as { credential: string };
   assert.equal(status.credential, "override");
 });
 

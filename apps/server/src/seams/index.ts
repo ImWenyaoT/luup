@@ -35,7 +35,8 @@ export type Verifier = ReferenceVerifier;
  * 换实现要满足：运行中 append-only、终态后不可变；事件序号单调递增；
  * 失败的 Attempt 也要留下它查过的证据与烧掉的用量。
  */
-export type RunStore = Pick<SqliteStore,
+export type RunStore = Pick<
+  SqliteStore,
   | "createRun"
   | "question"
   | "science125Id"
@@ -45,7 +46,8 @@ export type RunStore = Pick<SqliteStore,
   | "finishRun"
   | "emit"
   | "latestArtifact"
-  | "recordEvidence">;
+  | "recordEvidence"
+>;
 
 /** 跨 run 的战役记忆通道。
  *

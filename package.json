@@ -1,11 +1,6 @@
 {
   "name": "luup",
   "private": true,
-  "packageManager": "pnpm@11.15.1",
-  "engines": {
-    "node": ">=24",
-    "pnpm": ">=11.15.1"
-  },
   "scripts": {
     "dev": "pnpm run \"/^dev:(api|web)$/\"",
     "dev:api": "LUUP_RUNTIME=deterministic node --env-file-if-exists=.env --experimental-strip-types --watch apps/server/src/main.ts",
@@ -22,13 +17,21 @@
     "test:e2e": "pnpm --filter @luup/frontend test:e2e",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
+    "format": "oxfmt --write 'apps/**/*.{ts,tsx,json,css,html}' package.json knip.json .oxlintrc.json .oxfmtrc.json",
+    "format:check": "oxfmt --check 'apps/**/*.{ts,tsx,json,css,html}' package.json knip.json .oxlintrc.json .oxfmtrc.json",
     "knip": "knip --treat-config-hints-as-errors",
-    "ci": "pnpm run typecheck && pnpm run lint && pnpm run knip && pnpm build && pnpm test:coverage && pnpm --filter @luup/frontend test"
+    "ci": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run knip && pnpm build && pnpm test:coverage && pnpm --filter @luup/frontend test"
   },
   "devDependencies": {
     "knip": "6.32.2",
     "lefthook": "2.1.10",
+    "oxfmt": "0.63.0",
     "oxlint": "1.78.0",
     "oxlint-tsgolint": "7.0.2001"
-  }
+  },
+  "engines": {
+    "node": ">=24",
+    "pnpm": ">=11.15.1"
+  },
+  "packageManager": "pnpm@11.15.1"
 }

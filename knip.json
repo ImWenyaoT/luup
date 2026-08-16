@@ -1,33 +1,16 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "exclude": [
-    "duplicates"
-  ],
-  "ignoreBinaries": [
-    "vitest"
-  ],
+  "exclude": ["duplicates"],
+  "ignoreBinaries": ["vitest"],
+  "ignoreDependencies": ["lefthook"],
   "workspaces": {
     "apps/server": {
-      "entry": [
-        "src/eval/scoring.ts",
-        "test/**/*.test.ts"
-      ],
-      "project": [
-        "src/**/*.ts",
-        "test/**/*.ts"
-      ]
+      "entry": ["src/eval/scoring.ts", "test/**/*.test.ts"],
+      "project": ["src/**/*.ts", "test/**/*.ts"]
     },
     "apps/web": {
-      "entry": [
-        "tests/**/*.spec.ts",
-        "src/**/*.test.ts"
-      ],
-      "project": [
-        "src/**/*.{ts,tsx}",
-        "src/**/*.css",
-        "tests/**/*.ts",
-        "*.ts"
-      ]
+      "entry": ["tests/**/*.spec.ts", "src/**/*.test.ts"],
+      "project": ["src/**/*.{ts,tsx}", "src/**/*.css", "tests/**/*.ts", "*.ts"]
     }
   }
 }

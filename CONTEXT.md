@@ -8,6 +8,7 @@
 | **上界** | 补证 ≤2 轮、修订 ≤2 轮，写成 `for` 循环而不是依赖图；顺序由代码决定不由数据决定 | `apps/server/src/harness.ts` |
 | **Attempt** | 一个角色的一次执行。含一次结构化纠错（`attempts.corrections`），但**没有隐式重试**——纠错不是重试 | `apps/server/src/roles.ts` |
 | **工件（artifact）** | 角色输出的冻结结构化产物；发布后不可变，下游只能读冻结版本 | `apps/server/src/store/store.ts` |
+| **Proposal** | 最终可提交的《科学假设与研究计划》；JSON 与 Markdown 是同一份最终工件的两种投影，不是两份运行事实 | `docs/design/product-contract.md` |
 | **证据台账** | 每次检索的 query、结果与结局（八个 `EvidenceStatus`）；失败的 Attempt 也留台账 | `apps/server/src/agent/evidence.ts` |
 | **handoff** | 角色之间只传冻结 Artifact，不共享隐藏上下文 | `apps/server/src/harness.ts` 的 `toInput` |
 | **独立验收** | 零 LLM 的 B1–B4 引用真实性检查；失败必须 fail-closed；模型不可见，属 harness 角色 | `apps/server/src/verify/verifier.ts` |

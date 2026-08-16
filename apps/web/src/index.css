@@ -50,9 +50,7 @@
 
 @theme inline {
   /* Geist 没有中文字形，界面几乎全是中文，所以后面必须跟一串中文回退。 */
-  --font-sans:
-    "Geist Variable", ui-sans-serif, "PingFang SC", "Microsoft YaHei",
-    "Noto Sans CJK SC", sans-serif;
+  --font-sans: "Geist Variable", ui-sans-serif, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);

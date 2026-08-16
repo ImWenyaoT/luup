@@ -38,14 +38,16 @@ jobs:
         run: pnpm run typecheck
       - name: Lint
         run: pnpm run lint
+      - name: Format
+        run: pnpm run format:check
       - name: Knip
         run: pnpm run knip
+      - name: Build
+        run: pnpm run build
       - name: Test
         run: pnpm run test:coverage
       - name: Test (frontend units)
         run: pnpm --filter @luup/frontend test
-      - name: Build
-        run: pnpm run build
 
   # 交付形态的端到端：确定性 runtime + 单进程托管静态产物，零 LLM 调用、零外部网络。
   e2e:

@@ -70,14 +70,15 @@ function fixture(t: TestContext, seeds: Seed[]): string {
       });
     }
     store.publishArtifact(
-      runId, researcher,
-      { artifact_type: "research" } as unknown as DomainArtifact, [], seed.corrections ?? 0,
+      runId,
+      researcher,
+      { artifact_type: "research" } as unknown as DomainArtifact,
+      [],
+      seed.corrections ?? 0,
     );
     if (seed.reviewed) {
       const reviewer = store.startAttempt(runId, "reviewer");
-      store.publishArtifact(
-        runId, reviewer, { artifact_type: "review" } as unknown as DomainArtifact, [], 0,
-      );
+      store.publishArtifact(runId, reviewer, { artifact_type: "review" } as unknown as DomainArtifact, [], 0);
     }
     store.finishRun(runId, seed.status, { errorCode: seed.errorCode ?? undefined });
   }
@@ -86,9 +87,21 @@ function fixture(t: TestContext, seeds: Seed[]): string {
 }
 
 const facts = (overrides: Partial<RunFacts> = {}): RunFacts => ({
-  runId: "r", questionId: 1, status: "completed", errorCode: null, memoryArm: null,
-  cohort: "unknown", deliverable: true, attempts: 1, correctedAttempts: 0, corrections: 0,
-  reviewed: false, rejected: false, arxivCalls: 0, distinctQueries: 0, injected: 0,
+  runId: "r",
+  questionId: 1,
+  status: "completed",
+  errorCode: null,
+  memoryArm: null,
+  cohort: "unknown",
+  deliverable: true,
+  attempts: 1,
+  correctedAttempts: 0,
+  corrections: 0,
+  reviewed: false,
+  rejected: false,
+  arxivCalls: 0,
+  distinctQueries: 0,
+  injected: 0,
   ...overrides,
 });
 
@@ -101,12 +114,14 @@ test("a proportion with an empty denominator is null, never zero", () => {
 });
 
 test("delivery is reported over both denominators, infrastructure excluded from quality", (t) => {
-  const report = evaluateDatabase(fixture(t, [
-    { questionId: 1, status: "completed" },
-    { questionId: 2, status: "failed", errorCode: "invalid_output" },
-    { questionId: 3, status: "failed", errorCode: "infra_timeout" },
-    { questionId: 4, status: "failed", errorCode: "infra_error" },
-  ]));
+  const report = evaluateDatabase(
+    fixture(t, [
+      { questionId: 1, status: "completed" },
+      { questionId: 2, status: "failed", errorCode: "invalid_output" },
+      { questionId: 3, status: "failed", errorCode: "infra_timeout" },
+      { questionId: 4, status: "failed", errorCode: "infra_error" },
+    ]),
+  );
 
   const { delivery } = report.statistics;
   assert.equal(delivery.runs, 4);
@@ -114,8 +129,7 @@ test("delivery is reported over both denominators, infrastructure excluded from 
   // arXiv 不可达不是科研质量的证据：质量分母里只剩 2 题。
   assert.equal(delivery.excludingInfrastructure.runs, 2);
   assert.equal(delivery.excludingInfrastructure.rate, 0.5);
-  assert.deepEqual(report.statistics.failureClasses.infrastructure.byClass,
-    { infra_error: 1, infra_timeout: 1 });
+  assert.deepEqual(report.statistics.failureClasses.infrastructure.byClass, { infra_error: 1, infra_timeout: 1 });
   assert.deepEqual(report.statistics.failureClasses.quality.byClass, { invalid_output: 1 });
 });
 
@@ -133,28 +147,37 @@ test("the two reading buckets partition the nine failure codes, with none left o
 });
 
 test("every failure code lands in exactly one bucket, by who can fix it", (t) => {
-  const report = evaluateDatabase(fixture(t, [
-    // 环境类五个码：环境/供应商/凭据/超时，换个模型重跑也修不掉。
-    { questionId: 1, status: "failed", errorCode: "infra_error" },
-    { questionId: 2, status: "failed", errorCode: "infra_timeout" },
-    { questionId: 3, status: "failed", errorCode: "missing_credential" },
-    { questionId: 4, status: "failed", errorCode: "provider_error" },
-    { questionId: 5, status: "failed", errorCode: "deadline_exceeded" },
-    // 质量类四个码：责任在 harness 或模型自己，必须留在质量分母里。
-    { questionId: 6, status: "failed", errorCode: "invalid_output" },
-    { questionId: 7, status: "failed", errorCode: "verifier_refs" },
-    { questionId: 8, status: "failed", errorCode: "context_overflow" },
-    { questionId: 9, status: "failed", errorCode: "runtime_error" },
-    { questionId: 10, status: "completed" },
-  ]));
+  const report = evaluateDatabase(
+    fixture(t, [
+      // 环境类五个码：环境/供应商/凭据/超时，换个模型重跑也修不掉。
+      { questionId: 1, status: "failed", errorCode: "infra_error" },
+      { questionId: 2, status: "failed", errorCode: "infra_timeout" },
+      { questionId: 3, status: "failed", errorCode: "missing_credential" },
+      { questionId: 4, status: "failed", errorCode: "provider_error" },
+      { questionId: 5, status: "failed", errorCode: "deadline_exceeded" },
+      // 质量类四个码：责任在 harness 或模型自己，必须留在质量分母里。
+      { questionId: 6, status: "failed", errorCode: "invalid_output" },
+      { questionId: 7, status: "failed", errorCode: "verifier_refs" },
+      { questionId: 8, status: "failed", errorCode: "context_overflow" },
+      { questionId: 9, status: "failed", errorCode: "runtime_error" },
+      { questionId: 10, status: "completed" },
+    ]),
+  );
 
   const { delivery, failureClasses } = report.statistics;
   assert.equal(failureClasses.failed, 9);
   assert.deepEqual(failureClasses.infrastructure.byClass, {
-    deadline_exceeded: 1, infra_error: 1, infra_timeout: 1, missing_credential: 1, provider_error: 1,
+    deadline_exceeded: 1,
+    infra_error: 1,
+    infra_timeout: 1,
+    missing_credential: 1,
+    provider_error: 1,
   });
   assert.deepEqual(failureClasses.quality.byClass, {
-    context_overflow: 1, invalid_output: 1, runtime_error: 1, verifier_refs: 1,
+    context_overflow: 1,
+    invalid_output: 1,
+    runtime_error: 1,
+    verifier_refs: 1,
   });
   assert.equal(failureClasses.reviewRejected, 0);
   assert.deepEqual(failureClasses.unclassified, { count: 0, byClass: {} });
@@ -165,11 +188,13 @@ test("every failure code lands in exactly one bucket, by who can fix it", (t) =>
 });
 
 test("review_rejected is counted apart from the failure codes and stays in both denominators", (t) => {
-  const report = evaluateDatabase(fixture(t, [
-    { questionId: 1, status: "completed" },
-    { questionId: 2, status: "review_rejected", errorCode: "review_rejected", reviewed: true },
-    { questionId: 3, status: "failed", errorCode: "infra_error" },
-  ]));
+  const report = evaluateDatabase(
+    fixture(t, [
+      { questionId: 1, status: "completed" },
+      { questionId: 2, status: "review_rejected", errorCode: "review_rejected", reviewed: true },
+      { questionId: 3, status: "failed", errorCode: "infra_error" },
+    ]),
+  );
 
   const { delivery, failureClasses } = report.statistics;
   assert.equal(failureClasses.reviewRejected, 1);
@@ -184,11 +209,13 @@ test("review_rejected is counted apart from the failure codes and stays in both 
 });
 
 test("a code nobody ruled on reads as unclassified instead of borrowing a bucket", (t) => {
-  const report = evaluateDatabase(fixture(t, [
-    // Python 期的分类名，或者将来新加的码：没被裁决过就不该自动获得质量类身份。
-    { questionId: 1, status: "failed", errorCode: "contract_violation" },
-    { questionId: 2, status: "failed", errorCode: null },
-  ]));
+  const report = evaluateDatabase(
+    fixture(t, [
+      // Python 期的分类名，或者将来新加的码：没被裁决过就不该自动获得质量类身份。
+      { questionId: 1, status: "failed", errorCode: "contract_violation" },
+      { questionId: 2, status: "failed", errorCode: null },
+    ]),
+  );
 
   const { failureClasses, delivery } = report.statistics;
   assert.deepEqual(failureClasses.unclassified, { count: 2, byClass: { contract_violation: 1 } });
@@ -199,12 +226,14 @@ test("a code nobody ruled on reads as unclassified instead of borrowing a bucket
 
 test("a dirty tree is its own cohort and a missing identity is unknown", (t) => {
   const clean = { gitCommit: "a".repeat(40), treeDirty: false };
-  const report = evaluateDatabase(fixture(t, [
-    { questionId: 1, status: "completed", sourceIdentity: clean },
-    { questionId: 2, status: "failed", errorCode: "invalid_output", sourceIdentity: clean },
-    { questionId: 3, status: "completed", sourceIdentity: { ...clean, treeDirty: true } },
-    { questionId: 4, status: "completed" },
-  ]));
+  const report = evaluateDatabase(
+    fixture(t, [
+      { questionId: 1, status: "completed", sourceIdentity: clean },
+      { questionId: 2, status: "failed", errorCode: "invalid_output", sourceIdentity: clean },
+      { questionId: 3, status: "completed", sourceIdentity: { ...clean, treeDirty: true } },
+      { questionId: 4, status: "completed" },
+    ]),
+  );
 
   const groups = report.statistics.sourceIdentity;
   assert.deepEqual(Object.keys(groups).sort(), ["a".repeat(40), `${"a".repeat(40)}+dirty`, "unknown"]);
@@ -219,35 +248,46 @@ test("Pass^2 pairs time-adjacent runs of the same question and nothing else", ()
 
   // q1：过、过、挂 ⇒ 两对，一对双过。q2 只有一条 run，不成对。自由输入没有题号，不参与。
   const measured = passSquared([
-    run(1, true, "a"), run(1, true, "b"), run(1, false, "c"),
-    run(2, true, "d"), run(null, true, "e"),
+    run(1, true, "a"),
+    run(1, true, "b"),
+    run(1, false, "c"),
+    run(2, true, "d"),
+    run(null, true, "e"),
   ]);
-  assert.deepEqual({ pairs: measured.pairs, both: measured.both, rate: measured.rate },
-    { pairs: 2, both: 1, rate: 0.5 });
+  assert.deepEqual(
+    { pairs: measured.pairs, both: measured.both, rate: measured.rate },
+    { pairs: 2, both: 1, rate: 0.5 },
+  );
   assert.deepEqual(passSquared([run(1, true, "a")]), { pairs: 0, both: 0, rate: null, se: null });
 });
 
 test("corrections and reviewer rejections are counted over the right denominators", (t) => {
-  const report = evaluateDatabase(fixture(t, [
-    { questionId: 1, status: "completed", reviewed: true, corrections: 1 },
-    { questionId: 2, status: "review_rejected", errorCode: "review_rejected", reviewed: true },
-    // 挂在 researcher 上的 run 没给 Reviewer 表态的机会，不进否决率的分母。
-    { questionId: 3, status: "failed", errorCode: "provider_error" },
-  ]));
+  const report = evaluateDatabase(
+    fixture(t, [
+      { questionId: 1, status: "completed", reviewed: true, corrections: 1 },
+      { questionId: 2, status: "review_rejected", errorCode: "review_rejected", reviewed: true },
+      // 挂在 researcher 上的 run 没给 Reviewer 表态的机会，不进否决率的分母。
+      { questionId: 3, status: "failed", errorCode: "provider_error" },
+    ]),
+  );
 
   const { corrections, review } = report.statistics;
   assert.equal(corrections.attempts, 5, "2 个 run 各有 researcher+reviewer，1 个只有 researcher");
   assert.equal(corrections.correctedAttempts, 1);
   assert.equal(corrections.rate, 0.2);
-  assert.deepEqual({ reviewed: review.reviewed, rejected: review.rejected, rate: review.rate },
-    { reviewed: 2, rejected: 1, rate: 0.5 });
+  assert.deepEqual(
+    { reviewed: review.reviewed, rejected: review.rejected, rate: review.rate },
+    { reviewed: 2, rejected: 1, rate: 0.5 },
+  );
 });
 
 test("search health counts arXiv calls and how many of them were the same query again", (t) => {
-  const report = evaluateDatabase(fixture(t, [
-    { questionId: 1, status: "completed", queries: ["dark  matter", "DARK MATTER", "神经网络"] },
-    { questionId: 2, status: "completed" },
-  ]));
+  const report = evaluateDatabase(
+    fixture(t, [
+      { questionId: 1, status: "completed", queries: ["dark  matter", "DARK MATTER", "神经网络"] },
+      { questionId: 2, status: "completed" },
+    ]),
+  );
 
   const { searchHealth } = report.statistics;
   assert.equal(searchHealth.runsWithSearches, 1);
@@ -258,12 +298,14 @@ test("search health counts arXiv calls and how many of them were the same query 
 });
 
 test("memory injection is counted per arm and a missing event is unknown, not zero", (t) => {
-  const report = evaluateDatabase(fixture(t, [
-    { questionId: 1, status: "completed", memoryArm: "on", injected: 3 },
-    { questionId: 2, status: "completed", memoryArm: "off", injected: 0 },
-    { questionId: 3, status: "completed", memoryArm: null, injected: 1 },
-    { questionId: 4, status: "completed", memoryArm: "on" },
-  ]));
+  const report = evaluateDatabase(
+    fixture(t, [
+      { questionId: 1, status: "completed", memoryArm: "on", injected: 3 },
+      { questionId: 2, status: "completed", memoryArm: "off", injected: 0 },
+      { questionId: 3, status: "completed", memoryArm: null, injected: 1 },
+      { questionId: 4, status: "completed", memoryArm: "on" },
+    ]),
+  );
 
   const { memoryInjection } = report.statistics;
   assert.equal(memoryInjection.runsWithInjectionEvent, 3);
@@ -358,10 +400,12 @@ test("a database written before the memory column existed still reads back", (t)
 });
 
 test("the markdown report states both denominators and the ablation verdict", (t) => {
-  const report = evaluateDatabase(fixture(t, [
-    { questionId: 1, status: "completed", memoryArm: "on", injected: 1, reviewed: true },
-    { questionId: 1, status: "failed", errorCode: "infra_error", memoryArm: "off", injected: 0 },
-  ]));
+  const report = evaluateDatabase(
+    fixture(t, [
+      { questionId: 1, status: "completed", memoryArm: "on", injected: 1, reviewed: true },
+      { questionId: 1, status: "failed", errorCode: "infra_error", memoryArm: "off", injected: 0 },
+    ]),
+  );
   const markdown = renderMarkdown(report);
 
   assert.match(markdown, /剔除 infra 类/);

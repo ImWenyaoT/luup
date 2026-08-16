@@ -43,9 +43,7 @@ function readRaw(path: string): Record<string, unknown> | null {
   } catch {
     return null;
   }
-  return typeof raw === "object" && raw !== null && !Array.isArray(raw)
-    ? raw as Record<string, unknown>
-    : null;
+  return typeof raw === "object" && raw !== null && !Array.isArray(raw) ? (raw as Record<string, unknown>) : null;
 }
 
 function toQuestion(item: unknown): Science125Question | null {
@@ -86,10 +84,7 @@ export function readScience125(path: string = defaultScience125Path()): Science1
   };
 }
 
-export function findQuestion(
-  identifier: number,
-  path: string = defaultScience125Path(),
-): Science125Question | null {
+export function findQuestion(identifier: number, path: string = defaultScience125Path()): Science125Question | null {
   for (const item of questionList(readRaw(path))) {
     const question = toQuestion(item);
     if (question !== null && question.id === identifier) return question;
@@ -103,6 +98,8 @@ export function findQuestion(
  * 混进 question 会让模型只把问题那段填回 Artifact，撞上「不得改写冻结问题」那道门。
  */
 export function science125Text(question: Science125Question): string {
-  return `来源：《Science》125 前沿科学问题（Science-125 题库）第 ${question.id} 题，${question.domain}。\n\n`
-    + `问题：${question.question}`;
+  return (
+    `来源：《Science》125 前沿科学问题（Science-125 题库）第 ${question.id} 题，${question.domain}。\n\n` +
+    `问题：${question.question}`
+  );
 }

@@ -20,7 +20,10 @@ afterEach(() => {
 
 describe("错误路径", () => {
   test("非 2xx 且带 detail：抛 ApiError，message 取后端的 detail", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => respond(422, JSON.stringify({ detail: "question 必须是非空字符串。" }))));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => respond(422, JSON.stringify({ detail: "question 必须是非空字符串。" }))),
+    );
     const error = await createRun("").catch((cause: unknown) => cause);
     expect(error).toBeInstanceOf(ApiError);
     expect((error as ApiError).status).toBe(422);
@@ -28,14 +31,20 @@ describe("错误路径", () => {
   });
 
   test("非 2xx 且响应体不是 JSON：回落到 statusText，不吞错也不崩", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => respond(502, "<html>bad gateway</html>")));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => respond(502, "<html>bad gateway</html>")),
+    );
     const error = await fetchRun("abc").catch((cause: unknown) => cause);
     expect(error).toBeInstanceOf(ApiError);
     expect((error as ApiError).message).toBe("HTTP-502");
   });
 
   test("非 2xx 的 JSON 里没有 detail 字段：回落到 HTTP <status>", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => respond(500, JSON.stringify({ oops: true }))));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => respond(500, JSON.stringify({ oops: true }))),
+    );
     const error = await fetchConfig().catch((cause: unknown) => cause);
     expect((error as ApiError).message).toBe("HTTP 500");
   });

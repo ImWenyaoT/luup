@@ -41,13 +41,15 @@ function scripted(script: readonly (number | "ok")[]): { provider: ModelProvider
       if (step !== "ok") return Promise.reject(new ProviderError(step));
       return Promise.resolve({
         usage: new Usage(),
-        output: [{
-          id: "msg_1",
-          type: "message",
-          role: "assistant",
-          status: "completed",
-          content: [{ type: "output_text", text: "交卷" }],
-        }],
+        output: [
+          {
+            id: "msg_1",
+            type: "message",
+            role: "assistant",
+            status: "completed",
+            content: [{ type: "output_text", text: "交卷" }],
+          },
+        ],
       });
     },
     getStreamedResponse() {
@@ -58,7 +60,10 @@ function scripted(script: readonly (number | "ok")[]): { provider: ModelProvider
 }
 
 function stage(provider: ModelProvider) {
-  return createQwenExecutor(undefined, provider)({
+  return createQwenExecutor(
+    undefined,
+    provider,
+  )({
     runId: "run",
     role: "reviewer",
     agent: new Agent({ name: "probe", instructions: "只用来触发一次模型调用", model: "fake" }),
@@ -104,13 +109,15 @@ test("a dropped connection counts as transient even without a status code", asyn
       if (calls < 2) return Promise.reject(Object.assign(new Error("fetch failed"), { code: "ECONNRESET" }));
       return Promise.resolve({
         usage: new Usage(),
-        output: [{
-          id: "msg_1",
-          type: "message",
-          role: "assistant",
-          status: "completed",
-          content: [{ type: "output_text", text: "交卷" }],
-        }],
+        output: [
+          {
+            id: "msg_1",
+            type: "message",
+            role: "assistant",
+            status: "completed",
+            content: [{ type: "output_text", text: "交卷" }],
+          },
+        ],
       });
     },
     getStreamedResponse() {

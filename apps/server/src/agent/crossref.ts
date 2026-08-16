@@ -1,7 +1,7 @@
 import type { EvidenceStatus } from "./contracts.ts";
 import { createRateLimiter } from "./rate-limit.ts";
 
-type CrossrefRecord = {
+export type CrossrefRecord = {
   doi: string;
   title: string;
   url: string;
@@ -28,6 +28,11 @@ const CONTACT = "hythmealot@gmail.com";
 const USER_AGENT = `luup/0.1 (https://github.com/ImWenyaoT/luup; mailto:${CONTACT})`;
 
 const acquire = createRateLimiter(MIN_INTERVAL_MS);
+
+/** DOI 精确反查失败。404 由 resolveCrossrefDoi 返回 null；其余网络/服务故障抛出此类。 */
+export class CrossrefLookupError extends Error {
+  override readonly name = "CrossrefLookupError";
+}
 
 function textOf(value: unknown): string {
   if (typeof value === "string") return value.replace(/\s+/g, " ").trim();
@@ -97,7 +102,8 @@ export async function searchCrossref(
     const name = error instanceof Error ? error.name : "";
     if (name === "TimeoutError" || name === "AbortError") {
       return failure(query, "timeout", "Crossref search exceeded its deadline", {
-        request_url: url.toString(), elapsed_ms: Date.now() - startedAt,
+        request_url: url.toString(),
+        elapsed_ms: Date.now() - startedAt,
       });
     }
     return failure(query, "failed", "Crossref search failed before producing records", {
@@ -123,11 +129,12 @@ export async function searchCrossref(
 
   let items: any[];
   try {
-    items = (await response.json() as any)?.message?.items ?? [];
+    items = ((await response.json()) as any)?.message?.items ?? [];
     if (!Array.isArray(items)) items = [];
   } catch (error) {
     return failure(query, "failed", "Crossref returned unparsable JSON", {
-      ...execution, exception_type: error instanceof Error ? error.name : "Error",
+      ...execution,
+      exception_type: error instanceof Error ? error.name : "Error",
     });
   }
 
@@ -139,10 +146,67 @@ export async function searchCrossref(
   return {
     query,
     status,
-    resultSummary: status === "partial"
-      ? `Crossref returned ${records.length} citable record(s), ${items.length - records.length} unusable`
-      : `Crossref returned ${records.length} citable record(s)`,
+    resultSummary:
+      status === "partial"
+        ? `Crossref returned ${records.length} citable record(s), ${items.length - records.length} unusable`
+        : `Crossref returned ${records.length} citable record(s)`,
     records,
     execution,
   };
+}
+
+function normalizeDoiForLookup(value: string): string | null {
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(value.trim());
+  } catch {
+    return null;
+  }
+  const normalized = decoded
+    .replace(/^doi:\s*/i, "")
+    .trim()
+    .toLowerCase();
+  return /^10\.\d{4,9}\/\S+$/i.test(normalized) ? normalized : null;
+}
+
+/** 按一个 DOI 精确读取 Crossref `/works/{doi}`，绝不退化成关键词 search。 */
+export async function resolveCrossrefDoi(
+  rawDoi: string,
+  options: { fetchImpl?: typeof fetch; minIntervalMs?: number; signal?: AbortSignal } = {},
+): Promise<CrossrefRecord | null> {
+  const doi = normalizeDoiForLookup(rawDoi);
+  if (doi === null) return null;
+  const doFetch = options.fetchImpl ?? fetch;
+  const url = new URL(`${ENDPOINT}/${encodeURIComponent(doi)}`);
+
+  await acquire(options.minIntervalMs, options.signal);
+  let response: Response;
+  try {
+    const timeout = AbortSignal.timeout(CALL_TIMEOUT_MS);
+    response = await doFetch(url, {
+      signal: options.signal ? AbortSignal.any([options.signal, timeout]) : timeout,
+      headers: { "user-agent": USER_AGENT },
+    });
+  } catch (error) {
+    if (options.signal?.aborted) throw error;
+    throw new CrossrefLookupError(
+      `Crossref DOI lookup failed: ${error instanceof Error ? error.message : String(error)}`,
+      {
+        cause: error,
+      },
+    );
+  }
+
+  if (response.status === 404) return null;
+  if (!response.ok) throw new CrossrefLookupError(`Crossref DOI lookup returned HTTP ${response.status}`);
+
+  let item: unknown;
+  try {
+    item = ((await response.json()) as { message?: unknown })?.message;
+  } catch (error) {
+    throw new CrossrefLookupError("Crossref DOI lookup returned unparsable JSON", { cause: error });
+  }
+  const record = toRecord(item);
+  if (record === null || normalizeDoiForLookup(record.doi) !== doi) return null;
+  return record;
 }

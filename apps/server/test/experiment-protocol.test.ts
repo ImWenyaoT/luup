@@ -72,7 +72,10 @@ test("the subset is thirty distinct question ids inside the bank", () => {
 
   assert.equal(ids.length, 30);
   assert.equal(new Set(ids).size, 30);
-  assert.deepEqual(ids, [...ids].sort((left, right) => left - right));
+  assert.deepEqual(
+    ids,
+    [...ids].sort((left, right) => left - right),
+  );
   assert.ok(ids.every((id) => Number.isInteger(id) && id >= 1 && id <= 125));
   assert.ok(ids.every((id) => inBank.has(id)));
 });
@@ -84,10 +87,11 @@ test("the subset matches the sampling rule the protocol declares", () => {
   const size = subset.size;
 
   // 1–2. 比例分配，为 0 的层抬到 1。
-  const exact = new Map([...grouped].map(([domain, ids]) => [domain, ids.length * size / total]));
+  const exact = new Map([...grouped].map(([domain, ids]) => [domain, (ids.length * size) / total]));
   const allocation = new Map([...exact].map(([domain, value]) => [domain, Math.max(1, Math.floor(value))]));
   // 3. 余额只在**未被抬升**的层里按小数部分降序、同分按 domain 名升序分配。
-  const eligible = [...exact].filter(([, value]) => Math.floor(value) >= 1)
+  const eligible = [...exact]
+    .filter(([, value]) => Math.floor(value) >= 1)
     .map(([domain]) => domain)
     .sort((left, right) => {
       const gap = (exact.get(right)! % 1) - (exact.get(left)! % 1);
@@ -98,12 +102,15 @@ test("the subset matches the sampling rule the protocol declares", () => {
     allocation.set(domain, allocation.get(domain)! + 1);
   }
   // 4. 层内按 sha256(seed:id) 升序取前 n_h。
-  const recomputed = new Map([...grouped].map(([domain, ids]) => [
-    domain,
-    [...ids].sort((left, right) => sha256(`${subset.seed}:${left}`).localeCompare(sha256(`${subset.seed}:${right}`)))
-      .slice(0, allocation.get(domain)!)
-      .sort((left, right) => left - right),
-  ]));
+  const recomputed = new Map(
+    [...grouped].map(([domain, ids]) => [
+      domain,
+      [...ids]
+        .sort((left, right) => sha256(`${subset.seed}:${left}`).localeCompare(sha256(`${subset.seed}:${right}`)))
+        .slice(0, allocation.get(domain)!)
+        .sort((left, right) => left - right),
+    ]),
+  );
 
   for (const [domain, row] of Object.entries(subset.allocation)) {
     assert.deepEqual(row.ids, recomputed.get(domain), `${domain} 的题号与重算结果不符`);
@@ -119,8 +126,14 @@ test("the subset matches the sampling rule the protocol declares", () => {
 test("every stratum is represented in proportion", () => {
   const allocation = protocol.phase_b_subset.allocation;
   assert.deepEqual(Object.keys(allocation).sort(), [...strata().keys()].sort());
-  assert.ok(Object.values(allocation).every((row) => row.allocated >= 1), "跳过一个 domain 就是替 11 个层回答却宣称 12 个");
-  assert.equal(Object.values(allocation).reduce((sum, row) => sum + row.allocated, 0), 30);
+  assert.ok(
+    Object.values(allocation).every((row) => row.allocated >= 1),
+    "跳过一个 domain 就是替 11 个层回答却宣称 12 个",
+  );
+  assert.equal(
+    Object.values(allocation).reduce((sum, row) => sum + row.allocated, 0),
+    30,
+  );
 });
 
 test("the commitment digest pins the subset", () => {

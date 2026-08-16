@@ -56,7 +56,10 @@ const normalize = (text: string) => text.split(/\s+/).filter(Boolean).join(" ");
  */
 function parseValue(value: unknown): unknown {
   if (typeof value !== "string") return value;
-  const text = value.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  const text = value
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/, "");
   try {
     return JSON.parse(text);
   } catch (error) {
@@ -132,8 +135,7 @@ function canonicalizeResearch(
 ): Research {
   const byId = new Map(scoped.map((record) => [record.evidenceId, record]));
   const reported = [...new Set(proposed.queries.map((query) => query.evidence_id))];
-  const missing = scoped.filter((record) => !reported.includes(record.evidenceId))
-    .map((record) => record.evidenceId);
+  const missing = scoped.filter((record) => !reported.includes(record.evidenceId)).map((record) => record.evidenceId);
   const invented = reported.filter((id) => !byId.has(id));
   if (missing.length > 0 || invented.length > 0) {
     onDrift({
@@ -234,8 +236,9 @@ function inputsOfType(context: TaskContext, type: string): StoredInput[] {
 
 /** 计划能追溯的范围，就是输入里所有 Research Artifact 的引用 —— 不是检索台账全集。 */
 function frozenEvidenceOf(context: TaskContext) {
-  const citations = inputsOfType(context, "research")
-    .flatMap((item) => (item.content as unknown as Research).citations);
+  const citations = inputsOfType(context, "research").flatMap(
+    (item) => (item.content as unknown as Research).citations,
+  );
   return {
     evidenceIds: new Set(citations.map((item) => item.evidence_id)),
     urls: new Set(citations.flatMap((item) => (item.url === null ? [] : [item.url]))),
@@ -264,11 +267,16 @@ function acceptFor(
         }
         const proposed = withFrozenQuestion(researchSchema.parse(raw), context, onDrift);
         const inheritedResearch = inputsOfType(context, "research");
-        const inheritedSearches = new Set(inheritedResearch.flatMap((item) =>
-          (item.content as unknown as Research).queries.map((query) =>
-            `${query.source_type}\u0000${normalize(query.query).toLowerCase()}`)));
-        const hasNovelSearch = scoped.some((record) =>
-          !inheritedSearches.has(`${record.sourceType}\u0000${normalize(record.query).toLowerCase()}`));
+        const inheritedSearches = new Set(
+          inheritedResearch.flatMap((item) =>
+            (item.content as unknown as Research).queries.map(
+              (query) => `${query.source_type}\u0000${normalize(query.query).toLowerCase()}`,
+            ),
+          ),
+        );
+        const hasNovelSearch = scoped.some(
+          (record) => !inheritedSearches.has(`${record.sourceType}\u0000${normalize(record.query).toLowerCase()}`),
+        );
         if (inheritedResearch.length > 0 && !hasNovelSearch) {
           throw new ContractError("supplementary research repeated every inherited source/query");
         }
@@ -330,8 +338,23 @@ function acceptFor(
         const plan = inputsOfType(context, "research-plan").at(-1);
         const evidenceReview = inputsOfType(context, "evidence-review").at(-1);
         if (!plan || !evidenceReview) throw new Error("reviewer task is missing its inputs");
+        const proposed = reviewSchema.parse(raw);
+        const usable = new Map(
+          ledger
+            .scopedRecords()
+            .filter(
+              (record) => (record.status === "succeeded" || record.status === "partial") && record.citations.length > 0,
+            )
+            .map((record) => [record.evidenceId, record]),
+        );
+        const invalidEvidenceIds = proposed.independent_evidence_ids.filter((id) => !usable.has(id));
+        if (invalidEvidenceIds.length > 0) {
+          throw new ContractError(
+            `reviewer independent_evidence_ids must reference usable searches in this Attempt: ${invalidEvidenceIds.join(", ")}`,
+          );
+        }
         return reviewSchema.parse({
-          ...reviewSchema.parse(raw),
+          ...proposed,
           research_plan_artifact_id: plan.id,
           evidence_review_artifact_id: evidenceReview.id,
         });
@@ -385,7 +408,7 @@ export async function runTask(
   const ledger = options.ledger ?? new EvidenceLedger();
   const { agents, capture } = createRoles(ledger);
   const agent = agents[context.role];
-  if (context.role !== "researcher" && agent.tools.length !== 0) {
+  if (context.role !== "researcher" && context.role !== "reviewer" && agent.tools.length !== 0) {
     throw new Error(`${context.role} cannot use tools`);
   }
   // 漂移记录**按轮作废**：只有被接受的那一轮的覆写才是事实。首轮记下一条覆写、
@@ -438,7 +461,9 @@ export async function runTask(
         }),
         // 模型调用成功了这一段就算花掉了 —— 哪怕紧接着的合同门把产物驳回，
         // 也不能因为「这一轮没交出 Artifact」把已经烧掉的 token 从账上抹掉。
-        onUsage: (usage) => { spent = addUsage(spent, usage); },
+        onUsage: (usage) => {
+          spent = addUsage(spent, usage);
+        },
       });
       // researcher 交作业走合成工具，最终文本只是收尾回执，产物在上报窗口里。
       candidate = context.role === "researcher" ? capturedArtifact(capture, context.role) : returned;
@@ -462,7 +487,8 @@ export async function runTask(
         issue: error instanceof Error ? error.message : String(error),
         candidate,
         // 独立的第二次 Runner 调用看不到首轮 tool conversation，必须显式交还已冻结检索。
-        frozenSearches: context.role === "researcher" ? ledger.scopedRecords() : undefined,
+        frozenSearches:
+          context.role === "researcher" || context.role === "reviewer" ? ledger.scopedRecords() : undefined,
       };
     }
   }

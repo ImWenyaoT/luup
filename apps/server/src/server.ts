@@ -2,6 +2,7 @@ import { createReadStream, existsSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { extname, join, normalize, resolve } from "node:path";
 
+import { renderResearchPlanMarkdown } from "./api/artifact-markdown.ts";
 import { projectArtifact, projectRunSnapshot, projectSseFrame } from "./api/projection.ts";
 import { createDeterministicRuntime, createDeterministicVerifier } from "./executor-deterministic.ts";
 import { createQwenExecutor } from "./executor.ts";
@@ -53,10 +54,12 @@ export type ServerOptions = {
   store: SqliteStore;
   harness: Harness;
   webDist?: string;
+  reportError?: (message: string, error: unknown) => void;
 };
 
 export function createApp(options: ServerOptions) {
   const { store, harness } = options;
+  const reportError = options.reportError ?? ((message, error) => console.error(message, error));
   // 两个槽足够演示并发，也不会让一批请求同时放大成无上限的付费模型调用。
   const maxConcurrentRuns = 2;
   const scheduled = new Set<string>();
@@ -67,9 +70,18 @@ export function createApp(options: ServerOptions) {
     while (activeRuns < maxConcurrentRuns && queue.length > 0) {
       const runId = queue.shift()!;
       activeRuns += 1;
-      void harness.execute(runId)
+      void harness
+        .execute(runId)
         // Harness 会把正常的阶段失败落库；这里仅兜住它自身意外抛出的异常。
-        .catch(() => store.finishRun(runId, "failed", { errorCode: "runtime_error" }))
+        .catch((error: unknown) => {
+          reportError("background run failed", error);
+          if (store.snapshot(runId)?.status !== "running") return;
+          try {
+            store.finishRun(runId, "failed", { errorCode: "runtime_error" });
+          } catch (settleError) {
+            reportError("failed to settle background run", settleError);
+          }
+        })
         .finally(() => {
           activeRuns -= 1;
           scheduled.delete(runId);
@@ -85,12 +97,7 @@ export function createApp(options: ServerOptions) {
     drain();
   };
 
-  async function streamEvents(
-    req: IncomingMessage,
-    res: ServerResponse,
-    runId: string,
-    from: number,
-  ): Promise<void> {
+  async function streamEvents(req: IncomingMessage, res: ServerResponse, runId: string, from: number): Promise<void> {
     res.writeHead(200, {
       "content-type": "text/event-stream; charset=utf-8",
       "cache-control": "no-cache",
@@ -100,7 +107,9 @@ export function createApp(options: ServerOptions) {
     // 客户端断开在 Node 里不会自己中断这个循环 —— Python 靠生成器被 GC/CancelledError 收掉，
     // 这里必须显式监听，否则会泄漏一个每 100ms 查一次库的死循环。
     let closed = false;
-    req.on("close", () => { closed = true; });
+    req.on("close", () => {
+      closed = true;
+    });
 
     let cursor = from;
     let idle = 0;
@@ -131,11 +140,9 @@ export function createApp(options: ServerOptions) {
     const root = resolve(dist);
     // 分量级包含检查：`join` 之后再比前缀会把 `/dist-evil` 误判成在 `/dist` 里。
     const candidate = resolve(join(root, normalize(pathname)));
-    const inside = candidate === root
-      || candidate.startsWith(root + (process.platform === "win32" ? "\\" : "/"));
-    const target = inside && existsSync(candidate) && statSync(candidate).isFile()
-      ? candidate
-      : join(root, "index.html");
+    const inside = candidate === root || candidate.startsWith(root + (process.platform === "win32" ? "\\" : "/"));
+    const target =
+      inside && existsSync(candidate) && statSync(candidate).isFile() ? candidate : join(root, "index.html");
     if (!existsSync(target)) return false;
     const stream = createReadStream(target);
     // stat 与异步 open 之间文件仍可能被替换；stream error 不监听会直接终止 Node 进程。
@@ -210,7 +217,9 @@ export function createApp(options: ServerOptions) {
               if (typeof body.base_url !== "string" || !/^https?:\/\//.test(body.base_url.trim())) {
                 return json(res, 422, { detail: "base_url 必须是 http(s) URL。" });
               }
-              try { new URL(body.base_url.trim()); } catch {
+              try {
+                new URL(body.base_url.trim());
+              } catch {
                 return json(res, 422, { detail: "base_url 必须是合法 URL。" });
               }
               next.baseUrl = body.base_url.trim();
@@ -273,11 +282,25 @@ export function createApp(options: ServerOptions) {
           if (!store.snapshot(runId)) return json(res, 404, { detail: "Run 不存在。" });
           // 浏览器重连时自动带 Last-Event-ID，它比 query 更准。
           const header = req.headers["last-event-id"];
-          const cursor = parseCursor(
-            typeof header === "string" ? header : url.searchParams.get("after"),
-          );
+          const cursor = parseCursor(typeof header === "string" ? header : url.searchParams.get("after"));
           if (cursor === null) return json(res, 400, { detail: "游标必须是整数。" });
           return await streamEvents(req, res, runId, cursor);
+        }
+
+        const artifactMarkdownMatch = /^\/api\/artifacts\/([A-Za-z0-9]+)\/markdown$/.exec(path);
+        if (method === "GET" && artifactMarkdownMatch) {
+          const artifact = store.artifact(artifactMarkdownMatch[1]!);
+          if (!artifact) return json(res, 404, { detail: "Artifact 不存在。" });
+          const projected = projectArtifact(artifact);
+          if (projected.content.artifact_type !== "research-plan") {
+            return json(res, 404, { detail: "该 Artifact 没有 Markdown 投影。" });
+          }
+          const markdown = renderResearchPlanMarkdown(projected.content);
+          res.writeHead(200, {
+            "content-type": "text/markdown; charset=utf-8",
+            "content-length": Buffer.byteLength(markdown),
+          });
+          return res.end(markdown);
         }
 
         const artifactMatch = /^\/api\/artifacts\/([A-Za-z0-9]+)$/.exec(path);
@@ -292,7 +315,7 @@ export function createApp(options: ServerOptions) {
         return json(res, 404, { detail: "Not Found" });
       } catch (error) {
         // 浏览器边界只给固定消息；原始异常可能包含 SQLite、provider 或本地路径细节。
-        console.error("request failed", error);
+        reportError("request failed", error);
         if (res.headersSent) return res.end();
         return json(res, 500, { detail: "服务器内部错误。" });
       }
@@ -312,9 +335,7 @@ export function createDefaultApp() {
     // 纠错轮还会把同一个 Attempt 拆成两条。
     runtime ? runtime.execute : createQwenExecutor(),
     // 确定性模式连引用验收也不打网络：它的来源是写死的，反查替身与之同源。
-    runtime
-      ? { createLedger: runtime.createLedger, verifyReferences: createDeterministicVerifier() }
-      : {},
+    runtime ? { createLedger: runtime.createLedger, verifyReferences: createDeterministicVerifier() } : {},
   );
   return createApp({ store, harness, webDist: process.env.LUUP_WEB_DIST || "apps/web/dist" });
 }

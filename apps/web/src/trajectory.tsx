@@ -37,7 +37,11 @@ function segmentDuration(attempts: Attempt[]): string | null {
 
 /** 检索失败的五种状态直接把状态码当结果展示；partial 保留摘要但带上状态。 */
 const EVIDENCE_FAILURE: ReadonlySet<string> = new Set([
-  "failed", "timeout", "rate_limited", "source_unavailable", "refused",
+  "failed",
+  "timeout",
+  "rate_limited",
+  "source_unavailable",
+  "refused",
 ]);
 
 type Segment = {
@@ -107,7 +111,12 @@ export function Trajectory({ snapshot }: { snapshot: Snapshot }) {
   );
 }
 
-function SegmentRow({ segment, currentRole, collapsed, onToggle }: {
+function SegmentRow({
+  segment,
+  currentRole,
+  collapsed,
+  onToggle,
+}: {
   segment: Segment;
   currentRole: Role | null;
   collapsed: boolean;
@@ -133,11 +142,12 @@ function SegmentRow({ segment, currentRole, collapsed, onToggle }: {
         <span className="text-xs font-medium">{ROLE_LABEL[role]}</span>
         <span className="font-mono text-[11px] text-muted-foreground">{role}</span>
         {pending && <span className="text-[11px] text-muted-foreground">待执行</span>}
-        {attempts.length > 1 && (
-          <span className="font-mono text-[11px] text-muted-foreground">×{attempts.length}</span>
-        )}
+        {attempts.length > 1 && <span className="font-mono text-[11px] text-muted-foreground">×{attempts.length}</span>}
         {corrections > 0 && (
-          <span className="rounded-sm border px-1 font-mono text-[11px] text-muted-foreground" title={`${corrections} 次纠错`}>
+          <span
+            className="rounded-sm border px-1 font-mono text-[11px] text-muted-foreground"
+            title={`${corrections} 次纠错`}
+          >
             ↻{corrections}
           </span>
         )}
@@ -145,7 +155,7 @@ function SegmentRow({ segment, currentRole, collapsed, onToggle }: {
           <span className="font-mono text-[11px] text-destructive">{last.failure_code}</span>
         )}
         <span className="ml-auto font-mono text-[11px] tabular-nums text-muted-foreground">
-          {running ? "进行中" : duration ?? ""}
+          {running ? "进行中" : (duration ?? "")}
         </span>
       </button>
 
@@ -158,7 +168,9 @@ function SegmentRow({ segment, currentRole, collapsed, onToggle }: {
 
       {!pending && !collapsed && evidence.length > 0 && (
         <div className="space-y-1 pb-1 pl-1">
-          {evidence.map((item) => <EvidenceRow key={item.id} evidence={item} />)}
+          {evidence.map((item) => (
+            <EvidenceRow key={item.id} evidence={item} />
+          ))}
         </div>
       )}
     </li>
@@ -168,7 +180,7 @@ function SegmentRow({ segment, currentRole, collapsed, onToggle }: {
 function EvidenceRow({ evidence }: { evidence: Evidence }) {
   const failed = EVIDENCE_FAILURE.has(evidence.status);
   const summary = evidence.output.result_summary;
-  const full = `${evidence.tool_name} ${evidence.query} → ${failed ? evidence.status : summary ?? "无输出"}`;
+  const full = `${evidence.tool_name} ${evidence.query} → ${failed ? evidence.status : (summary ?? "无输出")}`;
 
   return (
     <div className="text-xs">
@@ -177,8 +189,7 @@ function EvidenceRow({ evidence }: { evidence: Evidence }) {
         title={full}
       >
         <span className="truncate font-mono text-[11px]">
-          <span>{evidence.tool_name}</span>{" "}
-          <span className="text-muted-foreground">{evidence.query}</span>
+          <span>{evidence.tool_name}</span> <span className="text-muted-foreground">{evidence.query}</span>
         </span>
         <span className="text-[11px] text-muted-foreground">→</span>
         {failed ? (
@@ -200,13 +211,13 @@ function EvidenceRow({ evidence }: { evidence: Evidence }) {
             <div key={citation.locator}>
               <span className="font-mono text-[11px] text-muted-foreground">{citation.locator}</span>
               {" · "}
-              {citation.url === null
-                ? citation.title
-                : (
-                  <a className="underline underline-offset-2" href={citation.url} target="_blank" rel="noreferrer">
-                    {citation.title}
-                  </a>
-                )}
+              {citation.url === null ? (
+                citation.title
+              ) : (
+                <a className="underline underline-offset-2" href={citation.url} target="_blank" rel="noreferrer">
+                  {citation.title}
+                </a>
+              )}
             </div>
           ))}
         </div>

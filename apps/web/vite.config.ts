@@ -26,11 +26,7 @@ export default defineConfig({
           });
           proxy.on("proxyRes", (proxyRes) => {
             const contentType = proxyRes.headers["content-type"];
-            if (
-              typeof contentType !== "string" ||
-              !contentType.includes("text/event-stream")
-            )
-              return;
+            if (typeof contentType !== "string" || !contentType.includes("text/event-stream")) return;
             delete proxyRes.headers["content-encoding"];
             delete proxyRes.headers["content-length"];
             proxyRes.headers["cache-control"] = "no-cache, no-transform";

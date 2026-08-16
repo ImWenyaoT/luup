@@ -71,6 +71,9 @@ pnpm dev       # 前端 http://127.0.0.1:5173 + API :8000（确定性 runtime，
 
 ### 跑题
 
+正式 live 批跑要求 Node 主版本为 24（仓库 `.nvmrc` 固定 `24.18.0`）；启动前会拒绝其他主版本。
+`--dry-run` 只做规划，在其他 Node 主版本上也可运行。
+
 ```sh
 pnpm canary                              # 单题冒烟，走 live 模型
 pnpm batch --ids 1-125 --dry-run         # 先看计划，零执行
@@ -85,7 +88,7 @@ pnpm eval --db outputs/runtime/typescript-runs.db   # 离线指标，不调模�
 ## 验证
 
 ```sh
-pnpm run ci            # typecheck → lint → build → test:coverage，与 CI 同序
+pnpm run ci            # typecheck → lint → format:check → knip → build → test:coverage，与 CI 同序
 pnpm run test:e2e      # Playwright；首次先 pnpm --filter @luup/frontend exec playwright install chromium
 ```
 

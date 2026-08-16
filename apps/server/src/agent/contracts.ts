@@ -15,10 +15,7 @@ export type Role = z.infer<typeof roleSchema>;
  * 这个字段随后还会由 EvidenceLedger 覆写，所以这里只做一个已验证必要的输入别名，
  * 对外和落库仍保持简单的 `web | arxiv` 两类。
  */
-const sourceTypeSchema = z.preprocess(
-  (value) => value === "crossref" ? "web" : value,
-  z.enum(["web", "arxiv"]),
-);
+const sourceTypeSchema = z.preprocess((value) => (value === "crossref" ? "web" : value), z.enum(["web", "arxiv"]));
 export type SourceType = z.infer<typeof sourceTypeSchema>;
 
 /** 同一个字段发给模型时的写法：三个值的朴素枚举，没有 preprocess。
@@ -70,10 +67,15 @@ export const researchSchema = z.object({
   artifact_type: z.literal("research"),
   question: z.string().min(1),
   summary: z.string().min(1),
-  claims: z.array(z.object({
-    statement: z.string().min(1),
-    evidence_ids: z.array(z.string().min(1)).min(1),
-  })).min(1).max(8),
+  claims: z
+    .array(
+      z.object({
+        statement: z.string().min(1),
+        evidence_ids: z.array(z.string().min(1)).min(1),
+      }),
+    )
+    .min(1)
+    .max(8),
   /** 检索台账的实录，由 `canonicalizeResearch` 整条填充，模型写什么都不作数。
    *
    * **没有条数上限**，这是刻意的：条数由 harness 跑了几次检索决定，模型无从灌水，
@@ -82,13 +84,17 @@ export const researchSchema = z.object({
    * 最多跑了 20 次检索、21 题里有 5 个 Attempt 超过 12 次——百炼会在同一 turn 并发
    * 调用检索工具，`parallelToolCalls: false` 并不总被遵守，SDK 的 maxTurns 因此
    * 不是检索次数的上界。`.min(1)` 留着：一次都没检索就发布是另一道门，在这之前就判死。 */
-  queries: z.array(z.object({
-    evidence_id: z.string().min(1),
-    source_type: sourceTypeSchema,
-    query: z.string().min(1),
-    status: evidenceStatusSchema,
-    result_summary: z.string().min(1),
-  })).min(1),
+  queries: z
+    .array(
+      z.object({
+        evidence_id: z.string().min(1),
+        source_type: sourceTypeSchema,
+        query: z.string().min(1),
+        status: evidenceStatusSchema,
+        result_summary: z.string().min(1),
+      }),
+    )
+    .min(1),
   citations: z.array(citationSchema).min(1).max(15),
   limitations: z.array(z.string().min(1)).min(1).max(5),
 });
@@ -100,13 +106,18 @@ export const researchSchema = z.object({
  * 当作工具错误回灌，模型在同一个 turn 里自己改；不需要另起一次调用。
  */
 export const researchProposalSchema = researchSchema.extend({
-  queries: z.array(z.object({
-    evidence_id: z.string().min(1),
-    source_type: proposedSourceTypeSchema,
-    query: z.string().min(1),
-    status: evidenceStatusSchema,
-    result_summary: z.string().min(1),
-  })).min(1).max(12),
+  queries: z
+    .array(
+      z.object({
+        evidence_id: z.string().min(1),
+        source_type: proposedSourceTypeSchema,
+        query: z.string().min(1),
+        status: evidenceStatusSchema,
+        result_summary: z.string().min(1),
+      }),
+    )
+    .min(1)
+    .max(12),
   citations: z.array(proposedCitationSchema).min(1).max(15),
 });
 
@@ -126,12 +137,16 @@ export const evidenceReviewSchema = z.object({
   artifact_type: z.literal("evidence-review"),
   hypothesis_artifact_id: z.string().min(1),
   research_artifact_ids: z.array(z.string().min(1)).min(1),
-  assessments: z.array(z.object({
-    claim: z.string().min(1),
-    verdict: z.enum(["supports", "contradicts", "uncertain"]),
-    rationale: z.string().min(1),
-    evidence_ids: z.array(z.string().min(1)),
-  })).min(1),
+  assessments: z
+    .array(
+      z.object({
+        claim: z.string().min(1),
+        verdict: z.enum(["supports", "contradicts", "uncertain"]),
+        rationale: z.string().min(1),
+        evidence_ids: z.array(z.string().min(1)),
+      }),
+    )
+    .min(1),
   gaps: z.array(z.string().min(1)).max(4),
   supported: z.boolean(),
 });
@@ -144,9 +159,12 @@ const cjk = /[㐀-䶿一-鿿]/;
  * 注意这挡不住模型第一次写错 —— refine 不会出现在发给模型的 JSON Schema 里，
  * 所以 instructions 那边仍要把字段语义讲清楚，两边分工不同。
  */
-const chineseProse = z.string().min(1).refine((text) => cjk.test(text), {
-  message: "必须使用简体中文书写正文",
-});
+const chineseProse = z
+  .string()
+  .min(1)
+  .refine((text) => cjk.test(text), {
+    message: "必须使用简体中文书写正文",
+  });
 
 /** 一个实验项和它的出处，绑在同一个对象里。
  *
@@ -161,7 +179,6 @@ const groundedItemSchema = z.object({
   name: chineseProse,
   evidence_id: z.string().min(1),
 });
-
 
 export const researchPlanSchema = z.object({
   artifact_type: z.literal("research-plan"),
@@ -184,10 +201,16 @@ export const researchPlanSchema = z.object({
   }),
   results: z.object({
     status: z.literal("pending_verification"),
-    expected_outcomes: z.array(z.object({
-      metric: z.string().min(1),
-      statement: chineseProse,
-    })).min(1),
+    validation_basis: z.literal("formula_derivation"),
+    feasibility_argument: chineseProse,
+    expected_outcomes: z
+      .array(
+        z.object({
+          metric: z.string().min(1),
+          statement: chineseProse,
+        }),
+      )
+      .min(1),
   }),
   references: z.array(z.string().min(1)).min(1),
   input_artifact_ids: z.array(z.string().min(1)).min(3),
@@ -198,6 +221,7 @@ export const reviewSchema = z.object({
   artifact_type: z.literal("review"),
   research_plan_artifact_id: z.string().min(1),
   evidence_review_artifact_id: z.string().min(1),
+  independent_evidence_ids: z.array(z.string().min(1)).min(1),
   scores: z.object({
     scientific_value: z.number().int().min(1).max(5),
     technical_depth: z.number().int().min(1).max(5),
@@ -215,4 +239,3 @@ export type EvidenceReview = z.infer<typeof evidenceReviewSchema>;
 export type ResearchPlan = z.infer<typeof researchPlanSchema>;
 export type Review = z.infer<typeof reviewSchema>;
 export type DomainArtifact = Research | Hypothesis | EvidenceReview | ResearchPlan | Review;
-

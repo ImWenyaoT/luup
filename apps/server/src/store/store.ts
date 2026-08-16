@@ -132,14 +132,17 @@ export class SqliteStore {
       const runId = shortId();
       const now = nowIso();
       db.prepare(
-        "INSERT INTO runs(id, question, status, current_role, version, budget_json, error_code, "
-        + "final_artifact_id, science125_id, source_identity_json, memory_arm, created_at, updated_at) "
-        + "VALUES(?, ?, 'running', NULL, 0, '{}', NULL, NULL, ?, ?, ?, ?, ?)",
+        "INSERT INTO runs(id, question, status, current_role, version, budget_json, error_code, " +
+          "final_artifact_id, science125_id, source_identity_json, memory_arm, created_at, updated_at) " +
+          "VALUES(?, ?, 'running', NULL, 0, '{}', NULL, NULL, ?, ?, ?, ?, ?)",
       ).run(
-        runId, normalized, science125Id,
+        runId,
+        normalized,
+        science125Id,
         origin.sourceIdentity ? JSON.stringify(origin.sourceIdentity) : null,
         origin.memoryArm ?? null,
-        now, now,
+        now,
+        now,
       );
       emitEvent(db, runId, "run.created", { question: normalized });
       return runId;
@@ -153,8 +156,8 @@ export class SqliteStore {
    */
   completedRunForQuestion(science125Id: number): string | null {
     const row = this.#get(
-      "SELECT id FROM runs WHERE science125_id = ? AND status = 'completed' "
-      + "ORDER BY created_at DESC, rowid DESC LIMIT 1",
+      "SELECT id FROM runs WHERE science125_id = ? AND status = 'completed' " +
+        "ORDER BY created_at DESC, rowid DESC LIMIT 1",
       science125Id,
     );
     return row ? String(row.id) : null;
@@ -175,15 +178,15 @@ export class SqliteStore {
 
   startAttempt(runId: string, role: Role): string {
     return this.#write((db) => {
-      const count = db.prepare(
-        "SELECT COUNT(*) AS n FROM attempts WHERE run_id = ? AND role = ?",
-      ).get(runId, role) as Row;
+      const count = db
+        .prepare("SELECT COUNT(*) AS n FROM attempts WHERE run_id = ? AND role = ?")
+        .get(runId, role) as Row;
       const ordinal = Number(count.n) + 1;
       const attemptId = shortId();
       const now = nowIso();
       db.prepare(
-        "INSERT INTO attempts(id, run_id, role, ordinal, status, corrections, failure_code, "
-        + "error_type, started_at, finished_at) VALUES(?, ?, ?, ?, 'running', 0, NULL, NULL, ?, NULL)",
+        "INSERT INTO attempts(id, run_id, role, ordinal, status, corrections, failure_code, " +
+          "error_type, started_at, finished_at) VALUES(?, ?, ?, ?, 'running', 0, NULL, NULL, ?, NULL)",
       ).run(attemptId, runId, role, ordinal, now);
       db.prepare("UPDATE runs SET current_role = ?, updated_at = ? WHERE id = ?").run(role, now, runId);
       emitEvent(db, runId, "attempt.started", { role, ordinal });
@@ -217,15 +220,22 @@ export class SqliteStore {
         });
       }
       db.prepare(
-        "INSERT INTO artifacts(id, run_id, attempt_id, type, content_json, input_artifact_ids_json, "
-        + "created_at) VALUES(?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO artifacts(id, run_id, attempt_id, type, content_json, input_artifact_ids_json, " +
+          "created_at) VALUES(?, ?, ?, ?, ?, ?, ?)",
       ).run(
-        artifactId, runId, attemptId, artifact.artifact_type,
-        JSON.stringify(artifact), JSON.stringify(inputs.map((item) => item.id)), now,
+        artifactId,
+        runId,
+        attemptId,
+        artifact.artifact_type,
+        JSON.stringify(artifact),
+        JSON.stringify(inputs.map((item) => item.id)),
+        now,
       );
-      db.prepare(
-        "UPDATE attempts SET status = 'completed', corrections = ?, finished_at = ? WHERE id = ?",
-      ).run(corrections, now, attemptId);
+      db.prepare("UPDATE attempts SET status = 'completed', corrections = ?, finished_at = ? WHERE id = ?").run(
+        corrections,
+        now,
+        attemptId,
+      );
       if (corrections > 0) {
         emitEvent(db, runId, "sdk.structured_correction", { corrections });
       }
@@ -259,8 +269,8 @@ export class SqliteStore {
         });
       }
       db.prepare(
-        "UPDATE attempts SET status = 'failed', corrections = ?, failure_code = ?, error_type = ?, "
-        + "finished_at = ? WHERE id = ?",
+        "UPDATE attempts SET status = 'failed', corrections = ?, failure_code = ?, error_type = ?, " +
+          "finished_at = ? WHERE id = ?",
       ).run(corrections, failure.code, errorType, now, attemptId);
       // reason 带的是校验器内部信息，只用于排障，投影层不放行它出网。
       emitEvent(db, runId, "sdk.output_rejected", { error_type: errorType, reason: failure.reason });
@@ -271,21 +281,26 @@ export class SqliteStore {
   /** 登记一次检索。ID 与全部字段都由代码写定，模型只能引用。 */
   recordEvidence(runId: string, attemptId: string, record: EvidenceRecord): void {
     this.#write((db) => {
-      const attempt = db.prepare("SELECT status FROM attempts WHERE id = ? AND run_id = ?")
-        .get(attemptId, runId) as Row | undefined;
+      const attempt = db.prepare("SELECT status FROM attempts WHERE id = ? AND run_id = ?").get(attemptId, runId) as
+        | Row
+        | undefined;
       // Abort 后仍在收尾的工具可能晚到；Attempt 一旦终止，冻结审计不可再追加。
       if (attempt?.status !== "running") return;
       db.prepare(
-        "INSERT INTO tool_evidence(id, attempt_id, tool_name, query, output_json, status, created_at) "
-        + "VALUES(?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO tool_evidence(id, attempt_id, tool_name, query, output_json, status, created_at) " +
+          "VALUES(?, ?, ?, ?, ?, ?, ?)",
       ).run(
-        record.evidenceId, attemptId, record.tool, record.query,
+        record.evidenceId,
+        attemptId,
+        record.tool,
+        record.query,
         JSON.stringify({
           source_type: record.sourceType,
           result_summary: record.resultSummary,
           citations: record.citations,
         }),
-        record.status, nowIso(),
+        record.status,
+        nowIso(),
       );
       emitEvent(db, runId, "tool.evidence_recorded", {
         tool_name: record.tool,
@@ -297,13 +312,16 @@ export class SqliteStore {
 
   finishRun(runId: string, status: RunStatus, options: { finalArtifactId?: string; errorCode?: string } = {}): void {
     this.#write((db) => {
+      const run = db.prepare("SELECT status FROM runs WHERE id = ?").get(runId) as Row | undefined;
+      if (!run) throw new Error(`unknown run: ${runId}`);
+      // 终态是不可逆事实：取消/重启已经收尾后，迟到的执行流只能幂等忽略。
+      if (run.status !== "running") return;
       db.prepare(
-        "UPDATE runs SET status = ?, current_role = NULL, final_artifact_id = ?, error_code = ?, "
-        + "updated_at = ? WHERE id = ?",
+        "UPDATE runs SET status = ?, current_role = NULL, final_artifact_id = ?, error_code = ?, " +
+          "updated_at = ? WHERE id = ? AND status = 'running'",
       ).run(status, options.finalArtifactId ?? null, options.errorCode ?? null, nowIso(), runId);
-      const eventKind = status === "completed"
-        ? "run.completed"
-        : status === "review_rejected" ? "run.review_rejected" : "run.failed";
+      const eventKind =
+        status === "completed" ? "run.completed" : status === "review_rejected" ? "run.review_rejected" : "run.failed";
       emitEvent(db, runId, eventKind, {
         final_artifact_id: options.finalArtifactId ?? null,
         failure_code: options.errorCode ?? null,
@@ -318,9 +336,10 @@ export class SqliteStore {
   /** SSE 的数据源。游标是 per-run 的 version，开区间。 */
   eventsAfter(runId: string, after: number): Row[] {
     return this.#all(
-      "SELECT id, version, kind, payload_json, created_at FROM events "
-      + "WHERE run_id = ? AND version > ? ORDER BY version",
-      runId, after,
+      "SELECT id, version, kind, payload_json, created_at FROM events " +
+        "WHERE run_id = ? AND version > ? ORDER BY version",
+      runId,
+      after,
     ).map((row) => ({
       id: row.id,
       version: row.version,
@@ -337,9 +356,10 @@ export class SqliteStore {
    */
   latestArtifact(runId: string, type: string): StoredArtifact | null {
     const row = this.#get(
-      "SELECT id, type, content_json FROM artifacts WHERE run_id = ? AND type = ? "
-      + "ORDER BY created_at DESC, rowid DESC LIMIT 1",
-      runId, type,
+      "SELECT id, type, content_json FROM artifacts WHERE run_id = ? AND type = ? " +
+        "ORDER BY created_at DESC, rowid DESC LIMIT 1",
+      runId,
+      type,
     );
     if (!row) return null;
     return { id: row.id, type: row.type, content: JSON.parse(row.content_json) };
@@ -355,22 +375,23 @@ export class SqliteStore {
   snapshot(runId: string): Row | null {
     const run = this.#get("SELECT * FROM runs WHERE id = ?", runId);
     if (!run) return null;
-    const attempts = this.#all(
-      "SELECT * FROM attempts WHERE run_id = ? ORDER BY started_at, rowid", runId,
-    );
+    const attempts = this.#all("SELECT * FROM attempts WHERE run_id = ? ORDER BY started_at, rowid", runId);
     const attemptIds = attempts.map((attempt) => attempt.id);
-    const evidence = attemptIds.length === 0 ? [] : this.#all(
-      `SELECT * FROM tool_evidence WHERE attempt_id IN (${attemptIds.map(() => "?").join(",")}) `
-      + "ORDER BY created_at, rowid",
-      ...attemptIds,
-    ).map((row) => ({ ...row, output: JSON.parse(row.output_json) }));
-    const artifacts = this.#all(
-      "SELECT * FROM artifacts WHERE run_id = ? ORDER BY created_at, rowid", runId,
-    ).map((row) => ({
-      ...row,
-      content: JSON.parse(row.content_json),
-      input_artifact_ids: JSON.parse(row.input_artifact_ids_json),
-    }));
+    const evidence =
+      attemptIds.length === 0
+        ? []
+        : this.#all(
+            `SELECT * FROM tool_evidence WHERE attempt_id IN (${attemptIds.map(() => "?").join(",")}) ` +
+              "ORDER BY created_at, rowid",
+            ...attemptIds,
+          ).map((row) => ({ ...row, output: JSON.parse(row.output_json) }));
+    const artifacts = this.#all("SELECT * FROM artifacts WHERE run_id = ? ORDER BY created_at, rowid", runId).map(
+      (row) => ({
+        ...row,
+        content: JSON.parse(row.content_json),
+        input_artifact_ids: JSON.parse(row.input_artifact_ids_json),
+      }),
+    );
     return {
       ...run,
       attempts,
@@ -390,12 +411,14 @@ export class SqliteStore {
 function failRunInPlace(db: DatabaseSync, runId: string, failureCode: string, errorType: string): void {
   const now = nowIso();
   db.prepare(
-    "UPDATE attempts SET status = 'failed', failure_code = ?, error_type = ?, finished_at = ? "
-    + "WHERE run_id = ? AND status = 'running'",
+    "UPDATE attempts SET status = 'failed', failure_code = ?, error_type = ?, finished_at = ? " +
+      "WHERE run_id = ? AND status = 'running'",
   ).run(failureCode, errorType, now, runId);
-  db.prepare(
-    "UPDATE runs SET status = 'failed', current_role = NULL, error_code = ?, updated_at = ? WHERE id = ?",
-  ).run(failureCode, now, runId);
+  db.prepare("UPDATE runs SET status = 'failed', current_role = NULL, error_code = ?, updated_at = ? WHERE id = ?").run(
+    failureCode,
+    now,
+    runId,
+  );
   emitEvent(db, runId, "run.failed", { failure_code: failureCode, final_artifact_id: null });
 }
 
@@ -412,19 +435,18 @@ function acquireLock(path: string): DatabaseSync {
 }
 
 /** 事件写入的唯一入口。version 是 per-run 单调序号，也是 SSE 游标。 */
-function emitEvent(
-  db: DatabaseSync,
-  runId: string,
-  kind: string,
-  payload: Record<string, unknown>,
-): number {
+function emitEvent(db: DatabaseSync, runId: string, kind: string, payload: Record<string, unknown>): number {
   const row = db.prepare("SELECT version FROM runs WHERE id = ?").get(runId) as Row | undefined;
   if (!row) throw new Error(`unknown run: ${runId}`);
   const version = Number(row.version) + 1;
   const now = nowIso();
   db.prepare("UPDATE runs SET version = ?, updated_at = ? WHERE id = ?").run(version, now, runId);
-  db.prepare(
-    "INSERT INTO events(run_id, version, kind, payload_json, created_at) VALUES(?, ?, ?, ?, ?)",
-  ).run(runId, version, kind, JSON.stringify(payload), now);
+  db.prepare("INSERT INTO events(run_id, version, kind, payload_json, created_at) VALUES(?, ?, ?, ?, ?)").run(
+    runId,
+    version,
+    kind,
+    JSON.stringify(payload),
+    now,
+  );
   return version;
 }

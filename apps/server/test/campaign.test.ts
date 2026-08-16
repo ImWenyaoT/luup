@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "vitest";
@@ -61,8 +61,8 @@ test("a campaign line carries verdict, title, references and failure class", () 
 test("the run log entry is repo-relative and dated, never an absolute path", () => {
   assert.equal(
     formatLogEntry(facts(), "outputs/runs.db#run7a", NOW),
-    "\n## [2026-08-14] run | q7 | SUCCESS\n"
-    + "- outputs/runs.db#run7a｜论文标题｜引用 2301.00001v1, https://doi.org/10.1000/xyz\n",
+    "\n## [2026-08-14] run | q7 | SUCCESS\n" +
+      "- outputs/runs.db#run7a｜论文标题｜引用 2301.00001v1, https://doi.org/10.1000/xyz\n",
   );
   // 自由输入没有题号，仍进总日志，标 q-。
   assert.match(formatLogEntry(facts({ questionId: null }), "x#y", NOW), /run \| q- \| SUCCESS/);
@@ -108,16 +108,19 @@ test("a run without a question id writes the log but no question page", (t) => {
 });
 
 test("prior attempts are the last three deterministic lines of the question page", (t) => {
-  const dir = memoryDir(t, [
-    "# q7",
-    "",
-    "散文行，不是记录，读取端不能把它当条目",
-    "- [2026-08-01T00:00:00Z] FAILED | run a | 一",
-    "- [2026-08-02T00:00:00Z] FAILED | run b | 二",
-    "- [2026-08-03T00:00:00Z] SUCCESS | run c | 三",
-    "- [2026-08-04T00:00:00Z] FAILED | run d | 四",
-    "",
-  ].join("\n"));
+  const dir = memoryDir(
+    t,
+    [
+      "# q7",
+      "",
+      "散文行，不是记录，读取端不能把它当条目",
+      "- [2026-08-01T00:00:00Z] FAILED | run a | 一",
+      "- [2026-08-02T00:00:00Z] FAILED | run b | 二",
+      "- [2026-08-03T00:00:00Z] SUCCESS | run c | 三",
+      "- [2026-08-04T00:00:00Z] FAILED | run d | 四",
+      "",
+    ].join("\n"),
+  );
   const memory = open(t, dir);
 
   const prior = memory.readPriorAttempts(7);
@@ -137,6 +140,26 @@ test("deleting the memory directory disables the channel instead of breaking the
   assert.deepEqual(memory.readPriorAttempts(7), []);
   memory.recordRun(facts(), NOW);
   assert.throws(() => readFileSync(join(dir, "log.md"), "utf8"), "目录没了就一个字都不写");
+});
+
+test("a campaign read failure is reported and never overwrites unreadable history", (t) => {
+  const dir = memoryDir(t);
+  mkdirSync(join(dir, "log.md"));
+  mkdirSync(join(dir, "questions"), { recursive: true });
+  mkdirSync(join(dir, "questions", "q7.md"));
+  const errors: unknown[] = [];
+  const memory = new CampaignMemory({
+    memoryDir: dir,
+    locate: (runId) => `outputs/runs.db#${runId}`,
+    reportError: (error) => errors.push(error),
+  });
+
+  assert.deepEqual(memory.readPriorAttempts(7), []);
+  memory.recordRun(facts(), NOW);
+
+  assert.equal(errors.length, 3);
+  assert.equal(statSync(join(dir, "log.md")).isDirectory(), true);
+  assert.equal(statSync(join(dir, "questions", "q7.md")).isDirectory(), true);
 });
 
 // --- Harness 接线 -------------------------------------------------------
@@ -185,7 +208,10 @@ test("the ablation arm injects nothing and the fact is on the record", async (t)
 });
 
 test("a run records what it injected even when it fails", async (t) => {
-  const dir = memoryDir(t, "# q7\n\n- [2026-08-01T00:00:00Z] FAILED | run a | 一\n- [2026-08-02T00:00:00Z] FAILED | run b | 二\n");
+  const dir = memoryDir(
+    t,
+    "# q7\n\n- [2026-08-01T00:00:00Z] FAILED | run a | 一\n- [2026-08-02T00:00:00Z] FAILED | run b | 二\n",
+  );
   const store = new SqliteStore(":memory:");
   t.onTestFinished(() => store.close());
 

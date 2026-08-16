@@ -33,6 +33,7 @@ const EVENT_PAYLOAD_FIELDS: Record<string, readonly string[]> = {
     "reference_count",
     "frozen_sources",
     "arxiv_checked",
+    "doi_checked",
     "membership_only",
     "failed_count",
     "infra_error",
@@ -59,8 +60,7 @@ const PUBLIC_EVIDENCE_TOOLS: ReadonlySet<string> = new Set(["crossref_search", "
 const displayScalarSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
 
 function isDisplayScalar(value: unknown): value is DisplayScalar {
-  return value === null
-    || typeof value === "string" || typeof value === "number" || typeof value === "boolean";
+  return value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean";
 }
 
 function projectPayload(kind: string, value: unknown): Record<string, DisplayScalar> {
@@ -151,7 +151,13 @@ const publicArtifactContentSchema = z.discriminatedUnion("artifact_type", [
   researchPlanSchema.pick({
     artifact_type: true,
     problem_statement: true,
+    rationale: true,
+    technical_details: true,
+    datasets: true,
+    source: true,
     target: true,
+    paper_title: true,
+    paper_abstract: true,
     methods: true,
     experiments: true,
     results: true,
@@ -160,6 +166,7 @@ const publicArtifactContentSchema = z.discriminatedUnion("artifact_type", [
   reviewSchema.pick({
     artifact_type: true,
     accepted: true,
+    independent_evidence_ids: true,
     scores: true,
     weaknesses: true,
     feedback: true,
@@ -214,8 +221,9 @@ export function projectRunEvent(event: Record<string, unknown>): PublicRunEvent 
  * 非公开工具的证据、Harness 内部事件，都要在进 schema 之前就筛掉。
  */
 export function projectRunSnapshot(snapshot: Record<string, unknown>): PublicRunSnapshot {
-  const evidence = (snapshot.tool_evidence as Record<string, unknown>[])
-    .filter((row) => PUBLIC_EVIDENCE_TOOLS.has(String(row.tool_name)));
+  const evidence = (snapshot.tool_evidence as Record<string, unknown>[]).filter((row) =>
+    PUBLIC_EVIDENCE_TOOLS.has(String(row.tool_name)),
+  );
   // 事件载荷按 kind 白名单，比字段声明更细：同一个 payload 字段在这个事件里
   // 能出去、在那个事件里不能。projectRunEvent 负责这一层。
   const events = (snapshot.recent_events as Record<string, unknown>[])

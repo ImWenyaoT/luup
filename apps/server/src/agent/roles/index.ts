@@ -20,11 +20,11 @@ export function createRoles(ledger: EvidenceLedger): Roles {
   const researcher = defineResearcher(ledger);
   return {
     agents: {
-      "researcher": researcher.agent,
+      researcher: researcher.agent,
       "hypothesis-generation": defineHypothesis(),
       "evidence-review": defineEvidenceReview(),
       "research-plan": definePlanner(),
-      "reviewer": defineReviewer(),
+      reviewer: defineReviewer(ledger),
     },
     capture: researcher.capture,
   };

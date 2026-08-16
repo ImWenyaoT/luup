@@ -59,12 +59,14 @@ export class Harness {
     this.#execute = execute;
     this.#verifyReferences = options.verifyReferences ?? createReferenceVerifier();
     this.#memory = options.memory ?? null;
-    this.#createLedger = options.createLedger
-      ?? ((scope) => new EvidenceLedger({
-        // tool_evidence.id 全库唯一，所以用完整 Attempt ID 隔离每本台账。
-        namespace: `${scope.attemptId}_`,
-        onRecord: (record) => this.#store.recordEvidence(scope.runId, scope.attemptId, record),
-      }));
+    this.#createLedger =
+      options.createLedger ??
+      ((scope) =>
+        new EvidenceLedger({
+          // tool_evidence.id 全库唯一，所以用完整 Attempt ID 隔离每本台账。
+          namespace: `${scope.attemptId}_`,
+          onRecord: (record) => this.#store.recordEvidence(scope.runId, scope.attemptId, record),
+        }));
   }
 
   createRun(question: string): string {
@@ -109,20 +111,33 @@ export class Harness {
         // 补证轮要带上一轮的 Research Artifact：只给缺口清单的话，第二轮看不到
         // 上一轮已经查到什么，只会把同一份检索原样重做一遍。
         const researchInputs = round === 1 ? [] : [toInput(research.at(-1)!), toInput(evidenceReview)];
-        const goal = round === 1
-          ? "检索并冻结证据"
-          : `仅补充证据缺口：${(evidenceReview.content as EvidenceReview).gaps.join("；")}`;
+        const goal =
+          round === 1
+            ? "检索并冻结证据"
+            : `仅补充证据缺口：${(evidenceReview.content as EvidenceReview).gaps.join("；")}`;
         // 记忆只进 researcher：它是唯一决定「去查什么」的角色，也是唯一能从
         // 「上次这条路走死了」里得到便宜的角色。下游角色只看冻结 Artifact。
         research.push(await this.#step(runId, question, "researcher", researchInputs, goal, priorAttempts));
 
         // 补证是累积，不是用第二轮替换第一轮：下游必须同时看到全部冻结 Research。
         const frozenResearch = research.map(toInput);
-        hypotheses.push(await this.#step(runId, question, "hypothesis-generation",
-          frozenResearch, "基于全部冻结 Research Artifact 生成可证伪假设"));
+        hypotheses.push(
+          await this.#step(
+            runId,
+            question,
+            "hypothesis-generation",
+            frozenResearch,
+            "基于全部冻结 Research Artifact 生成可证伪假设",
+          ),
+        );
 
-        evidenceReview = await this.#step(runId, question, "evidence-review",
-          [...frozenResearch, toInput(hypotheses.at(-1)!)], "审查证据并报告缺口");
+        evidenceReview = await this.#step(
+          runId,
+          question,
+          "evidence-review",
+          [...frozenResearch, toInput(hypotheses.at(-1)!)],
+          "审查证据并报告缺口",
+        );
 
         if ((evidenceReview.content as EvidenceReview).gaps.length === 0) break;
       }
@@ -132,14 +147,22 @@ export class Harness {
       let review!: StoredArtifact;
 
       for (let round = 1; round <= 2; round += 1) {
-        const plannerInputs = round === 1
-          ? domainInputs
-          : [...domainInputs, toInput(plan), toInput(review)];
-        plan = await this.#step(runId, question, "research-plan", plannerInputs,
-          round === 1 ? "生成可验证研究计划" : "根据冻结 Review Artifact 修订研究计划");
+        const plannerInputs = round === 1 ? domainInputs : [...domainInputs, toInput(plan), toInput(review)];
+        plan = await this.#step(
+          runId,
+          question,
+          "research-plan",
+          plannerInputs,
+          round === 1 ? "生成可验证研究计划" : "根据冻结 Review Artifact 修订研究计划",
+        );
 
-        review = await this.#step(runId, question, "reviewer",
-          [toInput(plan), toInput(evidenceReview)], "独立评审研究计划");
+        review = await this.#step(
+          runId,
+          question,
+          "reviewer",
+          [toInput(plan), toInput(evidenceReview)],
+          "独立评审研究计划",
+        );
 
         const verdict = review.content as Review;
         if (verdict.accepted) {
@@ -154,6 +177,7 @@ export class Harness {
             reference_count: verification.referenceCount,
             frozen_sources: verification.frozenSources,
             arxiv_checked: verification.arxivChecked,
+            doi_checked: verification.doiChecked,
             membership_only: verification.membershipOnly,
             failed_count: verification.failed.length,
             infra_error: verification.infraError,
@@ -194,7 +218,11 @@ export class Harness {
   ): Promise<StoredArtifact> {
     const attemptId = this.#store.startAttempt(runId, role);
     const context: TaskContext = {
-      runId, taskId: attemptId, role, goal, question,
+      runId,
+      taskId: attemptId,
+      role,
+      goal,
+      question,
       inputArtifactIds: inputs.map((item) => item.id),
       inputArtifacts: inputs,
       priorAttempts,
@@ -212,18 +240,25 @@ export class Harness {
           after: summarize(item.after),
           // 转录类字段（queries）多带两向明细：只知道「不一致」说不出模型是漏抄还是编造，
           // 而这两件事的含义天差地别。计数是精确的，ID 列表与 before/after 同样截断。
-          ...(item.transcription === undefined ? {} : {
-            missing_count: item.transcription.missing.length,
-            invented_count: item.transcription.invented.length,
-            missing: summarize(item.transcription.missing.join(", ")),
-            invented: summarize(item.transcription.invented.join(", ")),
-          }),
+          ...(item.transcription === undefined
+            ? {}
+            : {
+                missing_count: item.transcription.missing.length,
+                invented_count: item.transcription.invented.length,
+                missing: summarize(item.transcription.missing.join(", ")),
+                invented: summarize(item.transcription.invented.join(", ")),
+              }),
         });
       }
       // 成功也花了钱，而且是花得最多的那一半。用量与失败路径同一形状、同一条通路：
       // runTask 按 Attempt 累加，store 在终态事件之前落成唯一一条 `sdk.usage`。
       return this.#store.publishArtifact(
-        runId, attemptId, result.artifact, inputs, result.corrections, usageFacts(role, result.usage),
+        runId,
+        attemptId,
+        result.artifact,
+        inputs,
+        result.corrections,
+        usageFacts(role, result.usage),
       );
     } catch (error) {
       const failure = classifyFailure(error);
@@ -233,7 +268,11 @@ export class Harness {
       // 到这里才落库 —— 不透传就等于把失败的成本从账上抹掉，跑完 125 题算总账时
       // 差的正是最该被看见的那一块。拿不到就传 null，绝不用零顶替。
       this.#store.failAttempt(
-        runId, attemptId, failure, errorType, corrections,
+        runId,
+        attemptId,
+        failure,
+        errorType,
+        corrections,
         usageFacts(role, (error as { usage?: StageUsage } | null)?.usage),
       );
       throw new AttemptFailed(failure.code, failure.reason);

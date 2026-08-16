@@ -36,10 +36,7 @@ export type FailureCode = (typeof FAILURE_CODES)[number];
  * 两个问题的答案本来就不必相同（一次 `provider_error` 不值得停批，却该剔出质量分母）。
  * 早先这里写着「两者同一个集合」，2026-08-15 桶归属明细化之后不再成立。
  */
-export const INFRASTRUCTURE_FAILURE_CODES: ReadonlySet<FailureCode> = new Set([
-  "infra_error",
-  "infra_timeout",
-]);
+export const INFRASTRUCTURE_FAILURE_CODES: ReadonlySet<FailureCode> = new Set(["infra_error", "infra_timeout"]);
 
 export type Failure = { code: FailureCode; reason: string };
 

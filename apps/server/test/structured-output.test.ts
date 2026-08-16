@@ -17,20 +17,24 @@ const artifact = {
   question: "问题",
   summary: "冻结证据支撑一条可审计的论断。",
   claims: [{ statement: "证据门提升可审计性。", evidence_ids: ["ev_01_arxiv"] }],
-  queries: [{
-    evidence_id: "ev_01_arxiv",
-    source_type: "arxiv",
-    query: "evidence gate",
-    status: "succeeded",
-    result_summary: "arXiv returned 1 citable record(s)",
-  }],
-  citations: [{
-    evidence_id: "ev_01_arxiv",
-    source_type: "arxiv",
-    title: "Fixture source",
-    locator: "arxiv:2301.00001v1",
-    url: "https://arxiv.org/abs/2301.00001v1",
-  }],
+  queries: [
+    {
+      evidence_id: "ev_01_arxiv",
+      source_type: "arxiv",
+      query: "evidence gate",
+      status: "succeeded",
+      result_summary: "arXiv returned 1 citable record(s)",
+    },
+  ],
+  citations: [
+    {
+      evidence_id: "ev_01_arxiv",
+      source_type: "arxiv",
+      title: "Fixture source",
+      locator: "arxiv:2301.00001v1",
+      url: "https://arxiv.org/abs/2301.00001v1",
+    },
+  ],
   limitations: ["fixture"],
 };
 
@@ -93,8 +97,10 @@ test("finishing without calling the tool is a contract violation, not a correcti
     return Promise.resolve("我已经完成了研究，结论见上文。");
   };
 
-  const failure = await runTask(context, { execute, ledger: new EvidenceLedger() })
-    .then(() => null, (error: unknown) => error);
+  const failure = await runTask(context, { execute, ledger: new EvidenceLedger() }).then(
+    () => null,
+    (error: unknown) => error,
+  );
 
   assert.equal(calls, 1, "不做隐式重跑：这一类不再花一次调用去说同一句话");
   assert.equal(classifyFailure(failure).code, "invalid_output");
@@ -106,7 +112,7 @@ test("finishing without calling the tool is a contract violation, not a correcti
  *  7 > 6，于是 18 个 failed 里有 15 个是同一句 `reached the Agent turn limit`。 */
 const RESEARCHER_TURNS_THAT_USED_TO_DIE = 2 + 3 + 1 + 1;
 
-test("the turn budget follows the tool surface: only the researcher gets headroom", () => {
+test("the turn budget keeps researcher headroom while reviewer has a restricted retrieval surface", () => {
   const { agents } = createRoles(new EvidenceLedger());
 
   for (const role of roleSchema.options) {
@@ -115,9 +121,12 @@ test("the turn budget follows the tool surface: only the researcher gets headroo
       // 无工具角色产物即最终输出，正常路径一个 turn 就结束：6 已是宽松余量，
       // 抬高它救不回任何一次失败，只会在模型空转时多烧几轮 token 才撞同一堵墙。
       assert.equal(maxTurnsFor(role), 6, `${role} 无工具，不该分到检索余量`);
-    } else {
-      assert.equal(role, "researcher", "多出一个有工具的角色，turn 预算的推导要重写");
+    } else if (role === "researcher") {
       assert.equal(maxTurnsFor(role), 12);
+    } else {
+      assert.equal(role, "reviewer");
+      // Reviewer 只需完成少量独立检索后交付评审，保持已有 6-turn 上限，避免无界增加费用。
+      assert.equal(maxTurnsFor(role), 6);
     }
   }
 
