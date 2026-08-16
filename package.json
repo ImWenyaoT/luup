@@ -18,13 +18,13 @@
     "batch": "node --env-file-if-exists=.env --experimental-strip-types apps/server/src/batch/runner.ts",
     "eval": "node --experimental-strip-types apps/server/src/eval/metrics.ts",
     "typecheck": "pnpm --filter @luup/server typecheck && pnpm --filter @luup/frontend typecheck",
-    "test": "pnpm --filter @luup/server test",
+    "test": "pnpm -r run test",
     "test:coverage": "pnpm --filter @luup/server test:coverage",
     "test:e2e": "pnpm --filter @luup/frontend test:e2e",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "knip": "knip --treat-config-hints-as-errors",
-    "ci": "pnpm run typecheck && pnpm run lint && pnpm build && pnpm test:coverage",
+    "ci": "pnpm run typecheck && pnpm run lint && pnpm build && pnpm test:coverage && pnpm --filter @luup/frontend test",
     "docs:pdf": "pandoc docs/technical-solution.md -o docs/technical-solution.pdf --pdf-engine=xelatex --toc --toc-depth=2 -V documentclass=ctexart -V CJKmainfont='Noto Sans CJK SC' -V mainfont='DejaVu Sans' -V monofont='DejaVu Sans Mono' -V geometry:a4paper -V geometry:margin=2cm -V linkcolor=black -V toccolor=black"
   },
   "devDependencies": {

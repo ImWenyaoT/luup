@@ -40,6 +40,8 @@ jobs:
         run: pnpm run lint
       - name: Test
         run: pnpm run test:coverage
+      - name: Test (frontend units)
+        run: pnpm --filter @luup/frontend test
       - name: Build
         run: pnpm run build
 
