@@ -188,6 +188,20 @@
       },
       "unchanged": "读数纪律一条不动：`arms`、`phase_b_subset`、`metrics`、`statistics`、`declarations` 一字未改。`controls.no_retry`（无隐式 Attempt 重试、契约不合格不重试）与 `controls.transient_backoff` 的机制、预算、瞬时性判据原样；熔断阈值（5 / 2）、阶段 deadline（300s）与单题 40 分钟上界原样。v3 部分批（43 题）的 cohort 处置维持 `ba32eb8` 所记，不由本条改变。",
       "effect_on_numbers": "正式批尚未开跑，本条不触碰任何已落盘数字。"
+    },
+    {
+      "date": "2026-08-16",
+      "before_phase_a": false,
+      "before_definitive_phase_a": true,
+      "recorded_when": "**v3 部分批停批之后、正式 Phase A 重启之前。** 本条落盘前从三个部分批 db 读取并转录了运营级聚合（memory/lessons.md 2026-08-16 两条，标注样本量与「非正式读数」身份）：读的是已围出 cohort 的过程事实与运营参考。正式读数来自未来全新批次的承诺不变。库内实查与停批时的 commit 文案有两处出入（v2 已结算 20 非 21；v3 终态 15/15/8 非 16/16/8），以库为准，如实记于此。",
+      "before_any_reading": false,
+      "registered_commit_amended": "8ac94b04ae528a25dbe5779cbb2e09fd5b66d8af",
+      "summary": "证据存放层变更（用户裁决）：`runs-ts/`（pilot 99 结算 / v2 20 结算 + 3 在飞取消 / v3 38 结算 + 3 在飞取消，及 phase-a-pilot-remaining.json）与 Python 期只读归档 `runs/`（10 run：3 OK / 7 FAILED，ADR-0004）自工作树删除，字节完整保存于 git tag `archive/phase-a-evidence-20260816`（指向删除前最后一个包含它们的 commit）。修订 #4 写过 v2 证据「只读，不删——围出去不等于抹掉」：围栏语义原样（这些 cohort 永不进正式读数），本条改的只是存放层——工作树 → git 历史，逐字节可恢复，仍然不是抹掉。删除依据经实查：树内无任何代码或测试读取这两个目录（唯一命中是本协议测试对修订文本的字符串断言，不触文件）。",
+      "changes": {
+        "evidence_location": "runs-ts/ 与 runs/ → git tag `archive/phase-a-evidence-20260816`。memory/ 里 log.md 与 questions/ 的 `runs-ts/*.db#<runId>` 定位符按 append-only 契约不改写，经该 tag 解析。运营级聚合（学科梯度、跨批 ≥2 次失败的 24 题、v3 墙钟）已先行转录进 memory/lessons.md。正式批的证据届时仍以仓内 db 形制重新入库，本条不改变「批证据入库」的纪律。"
+      },
+      "unchanged": "各 cohort 的围栏语义与允许用途（过程事实可引、目标指标不可并入正式读数）维持修订 #3/#4 所记。测量、终态判定、归桶、统计、`arms`、`phase_b_subset`、`metrics`、`declarations` 一字未动。",
+      "effect_on_numbers": "不触碰任何数字：被删 db 的数字本就不在正式读数内，转录聚合已标注运营参考身份。"
     }
   ],
   "interpretation": "这是对已记录架构取舍的证据，不是普适优越性主张。结论的形状只能是「在这一条 harness commit、这一个题库、这一条串行顺序下，跨 run 记忆让交付率朝某个方向动了多少」，不能读成「记忆机制优于无记忆」或反过来。Do not claim superiority from one successful trace, one direction, or an unpriced token count.",
