@@ -1,0 +1,13 @@
+# dsh-app 是独立 workspace（ADR-0005：实践参考学习件），不挂在根 workspace 下——
+# dsh 依赖树 449 包 / 289MB，只在进本目录 `pnpm install` 时才落地。
+allowBuilds:
+  # dsh 的本地子进程/终端面需要各自的原生构建；不放行则 pty 与 bash 工具在运行期才炸。
+  '@deepseek-ai/dsh-subprocess-local': true
+  koffi: true
+  node-pty: true
+  # pi-ai 全量 provider catalog 顺带拖进来的传递依赖，本 spike 只走百炼 route，
+  # 不放行其 postinstall（只是跳过可选的构建步骤，包本身照常可解析）。
+  '@google/genai': false
+  protobufjs: false
+  esbuild: true
+  sharp: true

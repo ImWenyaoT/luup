@@ -17,6 +17,8 @@ docs/        产品契约、架构、判据、ADR、赛题与报告材料
 runs-ts/     Phase A 批跑的证据归档
 runs/        Python 期运行归档，只读（ADR-0004）
 memory/      跨 run 的战役记忆，文件事实源，append-only
+dsh-app/     deepseek-harness 参考学习件（ADR-0005）；独立 workspace 独立 lockfile，
+             不在根 workspace 内，依赖树只在进目录 pnpm install 时落地
 ```
 
 运行期事实存在 SQLite 单文件里（默认 `outputs/runtime/typescript-runs.db`，`LUUP_DATABASE`
