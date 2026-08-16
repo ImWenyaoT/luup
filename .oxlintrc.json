@@ -15,9 +15,6 @@
     "**/node_modules/**",
     "**/dist/**",
     "**/coverage/**",
-    ".claude/**",
-    "**/*.js",
-    "**/*.mjs",
     "**/*.config.ts"
   ],
   "overrides": [

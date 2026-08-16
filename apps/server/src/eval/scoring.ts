@@ -42,10 +42,10 @@ export const MIN_ARXIV_ROUNDS = 2;
 /** 非 arXiv 的那一路来源。
  *
  * 判据本身没变 ——「工具权限给了两路来源，模型是不是真的都用上了」；变的只是这一路叫什么：
- * Python 版跑批时它是 Qwen Responses 的 `web_search`，现在是 Crossref。两个名字都认，
- * 是因为评分口径必须比工具实现更稳定，换一次检索源不该让历史 Run 的这一分凭空掉光。
+ * Python 版跑批时它是 Qwen Responses 的 `web_search`，现在是 Crossref。那个名字已经
+ * 读不到了 —— 本函数只读 TS 期的 SQLite 库，Python 期的目录制证据不在这条路径上。
  */
-const SECONDARY_SOURCE_TOOLS = new Set(["web_search", "crossref_search"]);
+const SECONDARY_SOURCE_TOOLS = new Set(["crossref_search"]);
 
 const ARXIV_TOOL = "arxiv_search";
 

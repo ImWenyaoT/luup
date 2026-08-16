@@ -7,13 +7,5 @@ packages:
 
 allowBuilds:
   esbuild: true
-  # lefthook 的 postinstall 只是把当前平台的二进制链到 node_modules/.bin。
+  # lefthook 的 postinstall 跑 `lefthook install -f`，把 git hooks 同步进 .git/hooks。
   lefthook: true
-
-minimumReleaseAgeExclude:
-  - fast-xml-parser@5.10.0
-  - is-unsafe@2.0.0
-  - '@openai/agents@0.16.0'
-  - '@openai/agents-core@0.16.0'
-  - '@openai/agents-openai@0.16.0'
-  - '@openai/agents-realtime@0.16.0'

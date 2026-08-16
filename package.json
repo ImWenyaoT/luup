@@ -7,7 +7,6 @@
     "pnpm": ">=11.15.1"
   },
   "scripts": {
-    "setup": "pnpm install --frozen-lockfile",
     "dev": "pnpm run \"/^dev:(api|web)$/\"",
     "dev:api": "LUUP_RUNTIME=deterministic node --env-file-if-exists=.env --experimental-strip-types --watch apps/server/src/main.ts",
     "dev:api:live": "node --env-file-if-exists=.env --experimental-strip-types --watch apps/server/src/main.ts",
@@ -24,8 +23,7 @@
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "knip": "knip --treat-config-hints-as-errors",
-    "ci": "pnpm run typecheck && pnpm run lint && pnpm run knip && pnpm build && pnpm test:coverage && pnpm --filter @luup/frontend test",
-    "docs:pdf": "pandoc docs/technical-solution.md -o docs/technical-solution.pdf --pdf-engine=xelatex --toc --toc-depth=2 -V documentclass=ctexart -V CJKmainfont='Noto Sans CJK SC' -V mainfont='DejaVu Sans' -V monofont='DejaVu Sans Mono' -V geometry:a4paper -V geometry:margin=2cm -V linkcolor=black -V toccolor=black"
+    "ci": "pnpm run typecheck && pnpm run lint && pnpm run knip && pnpm build && pnpm test:coverage && pnpm --filter @luup/frontend test"
   },
   "devDependencies": {
     "knip": "6.32.2",

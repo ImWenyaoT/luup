@@ -7,12 +7,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -p tsconfig.json --noEmit && vite build",
-    "preview": "vite preview",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"*.{ts,html}\"",
-    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"*.{ts,html}\""
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
@@ -31,7 +28,6 @@
     "@types/react": ">=19.2.17",
     "@types/react-dom": ">=19.2.3",
     "@vitejs/plugin-react": ">=6.0.4",
-    "prettier": ">=3.9.6",
     "typescript": "^6.0.3",
     "vite": ">=8.1.5",
     "vitest": ">=4.1.10"

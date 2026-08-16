@@ -125,8 +125,6 @@ export type BatchOptions = {
   store: SqliteStore;
   runQuestion: RunQuestion;
   repoRoot?: string;
-  /** 题库路径；默认 `data/science125.json`。 */
-  dataPath?: string;
   dryRun?: boolean;
   /** 同时在飞的题数。默认 1（串行）；超出 [1, MAX_CONCURRENCY] 的值就近夹住。 */
   concurrency?: number;
@@ -367,7 +365,7 @@ async function runOne(
   if (settled !== null) {
     return outcome(questionId, "skipped", 0, `已有 completed 的 run ${settled}`, null, settled);
   }
-  const question = findQuestion(questionId, options.dataPath);
+  const question = findQuestion(questionId);
   if (question === null) {
     return outcome(questionId, "missing", 0, "题号不在 science125.json 内");
   }

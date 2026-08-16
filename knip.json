@@ -4,11 +4,7 @@
     "duplicates"
   ],
   "ignoreBinaries": [
-    "pandoc",
     "vitest"
-  ],
-  "ignoreDependencies": [
-    "lefthook"
   ],
   "workspaces": {
     "apps/server": {

@@ -31,7 +31,7 @@ export type UsageFacts = {
   totalTokens: number;
 };
 
-/** 冻结输入里的一条 Artifact。`type` 为 "feedback" 时来自 feedback_artifacts 表。 */
+/** 冻结输入里的一条 Artifact。 */
 export type StoredInput = {
   id: string;
   type: string;
