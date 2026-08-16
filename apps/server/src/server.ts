@@ -6,6 +6,7 @@ import { projectArtifact, projectRunSnapshot, projectSseFrame } from "./api/proj
 import { createDeterministicRuntime, createDeterministicVerifier } from "./executors/deterministic.ts";
 import { createQwenExecutor } from "./executor.ts";
 import { Harness } from "./harness.ts";
+import { modelConfigStatus, setModelOverride } from "./seams/index.ts";
 import { MAX_QUESTION_LENGTH, normalizeQuestion, SqliteStore } from "./store/store.ts";
 
 const TERMINAL = new Set(["completed", "review_rejected", "failed"]);
@@ -160,6 +161,67 @@ export function createApp(options: ServerOptions) {
         }
         const path = url.pathname;
         const method = req.method ?? "GET";
+
+        if (path === "/api/config") {
+          // 设置面（学 dsh：环境变量是默认，页面可即时补配）。密钥只进不出：
+          // GET/PUT 的响应都只报三态状态，key 本体不出网、不落盘、重启即忘。
+          if (method === "GET") {
+            return json(res, 200, { runtime: runtimeMode(), ...modelConfigStatus() });
+          }
+          if (method === "PUT") {
+            const contentType = req.headers["content-type"]?.split(";", 1)[0]?.trim().toLowerCase();
+            // 与 POST /api/runs 同一条 CORS 纪律：这里收的是密钥，更不能吃 simple request。
+            if (contentType !== "application/json") {
+              return json(res, 415, { detail: "Content-Type 必须是 application/json。" });
+            }
+            let body: { api_key?: unknown; model_id?: unknown; base_url?: unknown };
+            try {
+              const parsed = await readJson(req);
+              if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+                return json(res, 400, { detail: "请求体必须是 JSON 对象。" });
+              }
+              body = parsed;
+            } catch {
+              return json(res, 400, { detail: "请求体必须是合法 JSON。" });
+            }
+            const next: { apiKey?: string; modelId?: string; baseUrl?: string } = {};
+            if (body.api_key !== undefined) {
+              if (typeof body.api_key !== "string" || body.api_key.trim() === "") {
+                return json(res, 422, { detail: "api_key 必须是非空字符串。" });
+              }
+              const apiKey = body.api_key.trim();
+              // 从 .env 整行复制是高频错误（学 dsh apiKey.ts 的启发式）：名字全大写、
+              // `=` 后非 `=`——`sk-` 形式在连字符处断开、base64 padding 不会误判。
+              if (/^[A-Z][A-Z0-9_]*=[^=]/.test(apiKey)) {
+                return json(res, 422, { detail: "api_key 看起来是一整行环境变量（NAME=value）——只粘贴 = 后面的值。" });
+              }
+              if (!/^[\x21-\x7E]+$/.test(apiKey)) {
+                return json(res, 422, { detail: "api_key 只能是可打印 ASCII 且不含空格。" });
+              }
+              next.apiKey = apiKey;
+            }
+            if (body.model_id !== undefined) {
+              if (typeof body.model_id !== "string" || body.model_id.trim() === "") {
+                return json(res, 422, { detail: "model_id 必须是非空字符串。" });
+              }
+              next.modelId = body.model_id.trim();
+            }
+            if (body.base_url !== undefined) {
+              if (typeof body.base_url !== "string" || !/^https?:\/\//.test(body.base_url.trim())) {
+                return json(res, 422, { detail: "base_url 必须是 http(s) URL。" });
+              }
+              try { new URL(body.base_url.trim()); } catch {
+                return json(res, 422, { detail: "base_url 必须是合法 URL。" });
+              }
+              next.baseUrl = body.base_url.trim();
+            }
+            if (Object.keys(next).length === 0) {
+              return json(res, 422, { detail: "没有可设置的字段（api_key / model_id / base_url）。" });
+            }
+            setModelOverride(next);
+            return json(res, 200, { runtime: runtimeMode(), ...modelConfigStatus() });
+          }
+        }
 
         if (method === "GET" && (path === "/api/health" || path === "/health")) {
           return json(res, 200, { status: "ok" });

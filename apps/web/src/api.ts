@@ -39,6 +39,26 @@ export async function fetchArtifact(artifactId: string): Promise<Artifact> {
   return parse<Artifact>(await fetch(`/api/artifacts/${encodeURIComponent(artifactId)}`));
 }
 
+export type ConfigStatus = {
+  runtime: "live" | "deterministic";
+  credential: "override" | "environment" | "absent";
+  model_id: string;
+  base_url: string;
+};
+
+export async function fetchConfig(): Promise<ConfigStatus> {
+  return parse<ConfigStatus>(await fetch("/api/config"));
+}
+
+/** 密钥只进不出：请求带 key，响应永远只有三态状态。 */
+export async function saveConfig(next: { api_key?: string; model_id?: string; base_url?: string }): Promise<ConfigStatus> {
+  return parse<ConfigStatus>(await fetch("/api/config", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(next),
+  }));
+}
+
 /** SSE 只当「有事发生了」的低延迟提示，权威状态一律回头拉快照。
  *
  * 这样后端新增事件种类时前端没跟上也不会丢数据，只是晚一拍 —— 代价仅仅是多一次

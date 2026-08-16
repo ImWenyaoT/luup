@@ -93,6 +93,39 @@ dsh 的会话可以是一整天的人机协作，丢掉不可接受。续跑要�
 每个带一段「现有 provider 是谁、换实现要满足什么」。`Harness` 的构造签名认这三个类型，
 不认具体类，所以接缝宽度是编译期可验证的事实，不是文档里的一句话。
 
+### 5. 轨迹视图的呈现语言（搬语言不搬体量）
+
+| | |
+|---|---|
+| dsh | `packages/client/ui-trajectory/`（约 1 万行）：配对单行 `TrajectoryTable.tsx:2474-2511`、折叠摘要 `layout.ts:554-665`、双阈值截断 `trajectory-preview.ts:5-19`、专属空文案 `TrajectoryTable.tsx:304-332` |
+| luup | `apps/web/src/trajectory.tsx`（约 200 行）；投影拓宽一处 `apps/server/src/api/projection.ts` 的 `attempt_id` |
+
+**解决的问题**：criteria C3 承诺「trace 可证」，但 run 详情原先只有五张阶段卡 + 证据列表，
+评委看不到过程密度。数据面（attempts / tool_evidence / events）本就齐全，缺的只是呈现。
+抄的是四个手法：工具调用「名字 入参 → 结果」配对成行、失败列红显状态码、折叠=降采样
+（摘要行保留计数）、预览截断但详情全量。**不抄**：虚拟化（记录量差两个量级）、
+step 内多请求圆点、system prompt diff、四种时间域。Chat/DIY 面整体不学——luup 的
+session 是固定五阶段流水线，定位不同。
+
+### 6. 设置面：环境变量默认 + 页面补配（一处有意反向）
+
+| | |
+|---|---|
+| dsh | 分层解析 `packages/credentials/credentials-local/src/index.ts:4-17`；key 只进不出的类型契约 `packages/host/apiproxy/src/api/credentials.ts:12-20`；空值输入框语义 `packages/client/ui-settings-models/src/client/apiKey.ts:41-54`；`NAME=value` 误粘贴检测 `apiKey.ts:23` |
+| luup | `apps/server/src/seams/model.ts`（覆盖层 + 三态状态）、`apps/server/src/server.ts` 的 `/api/config`、`apps/web/src/settings.tsx`；测试 `apps/server/test/config.test.ts` |
+
+**解决的问题**：凭据原先只有环境变量一条路，且 provider 在启动期构造——live 模式没配
+key 连服务都起不来，评委拿到的是一个起不来的进程而不是一个能补救的页面。照抄的三条：
+key 只出后端用**类型**保证（状态响应根本没有 key 槽位，不靠掩码）；输入框永远空值打开、
+空提交=保持原值；`NAME=value` 整行误粘贴检测（含大写名 + `=` 后非 `=` 的收窄）。
+
+**有意反向的一条**：dsh 是「环境变量赢、web 写持久文件、被遮蔽的写入 hard reject」；
+luup 反过来——**页面覆盖赢、只存进程内存、重启即忘**。理由：dsh 服务的是长期日用工具
+（CI/容器的 `-e` 是显式意图，必须可见地只读），luup 服务的是演示场景（环境里躺着旧 key
+时，评委要能不碰 shell 就在页面里换掉它）。覆盖优先让 dsh 那条「遮蔽写入」的危险路径
+整个不存在，密钥也从不落盘。**不抄**：`.credentials.yaml` 持久层、文件锁、chokidar
+热重载、多 provider 的 ref 派生、设置弹层与 slot 注册。
+
 ## 明确不采用
 
 | 模式 | dsh 位置 | 不采用的理由 |

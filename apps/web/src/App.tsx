@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ApiError, createRun, fetchArtifact, fetchRun, subscribe } from "./api";
 import { ArtifactView } from "./artifact-view";
+import { Settings } from "./settings";
 import { Trajectory } from "./trajectory";
 import { TERMINAL, type Artifact, type Snapshot } from "./types";
 
@@ -150,6 +151,8 @@ export function App() {
           五个角色按固定顺序推进；证据由代码冻结，模型只能引用。
         </p>
       </header>
+
+      <Settings />
 
       <section className="space-y-3">
         <Textarea

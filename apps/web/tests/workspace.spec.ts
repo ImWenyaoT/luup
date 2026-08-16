@@ -4,6 +4,16 @@ test('completes a deterministic research run through the Node server', async ({ 
   await page.goto('/')
 
   await expect(page.getByRole('heading', { name: 'Luup' })).toBeVisible()
+
+  // 设置面：环境变量是默认，页面可补配；保存立即反映在状态行，key 永不回显。
+  await expect(page.getByText(/凭据：/)).toBeVisible()
+  await page.getByText('设置', { exact: true }).click()
+  await page.getByPlaceholder(/模型 id/).fill('qwen-e2e')
+  await page.getByRole('button', { name: '保存' }).click()
+  await expect(page.getByText('已保存，下一次运行即生效。')).toBeVisible()
+  await expect(page.getByText('qwen-e2e')).toBeVisible()
+  await page.getByText('设置', { exact: true }).click()
+
   await page.getByPlaceholder('提出一个可以设计实验去检验的研究问题').fill(
     '冻结证据能降低科研 Agent 的无来源引用吗？',
   )

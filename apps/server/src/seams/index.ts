@@ -11,7 +11,15 @@ import type { CampaignMemory } from "../campaign/campaign.ts";
 import type { SqliteStore } from "../store/store.ts";
 import type { ReferenceVerifier } from "../verify/verifier.ts";
 
-export { modelForRole, qwenModelProvider, sharedModelSettings } from "./model.ts";
+export {
+  clearModelOverride,
+  modelConfigStatus,
+  modelConfigVersion,
+  modelForRole,
+  qwenModelProvider,
+  setModelOverride,
+  sharedModelSettings,
+} from "./model.ts";
 
 /** 终局引用验收。
  *

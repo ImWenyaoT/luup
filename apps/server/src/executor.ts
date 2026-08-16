@@ -10,7 +10,7 @@ import {
 } from "@openai/agents";
 
 import { ContractError, StageError } from "./agent/failures.ts";
-import { qwenModelProvider } from "./seams/index.ts";
+import { modelConfigVersion, qwenModelProvider } from "./seams/index.ts";
 import type { StageExecutor } from "./roles.ts";
 import type { Role } from "./agent/contracts.ts";
 
@@ -210,13 +210,32 @@ export const TRANSIENT_RETRY: ModelSettings = {
  *  测试注入按脚本抛状态码的替身，用来验证退避判据本身，零网络零 LLM。 */
 export function createQwenExecutor(
   onComplete?: (metrics: StageMetrics) => void,
-  modelProvider: ModelProvider = qwenModelProvider(),
+  modelProvider?: ModelProvider,
 ): StageExecutor {
   // 重试挂在 RunConfig 上，五个角色共用一份：瞬时故障是端点的属性，不是角色的属性。
   // Agent 自己的 modelSettings（`seams/model.ts` 的 `sharedModelSettings`）不带 retry 键，
   // 合并时（`mergeModelSettings`）不会把这里的配置盖掉。
-  const runner = new Runner({ modelProvider, tracingDisabled: true, modelSettings: TRANSIENT_RETRY });
+  //
+  // 默认路径按配置版本惰性构建：设置面（PUT /api/config）保存后，下一次角色调用
+  // 就吃到新接线；缺凭据也不再在构造期抛——它落在 run 里成 `missing_credential`
+  // 终态，那正是这个失败分类存在的意义。注入的替身永远直用，不参与重建。
+  let cached: { runner: Runner; version: number } | null = null;
+  const runnerFor = (): Runner => {
+    if (modelProvider) {
+      cached ??= { runner: new Runner({ modelProvider, tracingDisabled: true, modelSettings: TRANSIENT_RETRY }), version: -1 };
+      return cached.runner;
+    }
+    const version = modelConfigVersion();
+    if (cached === null || cached.version !== version) {
+      cached = {
+        runner: new Runner({ modelProvider: qwenModelProvider(), tracingDisabled: true, modelSettings: TRANSIENT_RETRY }),
+        version,
+      };
+    }
+    return cached.runner;
+  };
   return async ({ runId, role, agent, input, timeoutMs, onUsage }) => {
+    const runner = runnerFor();
     const signal = AbortSignal.timeout(timeoutMs);
     // `outputType` 校验失败时 SDK 不给异常挂 state：`runner/turnResolution.mjs` 直接
     // `new ModelBehaviorError(message)`，而 `attachRunStateToError` 只补 ToolCallError，
