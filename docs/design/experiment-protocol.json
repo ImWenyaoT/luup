@@ -174,6 +174,20 @@
       },
       "effect_on_numbers": "对**已落盘**的事实无影响：pilot 库与 v2 部分批库都一个字节没动，任何人可按原样重算；正式 Phase A 将写进一个全新的库。对**将要产生**的数有影响，须直说：(1) `invalid_output` 里「queries 集合不等」这一子形态**从读数中彻底消失**——它不再是失败。v2 那 24% 对应的 run 在新 harness 上会继续走完流水线，随后可能交付、也可能栽在下游的质量门（citations 成员性、计划质量、B1–B4、Reviewer）上，所以两个分母下的 M4 都可能往任一方向动；桶归属不变，`invalid_output` 仍属 quality。同一改动还会让 `attempts.corrections` 的计数下降——原来这道门每触发一次就要烧掉那个 Attempt 唯一的纠错机会。(2) 漂移事件成为**新的机制指标**：`artifact.field_overwritten` 且 `field=queries` 的条数、以及 `missing_count` / `invented_count` 两向的分布，是「模型自报与实际检索差多远」的直接读数，与 corrections、turn 用量同属机制指标一档，不进目标指标、不参与任何配对比较。(3) 这条新指标的**基线会明显高于 v2 时期的同类现象，而且这是设计使然不是回归**：提示词已经不再要求逐条转录，漏报因此预期成为常态。把它读成「模型变差了」是误读——同一现象在 v2 的表现形式是 Attempt 死亡，现在是一条事件。(4) 不改变任何 run 的输入、终态判定与归桶算法，`estimand` 无需改写。",
       "unchanged": "读数纪律一条不动：`statistics.design` 仍是 `bounded_comparison`，仍不做显著性主张、不引用 p 与 significant、不加 seed / 重复采样；`phase_b_subset` 的 30 题、种子 `luup-science125-phaseB-v1`、分层规则与 sha256 承诺 `498002a5...` **一字未改**，仍由 `test/experiment-protocol.test.ts` 逐条重算钉住；`arms` / `metrics` / `statistics` / `declarations` / `interpretation` 一字未动，`declarations` 的三条口径继续有效。7 类 / 3 桶的分类法与修订 #2 定下的桶归属不变，`invalid_output` 仍属 quality。`controls.no_retry`（无隐式 Attempt 重试、契约不合格不重试）未动：本条删的是一道门，不是给它加重试；`controls.harness_commit`、熔断阈值（5 / 2）与 `outage_classes` 同样一字未动。B1–B4 判据、`TITLE_OVERLAP_THRESHOLD=0.8` 是未校准自由参数的声明、M4 的双分母口径、M5 / McNemar / 消融生效门的算法与分母，全部不变。"
+    },
+    {
+      "date": "2026-08-16",
+      "before_phase_a": false,
+      "before_definitive_phase_a": true,
+      "recorded_when": "**v3 部分批 43 题结算停批之后、正式 Phase A 重启之前。** 先说看见了什么：v3 部分批的结算数字（16 completed / 16 review_rejected / 8 failed，通过率 37%）已在停批入库时读过（`ba32eb8`），本条落盘时未读取任何新指标。本条改的也不是读数，是执行环境的一个被声明版本。",
+      "before_any_reading": false,
+      "registered_commit_amended": "6cf84d562446332f1dda967b72479e6ea1c7f4ac",
+      "summary": "执行环境升级：`@openai/agents` 0.14.3 → 0.16.0（传递依赖 `openai` 6.49.0 → 7.4.0），锁文件冻结。`controls.transient_backoff` 注册文本引用的「@openai/agents 0.14.3 内置的 modelSettings.retry 配置」自本条起版本号读作 0.16.0——退避的配置面（`modelSettings.retry`，SDK 内置非自造层）、预算（至多 2 次，2s / 8s 带抖动）、与 `no_retry` 的边界全部未动，动的只有版本号这一个事实。测量、终态判定、归桶、统计一律不变。",
+      "changes": {
+        "sdk_version": "升级判据不取自 changelog 的自我宣称（0.16.0 自称 no breaking changes），取自行为实测三层：根包全量用例（含 `test/executor.test.ts` 对 `TRANSIENT_RETRY` 的直测）与覆盖率地板全绿；确定性 e2e 全绿；`pnpm run canary` 真调用百炼端点跑完整个 harness 环，终态 `completed`（`src/canary.ts` 对非 completed 硬退出非零）。上游 0.15.0 自报的两条 breaking 经代码核查均不命中：其一「自带 OpenAI client 需 openai ≥7.2」——luup 无任何裸 `openai` 导入，client 全走 `OpenAIProvider`（`src/seams/model.ts` 唯一接线点）；其二「默认模型变更」——模型 id 始终由 seam 显式给出，从不吃 SDK 默认。依赖公约数核验：SDK 侧 peer 要求 zod ^4.0.0，与根包同解析为 zod 4.4.3 单实例；升级后唯一 peer 告警（zod 3.24.1）位于前端 shadcn CLI 子树，HEAD 锁文件里本就存在，与执行路径无关。"
+      },
+      "unchanged": "读数纪律一条不动：`arms`、`phase_b_subset`、`metrics`、`statistics`、`declarations` 一字未改。`controls.no_retry`（无隐式 Attempt 重试、契约不合格不重试）与 `controls.transient_backoff` 的机制、预算、瞬时性判据原样；熔断阈值（5 / 2）、阶段 deadline（300s）与单题 40 分钟上界原样。v3 部分批（43 题）的 cohort 处置维持 `ba32eb8` 所记，不由本条改变。",
+      "effect_on_numbers": "正式批尚未开跑，本条不触碰任何已落盘数字。"
     }
   ],
   "interpretation": "这是对已记录架构取舍的证据，不是普适优越性主张。结论的形状只能是「在这一条 harness commit、这一个题库、这一条串行顺序下，跨 run 记忆让交付率朝某个方向动了多少」，不能读成「记忆机制优于无记忆」或反过来。Do not claim superiority from one successful trace, one direction, or an unpriced token count.",
