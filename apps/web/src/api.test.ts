@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 
-import { ApiError, createRun, fetchConfig, fetchRun, saveConfig } from "./api";
+import { ApiError, createRun, fetchConfig, fetchRun, saveConfig, submitResearcherFeedback } from "./api";
 
 /** api 层的错误路径：这是切栈时丢掉的那类覆盖（#20 曾用它抓出 4 个真 bug）。 */
 
@@ -78,5 +78,19 @@ describe("请求形状", () => {
     const init = (spy.mock.calls[0] as unknown[])[1] as RequestInit;
     expect(init.method).toBe("PUT");
     expect(JSON.parse(init.body as string)).toEqual({ model_id: "qwen-x" });
+  });
+
+  test("submitResearcherFeedback uses the authenticated JSON write route", async () => {
+    const spy = mock(async () => respond(202, JSON.stringify({ status: "queued", feedback_id: "f1", round: 1 })));
+    stubFetch(spy as unknown as typeof fetch);
+    await submitResearcherFeedback("r1", { feedback_id: "f1", feedback: "补充停止条件" }, "secret");
+    const call = spy.mock.calls[0] as unknown[];
+    expect(call[0]).toBe("/api/runs/r1/feedback");
+    const init = call[1] as RequestInit;
+    expect(init.method).toBe("POST");
+    expect(init.headers).toEqual({
+      "content-type": "application/json",
+      authorization: "Bearer secret",
+    });
   });
 });

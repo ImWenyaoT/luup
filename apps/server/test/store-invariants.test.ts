@@ -63,3 +63,47 @@ test("completed runs require no active attempt and a real completed final artifa
   assert.equal(store.snapshot(runId)!.final_artifact_id, final.id);
   store.close();
 });
+
+test("researcher feedback is accepted once during the first reviewer attempt and remains durable", () => {
+  const store = new SqliteStore(":memory:");
+  const runId = store.createRun("q");
+  const planner = store.startAttempt(runId, "research-plan");
+  store.publishArtifact(runId, planner, artifact("research-plan"), [], 0);
+  store.startAttempt(runId, "reviewer");
+
+  const feedback = store.submitResearcherFeedback(runId, {
+    id: "human-1",
+    text: "请补充失败结果对应的回退条件。",
+  });
+
+  assert.deepEqual(feedback, { id: "human-1", text: "请补充失败结果对应的回退条件。", round: 1 });
+  assert.deepEqual(store.researcherFeedback(runId, 1), feedback);
+  assert.throws(
+    () => store.submitResearcherFeedback(runId, { id: "human-2", text: "另一条" }),
+    /feedback already queued/,
+  );
+  const events = store.eventsAfter(runId, 0).filter((event) => event.kind === "feedback.received");
+  assert.equal(events.length, 1);
+  assert.equal(events[0]!.payload.feedback_source, "human");
+  assert.equal(events[0]!.payload.feedback, "请补充失败结果对应的回退条件。");
+  store.close();
+});
+
+test("researcher feedback fails closed outside the first reviewer attempt", () => {
+  const store = new SqliteStore(":memory:");
+  const runId = store.createRun("q");
+  assert.throws(
+    () => store.submitResearcherFeedback(runId, { id: "human-1", text: "不能排队" }),
+    /feedback is only accepted during the first reviewer attempt/,
+  );
+  store.finishRun(runId, "failed", { errorCode: "test" });
+  assert.throws(
+    () => store.submitResearcherFeedback(runId, { id: "human-2", text: "不能复活终态" }),
+    /cannot submit feedback to failed run/,
+  );
+  assert.equal(
+    store.eventsAfter(runId, 0).some((event) => event.kind === "feedback.received"),
+    false,
+  );
+  store.close();
+});

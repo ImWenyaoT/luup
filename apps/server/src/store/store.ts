@@ -22,6 +22,18 @@ export type StoredArtifact = {
   content: DomainArtifact;
 };
 
+export type ResearcherFeedback = { id: string; text: string; round: 1 };
+
+export class FeedbackSubmissionError extends Error {
+  readonly code: "invalid" | "conflict" | "not_found";
+
+  constructor(code: FeedbackSubmissionError["code"], message: string) {
+    super(message);
+    this.name = "FeedbackSubmissionError";
+    this.code = code;
+  }
+}
+
 /** The durable facts a batch manifest needs in order to validate one record. */
 export type BatchRunFacts = {
   runId: string;
@@ -326,6 +338,71 @@ export class SqliteStore {
     const row = this.#get("SELECT question FROM runs WHERE id = ?", runId);
     if (!row) throw new Error(`unknown run: ${runId}`);
     return row.question;
+  }
+
+  /** 人工意见只在首轮 Reviewer 执行期间排队；Harness 在决定终止前读取。 */
+  submitResearcherFeedback(runId: string, input: { id: string; text: string }): ResearcherFeedback {
+    const id = input.id.trim();
+    const text = input.text.trim();
+    if (id === "" || id.length > 128 || !/^[A-Za-z0-9_-]+$/.test(id)) {
+      throw new FeedbackSubmissionError("invalid", "feedback_id must be 1-128 letters, digits, _ or -");
+    }
+    if (text === "" || text.length > 2_000) {
+      throw new FeedbackSubmissionError("invalid", "feedback must be 1-2000 characters");
+    }
+    return this.#write((db) => {
+      const run = db.prepare("SELECT status FROM runs WHERE id = ?").get(runId) as Row | undefined;
+      if (!run) throw new FeedbackSubmissionError("not_found", `unknown run: ${runId}`);
+      if (run.status !== "running") {
+        throw new FeedbackSubmissionError("conflict", `cannot submit feedback to ${String(run.status)} run`);
+      }
+      const active = db
+        .prepare("SELECT role, ordinal FROM attempts WHERE run_id = ? AND status = 'running'")
+        .get(runId) as Row | undefined;
+      if (active?.role !== "reviewer" || Number(active.ordinal) !== 1) {
+        throw new FeedbackSubmissionError("conflict", "feedback is only accepted during the first reviewer attempt");
+      }
+      const feedbackEvents = (
+        db
+          .prepare("SELECT payload_json FROM events WHERE run_id = ? AND kind = 'feedback.received' ORDER BY version")
+          .all(runId) as Row[]
+      ).map((row) => JSON.parse(String(row.payload_json)) as Record<string, unknown>);
+      if (feedbackEvents.some((payload) => payload.feedback_source === "human")) {
+        throw new FeedbackSubmissionError("conflict", "researcher feedback already queued");
+      }
+      const feedback: ResearcherFeedback = { id, text, round: 1 };
+      emitEvent(db, runId, "feedback.received", {
+        source: "researcher",
+        feedback_source: "human",
+        target: "research-plan",
+        round: 1,
+        action: "revise",
+        feedback_count: 1,
+        feedback_artifact_id: null,
+        feedback_id: id,
+        feedback: text,
+        retry_reason: "researcher_requested_revision",
+        stop_reason: null,
+        rollback_reason: null,
+      });
+      return feedback;
+    });
+  }
+
+  researcherFeedback(runId: string, round: number): ResearcherFeedback | null {
+    const events = this.eventsAfter(runId, 0);
+    for (const event of events) {
+      if (
+        event.kind === "feedback.received" &&
+        event.payload.feedback_source === "human" &&
+        event.payload.round === round &&
+        typeof event.payload.feedback_id === "string" &&
+        typeof event.payload.feedback === "string"
+      ) {
+        return { id: event.payload.feedback_id, text: event.payload.feedback, round: 1 };
+      }
+    }
+    return null;
   }
 
   startAttempt(runId: string, role: Role): string {

@@ -198,6 +198,7 @@ export class Harness {
       const domainInputs = [...research, ...hypotheses, evidenceReview].map(toInput);
       let plan!: StoredArtifact;
       let review!: StoredArtifact;
+      let queuedResearcherFeedback: string | null = null;
       let previousEvaluation: {
         scoreTotal: number;
         limitations: number;
@@ -215,14 +216,18 @@ export class Harness {
           question,
           "research-plan",
           plannerInputs,
-          round === 1 ? "生成可验证研究计划" : "根据冻结 Review Artifact 修订研究计划",
+          round === 1
+            ? "生成可验证研究计划"
+            : queuedResearcherFeedback === null
+              ? "根据冻结 Review Artifact 修订研究计划"
+              : `根据研究者反馈修订研究计划：${queuedResearcherFeedback}`,
         );
         const changedFields = previousPlan ? changedTopLevelFields(previousPlan.content, plan.content).join(",") : "";
         if (previousPlan) {
           this.#store.emit(runId, "revision.applied", {
             round,
-            source: "model_reviewer",
-            feedback_source: "auto",
+            source: queuedResearcherFeedback === null ? "model_reviewer" : "researcher",
+            feedback_source: queuedResearcherFeedback === null ? "auto" : "human",
             from_artifact_id: previousPlan.id,
             to_artifact_id: plan.id,
             changed_fields: changedFields,
@@ -238,13 +243,15 @@ export class Harness {
         );
 
         const verdict = review.content as Review;
+        const researcherFeedback = this.#store.researcherFeedback(runId, round);
+        if (researcherFeedback) queuedResearcherFeedback = researcherFeedback.text;
         const evaluationCostAfter = evaluationUsageTokens(this.#store.eventsAfter(runId, 0));
         const roundCostTokens = knownDelta(evaluationCostAfter, evaluationCostBefore);
         const scoreAfterTotal = reviewScoreTotal(verdict);
         const scoreBeforeTotal = previousEvaluation?.scoreTotal ?? null;
         const limitationsAfter = verdict.weaknesses.length;
         const limitationsBefore = previousEvaluation?.limitations ?? null;
-        if (verdict.accepted) {
+        if (verdict.accepted && researcherFeedback === null) {
           this.#store.emit(
             runId,
             "evaluation.round",
@@ -306,13 +313,18 @@ export class Harness {
           this.#store.finishRun(runId, "completed", { finalArtifactId: plan.id });
           return { status: "completed", finalArtifactId: plan.id, errorCode: null };
         }
-        const shouldRevise = round < 2 && verdict.suggested_successor_roles.includes("research-plan");
+        const shouldRevise =
+          round < 2 && (researcherFeedback !== null || verdict.suggested_successor_roles.includes("research-plan"));
         const stopReason = shouldRevise
           ? null
           : round >= 2
             ? "revision_budget_exhausted"
             : "reviewer_did_not_request_research_plan";
-        const retryReason = shouldRevise ? "reviewer_requested_revision" : null;
+        const retryReason = shouldRevise
+          ? researcherFeedback === null
+            ? "reviewer_requested_revision"
+            : "researcher_requested_revision"
+          : null;
         const priorEvaluation = previousEvaluation;
         this.#store.emit(
           runId,
@@ -327,9 +339,9 @@ export class Harness {
             round,
             phase: previousEvaluation ? "revision" : "raw",
             action: shouldRevise ? "revise" : "stop",
-            feedback_source: "auto",
-            feedback_artifact_id: review.id,
-            feedback_count: verdict.feedback.length,
+            feedback_source: researcherFeedback === null ? "auto" : "human",
+            feedback_artifact_id: researcherFeedback === null ? review.id : null,
+            feedback_count: researcherFeedback === null ? verdict.feedback.length : 1,
             raw_plan_artifact_id: previousEvaluation?.rawPlanArtifactId ?? plan.id,
             raw_review_artifact_id: previousEvaluation?.rawReviewArtifactId ?? review.id,
             plan_artifact_id: plan.id,

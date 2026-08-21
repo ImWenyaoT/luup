@@ -7,7 +7,7 @@ import { createDeterministicRuntime, createDeterministicVerifier } from "./execu
 import { createQwenExecutor } from "./executor.ts";
 import { Harness } from "./harness.ts";
 import { modelConfigStatus, setModelOverride } from "./seams/index.ts";
-import { MAX_QUESTION_LENGTH, normalizeQuestion, SqliteStore } from "./store/store.ts";
+import { FeedbackSubmissionError, MAX_QUESTION_LENGTH, normalizeQuestion, SqliteStore } from "./store/store.ts";
 
 const TERMINAL = new Set(["completed", "review_rejected", "failed"]);
 const POLL_MS = 100;
@@ -336,6 +336,41 @@ export function createApp(options: ServerOptions) {
           const snapshot = store.snapshot(runMatch[1]!);
           if (!snapshot) return json(404, { detail: "Run 不存在。" });
           return json(200, projectRunSnapshot(snapshot));
+        }
+
+        const feedbackMatch = /^\/api\/runs\/([A-Za-z0-9]+)\/feedback$/.exec(path);
+        if (method === "POST" && feedbackMatch) {
+          if (!authorized(req)) return unauthorized();
+          const contentType = req.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
+          if (contentType !== "application/json") {
+            return json(415, { detail: "Content-Type 必须是 application/json。" });
+          }
+          let body: { feedback_id?: unknown; feedback?: unknown };
+          try {
+            const parsed = await readJson(req);
+            if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+              return json(400, { detail: "请求体必须是 JSON 对象。" });
+            }
+            body = parsed;
+          } catch {
+            return json(400, { detail: "请求体必须是合法 JSON。" });
+          }
+          if (typeof body.feedback_id !== "string" || typeof body.feedback !== "string") {
+            return json(422, { detail: "feedback_id 和 feedback 必须是字符串。" });
+          }
+          try {
+            const accepted = store.submitResearcherFeedback(feedbackMatch[1]!, {
+              id: body.feedback_id,
+              text: body.feedback,
+            });
+            return json(202, { status: "queued", feedback_id: accepted.id, round: accepted.round });
+          } catch (error) {
+            if (error instanceof FeedbackSubmissionError) {
+              const status = error.code === "not_found" ? 404 : error.code === "invalid" ? 422 : 409;
+              return json(status, { detail: error.message });
+            }
+            throw error;
+          }
         }
 
         const eventsMatch = /^\/api\/runs\/([A-Za-z0-9]+)\/events$/.exec(path);

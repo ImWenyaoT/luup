@@ -243,6 +243,54 @@ test("rejects an empty question and unknown ids", async () => {
   await close(server, store);
 });
 
+test("authenticated researcher feedback is queued once and invalid requests fail closed", async () => {
+  const previousToken = process.env.LUUP_API_TOKEN;
+  process.env.LUUP_API_TOKEN = "test-token";
+  const store = new SqliteStore(":memory:");
+  const runId = store.createRun("q");
+  const planner = store.startAttempt(runId, "research-plan");
+  store.publishArtifact(runId, planner, { artifact_type: "research-plan" } as any, [], 0);
+  store.startAttempt(runId, "reviewer");
+  const server = createApp({ store, harness: {} as Harness, runtime: "deterministic" });
+  try {
+    const endpoint = `${server.url.origin}/api/runs/${runId}/feedback`;
+    assert.equal(
+      (
+        await fetch(endpoint, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ feedback_id: "human-1", feedback: "补充回退条件" }),
+        })
+      ).status,
+      401,
+    );
+    const accepted = await fetch(endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: "Bearer test-token" },
+      body: JSON.stringify({ feedback_id: "human-1", feedback: "补充回退条件" }),
+    });
+    assert.equal(accepted.status, 202);
+    assert.deepEqual(await accepted.json(), { status: "queued", feedback_id: "human-1", round: 1 });
+    const duplicate = await fetch(endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: "Bearer test-token" },
+      body: JSON.stringify({ feedback_id: "human-1", feedback: "重复" }),
+    });
+    assert.equal(duplicate.status, 409);
+    const missing = await fetch(endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: "Bearer test-token" },
+      body: JSON.stringify({ feedback_id: "human-2" }),
+    });
+    assert.equal(missing.status, 422);
+  } finally {
+    await server.stop(true);
+    store.close();
+    if (previousToken === undefined) delete process.env.LUUP_API_TOKEN;
+    else process.env.LUUP_API_TOKEN = previousToken;
+  }
+});
+
 test("rejects an unknown runtime instead of silently selecting paid live mode", () => {
   assert.equal(runtimeMode(undefined), "live");
   assert.equal(runtimeMode("deterministic"), "deterministic");

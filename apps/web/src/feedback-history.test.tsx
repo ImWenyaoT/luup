@@ -22,7 +22,15 @@ test("feedback history distinguishes automatic feedback and persisted revision d
         id: 1,
         version: 1,
         kind: "feedback.received",
-        payload: { source: "model_reviewer", target: "research-plan", round: 1, action: "revise", feedback_count: 2 },
+        payload: {
+          source: "researcher",
+          feedback_source: "human",
+          target: "research-plan",
+          round: 1,
+          action: "revise",
+          feedback_count: 1,
+          feedback: "补充停止条件",
+        },
         created_at: "t",
       },
       {
@@ -56,7 +64,8 @@ test("feedback history distinguishes automatic feedback and persisted revision d
   };
 
   const html = renderToStaticMarkup(<FeedbackHistory snapshot={snapshot} />);
-  expect(html).toContain("自动反馈");
+  expect(html).toContain("人工反馈");
+  expect(html).toContain("补充停止条件");
   expect(html).toContain("修订");
   expect(html).toContain("methods,references");
   expect(html).toContain("review-v1");

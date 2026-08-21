@@ -43,6 +43,22 @@ export async function fetchArtifact(artifactId: string): Promise<Artifact> {
   return parse<Artifact>(await fetch(`/api/artifacts/${encodeURIComponent(artifactId)}`));
 }
 
+export async function submitResearcherFeedback(
+  runId: string,
+  input: { feedback_id: string; feedback: string },
+  apiToken?: string,
+): Promise<{ status: "queued"; feedback_id: string; round: 1 }> {
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (apiToken) headers.authorization = `Bearer ${apiToken}`;
+  return parse(
+    await fetch(`/api/runs/${encodeURIComponent(runId)}/feedback`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
 export type ConfigStatus = {
   runtime: "live" | "deterministic";
   credential: "override" | "environment" | "absent";

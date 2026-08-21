@@ -85,6 +85,7 @@ function fake(
     usesProviderSourceAlias?: boolean;
     thinReferences?: boolean;
     rewritesPlanCandidateId?: boolean;
+    beforeFirstReviewer?: () => Promise<void>;
   } = {},
 ) {
   let ledger = new EvidenceLedger();
@@ -102,6 +103,7 @@ function fake(
 
     if (options.primitiveFailure) return await Promise.reject(null);
     if (options.stageFails) throw new StageError("deadline_exceeded", `${role} exceeded the deadline`);
+    if (role === "reviewer" && reviews === 0 && options.beforeFirstReviewer) await options.beforeFirstReviewer();
 
     if (role === "researcher") {
       researchCalls += 1;
@@ -1023,6 +1025,32 @@ test("terminates review_rejected after the bounded revision", async () => {
   assert.equal(revision.payload.round, 2);
   assert.equal(typeof revision.payload.changed_fields, "string");
   assert.ok(revision.payload.changed_fields.length > 0);
+  h.store.close();
+});
+
+test("queued researcher feedback forces the existing bounded revision loop", async () => {
+  let releaseReviewer!: () => void;
+  const reviewerGate = new Promise<void>((resolve) => {
+    releaseReviewer = resolve;
+  });
+  const h = harness({ beforeFirstReviewer: () => reviewerGate });
+  const runId = h.harness.createRun("q");
+  const execution = h.harness.execute(runId);
+  for (let tick = 0; tick < 100 && h.store.snapshot(runId)!.current_role !== "reviewer"; tick += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 1));
+  }
+  h.store.submitResearcherFeedback(runId, { id: "human-1", text: "补充失败结果对应的回退条件" });
+  releaseReviewer();
+  const outcome = await execution;
+
+  assert.equal(outcome.status, "completed");
+  const planCalls = h.calls.filter((call) => call.role === "research-plan");
+  assert.equal(planCalls.length, 2);
+  assert.match(planCalls[1]!.input.goal, /研究者反馈.*补充失败结果对应的回退条件/);
+  const revision = h.store
+    .eventsAfter(runId, 0)
+    .find((event) => event.kind === "revision.applied" && event.payload.feedback_source === "human");
+  assert.equal(revision?.payload.source, "researcher");
   h.store.close();
 });
 

@@ -40,6 +40,8 @@ const EVENT_PAYLOAD_FIELDS: Record<string, readonly string[]> = {
     "action",
     "feedback_count",
     "feedback_artifact_id",
+    "feedback_id",
+    "feedback",
     "retry_reason",
     "stop_reason",
     "rollback_reason",

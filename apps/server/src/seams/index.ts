@@ -47,6 +47,7 @@ export type RunStore = Pick<
   | "emit"
   | "latestArtifact"
   | "eventsAfter"
+  | "researcherFeedback"
   | "recordEvidence"
 >;
 

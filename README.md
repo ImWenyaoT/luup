@@ -81,6 +81,7 @@ bun run dev       # 前端 http://127.0.0.1:5173 + API :8000（确定性 runtime
 | GET  | `/api/config`                  | 查看 runtime、模型与凭据三态（不返回密钥）   | 否               |
 | PUT  | `/api/config`                  | 设置本进程的 Qwen key/model/base URL 覆盖    | 后续 Run 会触发  |
 | POST | `/api/runs`                    | 创建 Run，返回 `202` 与 `id`                 | 是（live 模式）  |
+| POST | `/api/runs/:id/feedback`       | 首轮 Reviewer 执行期间提交一次研究者反馈     | 否               |
 | GET  | `/api/runs/:id`                | 读取 Run、Attempt、Artifact 摘要与反馈状态   | 否               |
 | GET  | `/api/runs/:id/events?after=0` | SSE 事件流，可用 `Last-Event-ID` 续读        | 否               |
 | GET  | `/api/artifacts/:id`           | 读取公开 Artifact 投影                       | 否               |
@@ -105,6 +106,17 @@ curl -sS -X POST "$BASE/api/runs" \
   -H 'content-type: application/json' \
   -H 'authorization: Bearer <LUUP_API_TOKEN>' \
   -d '{"question":"冻结证据能降低无来源引用吗？"}'
+```
+
+研究者反馈使用同一 Bearer token，只在首轮 Reviewer Attempt 仍为 `running` 时接受一次；反馈会作为
+`feedback.received{source=researcher, feedback_source=human}` 持久化，并强制进入已有的第二轮计划修订。
+终态 Run、其他角色阶段、第二轮或重复提交均明确返回 `409`，不会静默丢弃：
+
+```sh
+curl -sS -X POST "$BASE/api/runs/<run_id>/feedback" \
+  -H 'content-type: application/json' \
+  -H 'authorization: Bearer <LUUP_API_TOKEN>' \
+  -d '{"feedback_id":"researcher-1","feedback":"补充失败结果对应的回退条件"}'
 ```
 
 进程内同时执行/排队的 Run 默认最多 8 个（`LUUP_MAX_QUEUED_RUNS` 可调），满载返回 `429`；这只是

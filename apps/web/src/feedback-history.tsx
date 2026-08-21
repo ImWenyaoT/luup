@@ -46,6 +46,9 @@ export function FeedbackHistory({ snapshot }: { snapshot: Snapshot }) {
               <span className="ml-2 text-muted-foreground">
                 第 {text(event.payload, "round")} 轮 · {text(event.payload, "action")} · Reviewer
               </span>
+              {text(event.payload, "feedback") && (
+                <div className="text-muted-foreground">{text(event.payload, "feedback")}</div>
+              )}
             </li>
           ) : (
             <li key={event.id}>
