@@ -11,18 +11,10 @@ type TestContext = { onTestFinished: typeof onTestFinished };
 import {
   compactIds,
   createCampaignMemory,
-  existingBatchDatabaseArtifacts,
   MAX_CONCURRENCY,
   parseConcurrency,
   parseIds,
-  readPhaseBQuestionIds,
   validateBatchBunRuntime,
-  validateMemoryAblationLaunch,
-  validateMemoryAblationResume,
-  validateReleaseCommit,
-  validateScience125Launch,
-  validateScience125Resume,
-  readSourceIdentity,
   remainingPath,
   runBatch,
   main,
@@ -31,10 +23,10 @@ import {
   type QuestionOutcome,
   type RunQuestion,
 } from "../src/batch/runner.ts";
+import { readSourceIdentity } from "../src/batch/admission.ts";
 import { findQuestion, readScience125, science125Integrity, science125Text } from "../src/domain/science125.ts";
 import { clearModelOverride, modelConfigStatus } from "../src/seams/model.ts";
 import { SqliteStore } from "../src/store/store.ts";
-
 function workspace(t: TestContext): string {
   const dir = mkdtempSync(join(tmpdir(), "luup-batch-"));
   t.onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
@@ -649,15 +641,6 @@ test("formal Science-125 CLI requires an explicit confirmation before opening SQ
 });
 
 test("paid formal phases require an exact release commit before credentials or SQLite", async () => {
-  const clean = { gitCommit: "a".repeat(40), treeDirty: false };
-  assert.match(validateReleaseCommit(true, undefined, clean) ?? "", /--release-commit/);
-  assert.match(validateReleaseCommit(true, "abc", clean) ?? "", /40/);
-  assert.match(validateReleaseCommit(true, "b".repeat(40), clean) ?? "", /当前.*commit/);
-  assert.match(validateReleaseCommit(true, "A".repeat(40), clean) ?? "", /40/);
-  assert.match(validateReleaseCommit(true, clean.gitCommit, { ...clean, treeDirty: true }) ?? "", /tree clean/);
-  assert.equal(validateReleaseCommit(true, clean.gitCommit, clean), null);
-  assert.equal(validateReleaseCommit(false, undefined, null), null);
-
   const t = { onTestFinished };
   const dir = workspace(t);
   const dbPath = join(dir, "runtime", "release.db");
@@ -680,91 +663,7 @@ test("paid formal phases require an exact release commit before credentials or S
   assert.equal(existsSync(dbPath), false);
 });
 
-test("memory-off reads the registered Phase B cohort instead of accepting a hand-written subset", () => {
-  const ids = readPhaseBQuestionIds();
-  const clean = { gitCommit: "a".repeat(40), treeDirty: false };
-
-  assert.equal(ids.length, 30);
-  assert.deepEqual(
-    ids,
-    [...ids].sort((left, right) => left - right),
-  );
-  assert.equal(
-    validateMemoryAblationLaunch({
-      questionIds: ids,
-      protocolQuestionIds: ids,
-      dryRun: false,
-      confirmed: true,
-      sourceIdentity: clean,
-    }),
-    null,
-  );
-  assert.match(
-    validateMemoryAblationLaunch({
-      questionIds: [1],
-      protocolQuestionIds: ids,
-      dryRun: false,
-      confirmed: true,
-      sourceIdentity: clean,
-    }) ?? "",
-    /精确匹配.*30 题/,
-  );
-});
-
 test("memory-off is fail-closed before SQLite for confirmation, ids, and source identity", async () => {
-  const clean = { gitCommit: "a".repeat(40), treeDirty: false };
-  const ids = readPhaseBQuestionIds();
-  assert.match(
-    validateMemoryAblationLaunch({
-      questionIds: ids,
-      protocolQuestionIds: ids,
-      dryRun: false,
-      confirmed: false,
-      sourceIdentity: clean,
-    }) ?? "",
-    /--confirm-memory-ablation/,
-  );
-  assert.match(
-    validateMemoryAblationLaunch({
-      questionIds: null,
-      protocolQuestionIds: ids,
-      dryRun: false,
-      confirmed: true,
-      sourceIdentity: clean,
-    }) ?? "",
-    /--ids/,
-  );
-  assert.match(
-    validateMemoryAblationLaunch({
-      questionIds: ids,
-      protocolQuestionIds: ids,
-      dryRun: false,
-      confirmed: true,
-      sourceIdentity: null,
-    }) ?? "",
-    /source identity/,
-  );
-  assert.match(
-    validateMemoryAblationLaunch({
-      questionIds: ids,
-      protocolQuestionIds: ids,
-      dryRun: false,
-      confirmed: true,
-      sourceIdentity: { ...clean, treeDirty: true },
-    }) ?? "",
-    /tree clean/,
-  );
-  assert.equal(
-    validateMemoryAblationLaunch({
-      questionIds: [1],
-      protocolQuestionIds: ids,
-      dryRun: true,
-      confirmed: false,
-      sourceIdentity: null,
-    }),
-    null,
-  );
-
   const t = { onTestFinished };
   const dir = workspace(t);
   const dbPath = join(dir, "runtime", "runs.db");
@@ -791,157 +690,6 @@ test("memory-off is fail-closed before SQLite for confirmation, ids, and source 
   assert.equal(code, 2);
   assert.match(output, /精确匹配.*30 题/);
   assert.equal(existsSync(dbPath), false);
-});
-
-test("memory-off resume requires the same clean commit and off arm", () => {
-  const current = { gitCommit: "a".repeat(40), treeDirty: false };
-  const run = {
-    runId: "run-1",
-    science125Id: 1,
-    status: "completed" as const,
-    errorCode: null,
-    sourceIdentity: current,
-    memoryArm: "off" as const,
-  };
-  assert.equal(validateMemoryAblationResume(current, []), null);
-  assert.equal(validateMemoryAblationResume(current, [run]), null);
-  assert.match(validateMemoryAblationResume(null, [run]) ?? "", /source identity/);
-  assert.match(validateMemoryAblationResume({ ...current, treeDirty: true }, [run]) ?? "", /tree clean/);
-  assert.match(
-    validateMemoryAblationResume(current, [
-      { ...run, sourceIdentity: { gitCommit: "b".repeat(40), treeDirty: false } },
-    ]) ?? "",
-    /commit/,
-  );
-  assert.match(
-    validateMemoryAblationResume(current, [{ ...run, sourceIdentity: { ...current, treeDirty: true } }]) ?? "",
-    /dirty/,
-  );
-  assert.match(validateMemoryAblationResume(current, [{ ...run, memoryArm: "on" }]) ?? "", /memory arm/);
-});
-
-test("formal Science-125 launch requires clean source and a fresh database, while resume may reuse both", () => {
-  const ids = Array.from({ length: 125 }, (_, index) => index + 1);
-  const base = { questionIds: ids, dryRun: false, confirmed: true, manifestId: null };
-
-  assert.match(
-    validateScience125Launch({ ...base, sourceIdentity: null, existingDatabaseArtifacts: [] }) ?? "",
-    /source identity/,
-  );
-  assert.match(
-    validateScience125Launch({
-      ...base,
-      sourceIdentity: { gitCommit: "a".repeat(40), treeDirty: true },
-      existingDatabaseArtifacts: [],
-    }) ?? "",
-    /tree clean/,
-  );
-  assert.match(
-    validateScience125Launch({
-      ...base,
-      sourceIdentity: { gitCommit: "a".repeat(40), treeDirty: false },
-      existingDatabaseArtifacts: ["runs.db-wal"],
-    }) ?? "",
-    /runs\.db-wal/,
-  );
-  assert.equal(
-    validateScience125Launch({
-      ...base,
-      sourceIdentity: { gitCommit: "a".repeat(40), treeDirty: false },
-      existingDatabaseArtifacts: [],
-    }),
-    null,
-  );
-  assert.equal(
-    validateScience125Launch({
-      ...base,
-      manifestId: "manifest-1",
-      sourceIdentity: null,
-      existingDatabaseArtifacts: ["runs.db", "runs.db-wal"],
-    }),
-    null,
-  );
-  assert.match(
-    validateScience125Launch({
-      ...base,
-      confirmed: false,
-      manifestId: "manifest-1",
-      sourceIdentity: null,
-      existingDatabaseArtifacts: ["runs.db"],
-    }) ?? "",
-    /--confirm-science125/,
-  );
-  assert.equal(
-    validateScience125Launch({
-      ...base,
-      dryRun: true,
-      confirmed: false,
-      sourceIdentity: null,
-      existingDatabaseArtifacts: ["runs.db"],
-    }),
-    null,
-  );
-  assert.equal(
-    validateScience125Launch({
-      ...base,
-      questionIds: [1, 2],
-      confirmed: false,
-      sourceIdentity: null,
-      existingDatabaseArtifacts: ["runs.db"],
-    }),
-    null,
-  );
-});
-
-test("formal Science-125 database guard detects SQLite and writer-lock sidecars", () => {
-  const t = { onTestFinished };
-  const dir = workspace(t);
-  const dbPath = join(dir, "runs.db");
-  writeFileSync(`${dbPath}-wal`, "old");
-  writeFileSync(`${dbPath}.writer-lock.db-journal`, "old");
-
-  assert.deepEqual(existingBatchDatabaseArtifacts(dbPath), [`${dbPath}-wal`, `${dbPath}.writer-lock.db-journal`]);
-});
-
-test("formal Science-125 resume keeps one clean source cohort and one memory arm", () => {
-  const ids = Array.from({ length: 125 }, (_, index) => index + 1);
-  const current = { gitCommit: "a".repeat(40), treeDirty: false };
-  const run = {
-    runId: "run-1",
-    science125Id: 1,
-    status: "completed" as const,
-    errorCode: null,
-    sourceIdentity: current,
-    memoryArm: "on" as const,
-  };
-
-  assert.equal(
-    validateScience125Resume(ids, current, "on", []),
-    null,
-    "empty manifest only needs current clean source",
-  );
-  assert.equal(validateScience125Resume(ids, current, "on", [run]), null);
-  assert.match(validateScience125Resume(ids, null, "on", [run]) ?? "", /source identity/);
-  assert.match(validateScience125Resume(ids, { ...current, treeDirty: true }, "on", [run]) ?? "", /tree clean/);
-  assert.match(validateScience125Resume(ids, current, "on", [{ ...run, sourceIdentity: null }]) ?? "", /run-1/);
-  assert.match(
-    validateScience125Resume(ids, current, "on", [
-      { ...run, sourceIdentity: { gitCommit: "b".repeat(40), treeDirty: false } },
-    ]) ?? "",
-    /commit/,
-  );
-  assert.match(
-    validateScience125Resume(ids, current, "on", [
-      { ...run, sourceIdentity: { gitCommit: current.gitCommit, treeDirty: true } },
-    ]) ?? "",
-    /dirty/,
-  );
-  assert.match(validateScience125Resume(ids, current, "off", [run]) ?? "", /memory arm/);
-  assert.equal(
-    validateScience125Resume([1, 2], null, "off", [{ ...run, sourceIdentity: null, memoryArm: null }]),
-    null,
-    "subset resume behavior is unchanged",
-  );
 });
 
 test("formal live batch requires the pinned Bun runtime, while dry-run is portable", () => {
