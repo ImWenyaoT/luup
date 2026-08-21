@@ -5,6 +5,7 @@ import { parseArgs } from "node:util";
 import { FAILURE_CODES } from "../agent/failures.ts";
 import type { Role } from "../agent/contracts.ts";
 import { projectArtifact, type PublicArtifact } from "../api/projection.ts";
+import { findQuestion, science125Integrity } from "../domain/science125.ts";
 import { SqliteStore } from "../store/store.ts";
 
 export const REPRESENTATIVE_CASE_FORMAT = "luup.representative-case" as const;
@@ -129,8 +130,15 @@ export type RepresentativeCaseExport = {
   verification: RepresentativeCaseVerification;
   trace: RepresentativeCaseTrace;
   usage: RepresentativeCaseUsage;
+  /** Strict submission readiness result; present only when `--strict` was requested. */
+  strict?: RepresentativeCaseStrictReport;
   /** Stable, non-sensitive diagnostics for absent, malformed, or incomplete facts. */
   unknown_reasons: string[];
+};
+
+export type RepresentativeCaseStrictReport = {
+  passed: boolean;
+  reasons: string[];
 };
 
 export type ExportRepresentativeCaseOptions = {
@@ -139,6 +147,8 @@ export type ExportRepresentativeCaseOptions = {
   jsonPath: string;
   markdownPath?: string;
   generatedAt?: string;
+  /** Fail closed on the official Science-125 representative-case requirements. */
+  strict?: boolean;
   /** Test and embedding seam; production CLI opens dbPath itself. */
   store?: SqliteStore;
 };
@@ -257,15 +267,87 @@ export function buildRepresentativeCase(
   };
 }
 
+/**
+ * Check the stricter representative-case submission contract without changing
+ * the default diagnostic projection. Every failure is a stable reason code so
+ * the CLI can fail closed while leaving the generated case available for audit.
+ */
+export function checkRepresentativeCaseStrict(
+  store: SqliteStore,
+  value: RepresentativeCaseExport,
+): RepresentativeCaseStrictReport {
+  const reasons: string[] = [];
+  const catalog = science125Integrity();
+  if (!catalog.ok) reasons.push("frozen_catalog_invalid");
+  const science125Id = value.run.science125_id;
+  if (science125Id === null || findQuestion(science125Id) === null) {
+    reasons.push("science125_id_not_in_frozen_catalog");
+  }
+  if (value.run.status !== "completed") reasons.push("run_not_completed");
+  if (!value.rounds.round1.present) reasons.push("round1_missing");
+  if (!value.rounds.round2.present) reasons.push("round2_missing");
+
+  const snapshot = value.run_id === null ? null : store.snapshot(value.run_id);
+  const events = snapshot === null ? [] : readEvents(snapshot.recent_events, []);
+  if (!events.some((event) => event.kind === "feedback.received")) reasons.push("feedback_missing");
+
+  const revisions = events.filter((event) => event.kind === "revision.applied");
+  if (revisions.length === 0) {
+    reasons.push("revision_missing");
+  } else {
+    const hasAuditableRevision = revisions.some((event) => {
+      const from = safeId(event.payload.from_artifact_id);
+      const to = safeId(event.payload.to_artifact_id);
+      const fields = parseChangedFields(event.payload.changed_fields, []);
+      return from !== null && to !== null && fields.length > 0;
+    });
+    if (!hasAuditableRevision) reasons.push("revision_facts_incomplete");
+  }
+
+  const verificationEvent = lastEvent(events, "verification.references");
+  if (verificationEvent === null) {
+    reasons.push("verification_missing");
+    reasons.push(
+      "verification_b1_missing",
+      "verification_b2_missing",
+      "verification_b3_missing",
+      "verification_b4_missing",
+    );
+  } else {
+    if (verificationEvent.payload.ok !== true) reasons.push("verification_not_passed");
+    const checks = Array.isArray(verificationEvent.payload.checks) ? verificationEvent.payload.checks : [];
+    for (const family of ["b1", "b2", "b3", "b4"] as const) {
+      const familyChecks = checks.filter(
+        (check): check is UnknownRecord =>
+          isRecord(check) && typeof check.id === "string" && check.id.toLowerCase().startsWith(`${family}.`),
+      );
+      if (familyChecks.length === 0) reasons.push(`verification_${family}_missing`);
+      else if (familyChecks.some((check) => check.pass !== true)) reasons.push(`verification_${family}_failed`);
+    }
+  }
+
+  if (
+    value.usage.status !== "known" ||
+    value.usage.records === 0 ||
+    value.usage.unknown_records !== 0 ||
+    value.usage.total_tokens === null
+  ) {
+    reasons.push("usage_missing_or_unknown");
+  }
+  return { passed: reasons.length === 0, reasons: unique(reasons) };
+}
+
 /** Write the machine-readable package and a human-readable Markdown rendering. */
 export function exportRepresentativeCase(options: ExportRepresentativeCaseOptions): RepresentativeCaseExport {
   const store = options.store ?? new SqliteStore(options.dbPath);
   try {
     const result = buildRepresentativeCase(store, options.runId, options.generatedAt);
-    writeJson(options.jsonPath, result);
+    const strict = options.strict ? checkRepresentativeCaseStrict(store, result) : null;
+    const output = strict === null ? result : { ...result, strict };
+    writeJson(options.jsonPath, output);
     const markdownPath = options.markdownPath ?? defaultMarkdownPath(options.jsonPath);
-    writeText(markdownPath, renderRepresentativeCaseMarkdown(result));
-    return result;
+    writeText(markdownPath, renderRepresentativeCaseMarkdown(output));
+    return output;
   } finally {
     if (!options.store) store.close();
   }
@@ -293,6 +375,17 @@ export function renderRepresentativeCaseMarkdown(value: RepresentativeCaseExport
       "",
     ].join("\n");
   };
+
+  const strictSection =
+    value.strict === undefined
+      ? []
+      : [
+          "",
+          "## Strict 交付门",
+          "",
+          `- passed: ${value.strict.passed}`,
+          `- reasons: ${value.strict.reasons.length > 0 ? value.strict.reasons.join(", ") : "none"}`,
+        ];
 
   return [
     "# Luup 代表性案例",
@@ -345,6 +438,7 @@ export function renderRepresentativeCaseMarkdown(value: RepresentativeCaseExport
     "本导出包含可审计状态、Artifact ID、计数、确定性验收摘要，以及经公共投影白名单脱敏的候选假设、研究计划和评审反馈；不复制 prompt、内部 rationale、工具原始返回、内部错误正文、API key 或其他凭证。unknown/failed 事实保留并显式标注。",
     "",
     `- unknown reasons: ${value.unknown_reasons.length > 0 ? value.unknown_reasons.join(", ") : "none"}`,
+    ...strictSection,
     "",
   ].join("\n");
 }
@@ -440,7 +534,7 @@ function renderPublicArtifactMarkdown(label: string, artifact: RepresentativeCas
 }
 
 export function main(argv: string[] = process.argv.slice(2)): number {
-  let values: { db?: string; "run-id"?: string; out?: string; markdown?: string };
+  let values: { db?: string; "run-id"?: string; out?: string; markdown?: string; strict?: boolean };
   try {
     values = parseArgs({
       args: argv,
@@ -449,6 +543,7 @@ export function main(argv: string[] = process.argv.slice(2)): number {
         "run-id": { type: "string" },
         out: { type: "string" },
         markdown: { type: "string" },
+        strict: { type: "boolean", default: false },
       },
       strict: true,
     }).values;
@@ -458,7 +553,7 @@ export function main(argv: string[] = process.argv.slice(2)): number {
   }
   if (!values["run-id"] || !values.out) {
     process.stderr.write(
-      "用法：bun run submission:case -- --run-id <run-id> --out <case.json> [--markdown <case.md>] [--db <runs.db>]\n",
+      "用法：bun run submission:case -- --run-id <run-id> --out <case.json> [--markdown <case.md>] [--db <runs.db>] [--strict]\n",
     );
     return 2;
   }
@@ -469,11 +564,16 @@ export function main(argv: string[] = process.argv.slice(2)): number {
       runId: values["run-id"],
       jsonPath: values.out,
       markdownPath: values.markdown,
+      strict: values.strict,
     });
     process.stdout.write(
       `[submission:case] status=${result.run.status} science125_id=${display(result.run.science125_id)} ` +
         `run=${display(result.run_id)} out=${resolve(values.out)}\n`,
     );
+    if (result.strict !== undefined && !result.strict.passed) {
+      process.stderr.write(`[submission:case] strict gate failed: ${result.strict.reasons.join(", ")}\n`);
+      return 1;
+    }
     return result.run.status === "unknown" ? 1 : 0;
   } catch (error) {
     process.stderr.write(`[submission:case] ${describe(error)}\n`);

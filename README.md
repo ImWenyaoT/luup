@@ -140,16 +140,28 @@ bun run db:restore -- \
 bun run canary                              # 单题冒烟，走 live 模型并持久化证据
 bun run batch --ids 1-125 --dry-run         # 先看计划，零执行
 bun run batch --ids 3,54,61                 # 断点续跑：已交付的题自动跳过
-bun run batch --manifest-id <id>            # 打开已有 manifest，只处理遗漏/未通过 durable gate 的题
-bun run batch --ids 1-125 --concurrency 3   # 有界并发，默认 3、上限 5；1 即串行
-bun run batch --ids 1-30 --no-memory        # 记忆消融臂
+bun run batch --ids 1-125 --confirm-science125 \
+  --db outputs/runtime/science125-formal.db --concurrency 3  # 正式全量首次开跑
+bun run batch --manifest-id <id> --confirm-science125 \
+  --db outputs/runtime/science125-formal.db  # 正式全量续跑；只处理遗漏/未通过 durable gate 的题
+bun run batch --ids 1,8,12,16,17,19,27,28,32,35,40,46,49,50,55,64,72,77,79,86,90,91,95,100,102,107,110,117,120,121 \
+  --no-memory --confirm-memory-ablation \
+  --db outputs/runtime/science125-formal.db --concurrency 3  # 预注册 Phase B 记忆消融臂；与 Phase A 配对
 bun run batch:export --manifest-id <id> \
   --db outputs/runtime/typescript-runs.db \
   --out outputs/submission/science125-index.json  # 只导出逐题索引，不复制正文
+bun run batch:export --manifest-id <id> \
+  --db outputs/runtime/science125-formal.db \
+  --out outputs/submission/science125-index.json \
+  --require-science125  # 严格要求完整的 1–125；失败仍写诊断索引
 bun run usage:export -- \
   --db outputs/runtime/typescript-runs.db \
   --out outputs/submission/usage.jsonl \
   --markdown outputs/submission/usage.md  # 无价格配置时成本保持 N/A
+bun run usage:export -- \
+  --db outputs/runtime/science125-formal.db --manifest-id <id> \
+  --out outputs/submission/science125-usage.jsonl \
+  --markdown outputs/submission/science125-usage.md  # 只读该 manifest 的有效 Run
 bun run usage:export -- \
   --db outputs/runtime/typescript-runs.db \
   --out outputs/submission/usage.jsonl \
@@ -157,11 +169,16 @@ bun run usage:export -- \
   --output-price-per-million <output单价> \
   --currency CNY --model <Qwen模型> \
   --price-source '<官方价目表/控制台凭证>'
-bun run eval --db outputs/runtime/typescript-runs.db   # 离线指标，不调模型
+bun run eval --db outputs/runtime/typescript-runs.db   # 全库离线指标，不调模型
+bun run eval --db outputs/runtime/science125-formal.db --manifest-id <id> \
+  --out outputs/submission/science125-metrics.md      # 只读该 manifest 的有效 Run
 bun run score --db outputs/runtime/typescript-runs.db --out outputs/scoring.md
+bun run score --db outputs/runtime/science125-formal.db --manifest-id <id> \
+  --out outputs/submission/science125-scoring.md       # 只读该 manifest 的有效 Run
 bun run submission:check -- outputs/submission/编号-学校-申报人姓名-作品名称.pdf
 bun run submission:case -- --db /private/tmp/luup-science125-canary-final-20260822.db \
-  --run-id <run_id> --out outputs/submission/science125-representative-case.json
+  --run-id <run_id> --out outputs/submission/science125-representative-case.json \
+  --strict  # 严格要求冻结题号、completed、两轮反馈/修订、B1–B4 和用量事实
 ```
 
 批跑默认写 `outputs/runtime/typescript-runs.db`，`--db` 或 `LUUP_DATABASE` 可改。
@@ -169,14 +186,27 @@ Canary 默认写 `outputs/runtime/canary.db`，并在 stdout 返回 `database` �
 `LUUP_DATABASE` 改写位置。除非只做临时诊断，不要把 live canary 指到 `:memory:`。
 每次 live 批跑都会在执行前输出 durable `manifestId`；纯 `--ids ... --dry-run` 使用内存规划且不创建
 SQLite 或 manifest。使用 `--manifest-id` 时可省略 `--ids`，若同时提供则必须与原 manifest 的题集完全一致。
+非 dry-run 且题集恰为 1–125 时必须显式传 `--confirm-science125`。首次正式全量开跑还要求 Git source
+identity 可取得、工作树 clean，并拒绝目标 DB 或任何 SQLite/writer-lock sidecar 已存在。正式全量续跑
+还要求当前工作树 clean、commit 与 manifest 已有 Run 一致，且 memory arm 与本次 `--no-memory` 选择一致；
+空 manifest 只校验当前 source identity。dry-run 与非全量题集不受此保护影响。
+非 dry-run 的 `--no-memory` 是付费消融，必须显式传 `--confirm-memory-ablation`，且 `--ids` 的集合必须精确对应
+`docs/design/experiment-protocol.json` 的 `phase_b_subset.question_ids`（当前为上述 30 题）；即使续跑也不能省略
+`--ids`。开库前会要求当前 source identity 可取得且 tree clean；续跑还要求已有 Run 与当前 commit、clean 状态一致，
+且 `memoryArm=off`。该臂允许复用 Phase A 的 SQLite 以形成配对，completed skip 按 memory arm 隔离。
 Manifest 只有在每条记录都能回查到同题号的 SQLite 终态 Run 时才 complete；`success` 只接受 `completed`，`human_review` 只接受 `review_rejected`。
 `batch:export` 从指定 manifest 和 SQLite 事实生成机器可读 JSON：每个 expected ID 恰好一行，
 显式列出 `success`、`partial`、`failure`、`human_review`、`omitted`、`invalid`、聚合 counts、
-Run ID 与相对 API 链接；它不嵌入问题正文或 Artifact 正文。manifest 不完整时命令返回非零，但仍写出索引供审计。
+Run ID 与相对 API 链接；它不嵌入问题正文或 Artifact 正文。默认模式保留诊断导出；`--require-science125`
+另加官方门：expected IDs 必须精确为 1–125，manifest 必须 complete 且没有 invalid、omitted、duplicate、unexpected
+记录。严格门失败时命令返回非零，但仍写出索引供审计。
 
 `usage:export` 从 SQLite 的 `sdk.usage` 事件生成 JSONL 和可选 Markdown：逐 Attempt、逐角色、逐 Run、逐题，
 并保留未知用量为 `null`。它不会从模型名或网络环境推断价格；只有同时显式提供 input/output 每百万 token 单价、
 币种、模型和价格来源时才计算成本，并在每条成本记录中标明三者。缺少任一项时成本为 `N/A`，不会伪造 `¥0`。
+给 `usage:export`、`eval` 或 `score` 传 `--manifest-id` 时，三者只读取该 manifest 关联且能回查到同题号、匹配终态的有效 Run；
+报告会写出 manifest ID、纳入数量和被排除的 DB Run 数/ID。manifest 不存在或没有有效 Run 时命令非零退出，避免把空 cohort 当成结果。
+不传该参数仍保持全库读取口径。
 
 `submission:check` 只对单个 PDF/MP4 做确定性检查：文件名四段、PDF 文件头/页数/200 MiB、MP4 文件头/`mvhd`
 时长/10 分钟。PPTX/DOCX、身份水印、盖章报名表、Qwen 凭证、125 逐题是否真实完成仍会明确列为人工/材料检查，
@@ -185,7 +215,9 @@ checker 不会把这些缺失项伪装成通过。
 `submission:case` 从指定 SQLite `runId` 生成同目录的 JSON 与 Markdown 代表性案例；它保留题号、终态、两轮
 原始 Artifact ID、反馈来源、修订字段、评分/用量/限制变化和 B1–B4 验收计数，并通过与公开 API 相同的白名单
 投影输出候选比较、两轮研究计划和评审反馈。prompt、内部 rationale、工具原始返回、内部错误正文或凭证不会进入
-导出；失败、缺失和 unknown 会显式保留。该命令只读 SQLite，不会启动模型。
+导出；失败、缺失和 unknown 会显式保留。该命令只读 SQLite，不会启动模型。默认模式仍是诊断模式；`--strict`
+要求 science125_id 属冻结题库、Run 已 completed、round1/round2 及 feedback/revision 事实齐全、verification 事件含
+B1/B2/B3/B4 且均通过、用量记录完整。严格门失败会在 JSON 中保留 `strict.reasons` 并返回非零。
 
 ## 验证
 

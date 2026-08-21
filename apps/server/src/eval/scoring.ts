@@ -25,6 +25,8 @@ import { basename, dirname, resolve } from "node:path";
 import { Database } from "bun:sqlite";
 import { parseArgs } from "node:util";
 
+import { resolveManifestRunScope, type ManifestRunScope } from "../reporting/manifest-scope.ts";
+
 export const MAX_SCORE = 5;
 
 /** 一个 Run 走完全程应当留下的五种 Artifact。 */
@@ -356,17 +358,45 @@ export function scoreRun(facts: RunFacts): RunScore {
   };
 }
 
+export type ScoringManifestScope = {
+  manifest_id: string;
+  included_run_count: number;
+  excluded_db_run_count: number;
+  excluded_db_run_ids: string[];
+};
+
+function manifestScopeReport(scope: ManifestRunScope): ScoringManifestScope {
+  return {
+    manifest_id: scope.manifestId,
+    included_run_count: scope.includedRunIds.length,
+    excluded_db_run_count: scope.excludedDbRunIds.length,
+    excluded_db_run_ids: [...scope.excludedDbRunIds],
+  };
+}
+
 /** 给库里每一个 Run 打分。只读打开，绝不会写到被评的库。 */
-export function loadRunScores(dbPath: string): RunScore[] {
+function loadRunScoresWithScope(
+  dbPath: string,
+  manifestId?: string,
+): { scores: RunScore[]; scope?: ScoringManifestScope } {
   const db = new Database(dbPath, { readonly: true });
   try {
+    const scope = manifestId === undefined ? undefined : resolveManifestRunScope(db, manifestId);
     const runIds = (db.prepare("SELECT id FROM runs ORDER BY created_at, rowid").all() as Row[]).map((row) =>
       textColumn(row, "id"),
     );
-    return runIds.map((runId) => scoreRun(collectRunFacts(db, runId)));
+    const scopedRunIds = scope === undefined ? runIds : runIds.filter((runId) => scope.includedRunIds.includes(runId));
+    return {
+      scores: scopedRunIds.map((runId) => scoreRun(collectRunFacts(db, runId))),
+      ...(scope === undefined ? {} : { scope: manifestScopeReport(scope) }),
+    };
   } finally {
     db.close();
   }
+}
+
+export function loadRunScores(dbPath: string, manifestId?: string): RunScore[] {
+  return loadRunScoresWithScope(dbPath, manifestId).scores;
 }
 
 // --- Markdown 报告 ------------------------------------------------------
@@ -414,7 +444,7 @@ function summaryRows(summary: ScoreSummary): string[] {
   ];
 }
 
-export function renderMarkdown(scores: readonly RunScore[], dbPath: string): string {
+export function renderMarkdown(scores: readonly RunScore[], dbPath: string, scope?: ScoringManifestScope): string {
   const generatedAt = new Date().toISOString();
   const completed = scores.filter((item) => item.status === "completed");
 
@@ -425,6 +455,14 @@ export function renderMarkdown(scores: readonly RunScore[], dbPath: string): str
     `- 数据源：单个跑批库 ${basename(dbPath)}`,
     `- 满分：${MAX_SCORE} 分/Run（Grounding 一票否决不占分，触发即归零）`,
     `- Run 总数：${scores.length}（其中 completed ${completed.length}）`,
+    ...(scope === undefined
+      ? []
+      : [
+          `- Manifest：\`${scope.manifest_id}\`；纳入 Run：${scope.included_run_count}；排除的 DB Run：${scope.excluded_db_run_count}`,
+          scope.excluded_db_run_count === 0
+            ? "- 排除的 DB Run IDs：无"
+            : `- 排除的 DB Run IDs：${scope.excluded_db_run_ids.join("、")}`,
+        ]),
     "",
     "全部判定由代码从 SQLite 读事实完成，不调用任何模型、不需要金标答案。",
     "",
@@ -479,22 +517,23 @@ export function renderMarkdown(scores: readonly RunScore[], dbPath: string): str
   return `${lines.join("\n").replace(/\s+$/, "")}\n`;
 }
 
-export function exportScoringMarkdown(dbPath: string, outputPath: string): void {
-  const markdown = renderMarkdown(loadRunScores(dbPath), dbPath);
+export function exportScoringMarkdown(dbPath: string, outputPath: string, manifestId?: string): void {
+  const loaded = loadRunScoresWithScope(dbPath, manifestId);
+  const markdown = renderMarkdown(loaded.scores, dbPath, loaded.scope);
   mkdirSync(dirname(resolve(outputPath)), { recursive: true });
   writeFileSync(outputPath, markdown, "utf8");
 }
 
 function main(): void {
   const { values } = parseArgs({
-    options: { db: { type: "string" }, out: { type: "string" } },
+    options: { db: { type: "string" }, out: { type: "string" }, "manifest-id": { type: "string" } },
   });
   // argparse 的 required=True 缺参数就退出；parseArgs 只会给出 undefined，所以自己挡。
   if (!values.db || !values.out) {
-    console.error("用法：scoring.ts --db <runs.db> --out <report.md>");
+    console.error("用法：scoring.ts --db <runs.db> --out <report.md> [--manifest-id <id>]");
     process.exit(2);
   }
-  exportScoringMarkdown(values.db, values.out);
+  exportScoringMarkdown(values.db, values.out, values["manifest-id"]);
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === import.meta.filename) {

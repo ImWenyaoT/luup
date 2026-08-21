@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,10 +11,16 @@ type TestContext = { onTestFinished: typeof onTestFinished };
 import {
   compactIds,
   createCampaignMemory,
+  existingBatchDatabaseArtifacts,
   MAX_CONCURRENCY,
   parseConcurrency,
   parseIds,
+  readPhaseBQuestionIds,
   validateBatchBunRuntime,
+  validateMemoryAblationLaunch,
+  validateMemoryAblationResume,
+  validateScience125Launch,
+  validateScience125Resume,
   readSourceIdentity,
   remainingPath,
   runBatch,
@@ -104,6 +111,24 @@ async function until(ready: () => boolean, timeoutMs = 5_000): Promise<void> {
 }
 
 const classes = (outcomes: QuestionOutcome[]) => outcomes.map((item) => `${item.status}/${item.classification ?? "-"}`);
+
+function gitCommand(repoRoot: string, args: string[]): string {
+  const result = spawnSync("git", args, { cwd: repoRoot, encoding: "utf8" });
+  assert.equal(result.status, 0, result.error?.message ?? result.stderr);
+  return result.stdout.trim();
+}
+
+function createCleanGitWorkspace(t: TestContext): { repoRoot: string; trackedPath: string; commit: string } {
+  const repoRoot = workspace(t);
+  const trackedPath = join(repoRoot, "tracked.txt");
+  writeFileSync(trackedPath, "initial\n");
+  gitCommand(repoRoot, ["init", "-q"]);
+  gitCommand(repoRoot, ["config", "user.email", "luup-tests@example.com"]);
+  gitCommand(repoRoot, ["config", "user.name", "Luup Tests"]);
+  gitCommand(repoRoot, ["add", "tracked.txt"]);
+  gitCommand(repoRoot, ["commit", "-qm", "initial"]);
+  return { repoRoot, trackedPath, commit: gitCommand(repoRoot, ["rev-parse", "HEAD"]) };
+}
 
 test("--ids accepts a single id, a list, a range, and any mixture", () => {
   assert.deepEqual(parseIds("61"), [61]);
@@ -214,6 +239,46 @@ test("a question that already has a completed run is never paid for twice", asyn
   assert.match(outcomes[0]!.detail, new RegExp(settled));
 });
 
+test("a completed skip is scoped to the memory arm in both directions", async () => {
+  for (const [firstArm, secondArm] of [
+    ["on", "off"],
+    ["off", "on"],
+  ] as const) {
+    const t = { onTestFinished };
+    const store = new SqliteStore(":memory:");
+    const asked: string[] = [];
+    const first = await batch(
+      t,
+      [1],
+      () => {
+        asked.push(firstArm);
+        return Promise.resolve({ status: "completed" as const, errorCode: null });
+      },
+      { store, memoryArm: firstArm },
+    ).report;
+    const firstRunId = first.outcomes[0]!.runId!;
+
+    assert.equal(store.completedRunForQuestionInArm(1, firstArm), firstRunId);
+    assert.equal(store.completedRunForQuestionInArm(1, secondArm), null);
+
+    const second = await batch(
+      t,
+      [1],
+      () => {
+        asked.push(secondArm);
+        return Promise.resolve({ status: "completed" as const, errorCode: null });
+      },
+      { store, memoryArm: secondArm },
+    ).report;
+    const secondRunId = second.outcomes[0]!.runId!;
+
+    assert.deepEqual(asked, [firstArm, secondArm]);
+    assert.notEqual(firstRunId, secondRunId);
+    assert.equal(store.snapshot(firstRunId)!.memory_arm, firstArm);
+    assert.equal(store.snapshot(secondRunId)!.memory_arm, secondArm);
+  }
+});
+
 test("a rejected review is owed, not skipped", async () => {
   const t = { onTestFinished };
   const store = new SqliteStore(":memory:");
@@ -275,6 +340,49 @@ test("source identity is this repo's commit, and null where git cannot answer", 
   assert.ok(identity, "仓库自身应当能采到出身");
   assert.match(identity.gitCommit, /^[0-9a-f]{40}$/);
   assert.equal(typeof identity.treeDirty, "boolean");
+});
+
+test("source identity ignores tracked memory evidence but catches source edits", () => {
+  const t = { onTestFinished };
+  const { repoRoot } = createCleanGitWorkspace(t);
+  const memoryPath = join(repoRoot, "memory", "questions", "q1.md");
+  const sourcePath = join(repoRoot, "apps", "server", "src", "placeholder.ts");
+  mkdirSync(join(repoRoot, "memory", "questions"), { recursive: true });
+  mkdirSync(join(repoRoot, "apps", "server", "src"), { recursive: true });
+  writeFileSync(memoryPath, "initial evidence\n");
+  writeFileSync(sourcePath, "export const value = 1;\n");
+  gitCommand(repoRoot, ["add", "memory", "apps"]);
+  gitCommand(repoRoot, ["commit", "-qm", "add runtime evidence and source"]);
+  const commit = gitCommand(repoRoot, ["rev-parse", "HEAD"]);
+
+  writeFileSync(memoryPath, "appended evidence\n");
+  assert.deepEqual(readSourceIdentity(repoRoot), { gitCommit: commit, treeDirty: false });
+
+  writeFileSync(sourcePath, "export const value = 2;\n");
+  assert.deepEqual(readSourceIdentity(repoRoot), { gitCommit: commit, treeDirty: true });
+});
+
+test("one batch freezes source identity before a tracked campaign write", async () => {
+  const t = { onTestFinished };
+  const { repoRoot, trackedPath, commit } = createCleanGitWorkspace(t);
+  const store = new SqliteStore(":memory:");
+  const { report } = batch(
+    t,
+    [1, 2],
+    ({ questionId }) => {
+      if (questionId === 1) writeFileSync(trackedPath, "changed by the first question\n");
+      return Promise.resolve({ status: "completed" as const, errorCode: null });
+    },
+    { store, repoRoot },
+  );
+
+  const outcomes = (await report).outcomes;
+  const identities = outcomes.map((item) => store.batchRunFacts(item.runId!)!.sourceIdentity);
+  assert.deepEqual(identities, [
+    { gitCommit: commit, treeDirty: false },
+    { gitCommit: commit, treeDirty: false },
+  ]);
+  assert.equal(gitCommand(repoRoot, ["status", "--porcelain", "--untracked-files=no"]), "M tracked.txt");
 });
 
 test("one question's outage does not stop the batch", async () => {
@@ -516,6 +624,291 @@ test("dry-run CLI does not require a model credential", async () => {
   const dir = workspace(t);
   const code = await main(["--ids", "1", "--dry-run", "--db", join(dir, "runtime", "runs.db")]);
   assert.equal(code, 0);
+});
+
+test("formal Science-125 CLI requires an explicit confirmation before opening SQLite", async () => {
+  const t = { onTestFinished };
+  const dir = workspace(t);
+  const dbPath = join(dir, "runtime", "runs.db");
+  let output = "";
+  const originalWrite = process.stdout.write.bind(process.stdout) as typeof process.stdout.write;
+  process.stdout.write = ((chunk: unknown) => {
+    output += String(chunk);
+    return true;
+  }) as typeof process.stdout.write;
+  t.onTestFinished(() => {
+    process.stdout.write = originalWrite;
+  });
+
+  const code = await main(["--ids", "1-125", "--db", dbPath], { bunVersion: "1.4.0" });
+
+  assert.equal(code, 2);
+  assert.match(output, /--confirm-science125/);
+  assert.equal(existsSync(dbPath), false);
+});
+
+test("memory-off reads the registered Phase B cohort instead of accepting a hand-written subset", () => {
+  const ids = readPhaseBQuestionIds();
+  const clean = { gitCommit: "a".repeat(40), treeDirty: false };
+
+  assert.equal(ids.length, 30);
+  assert.deepEqual(
+    ids,
+    [...ids].sort((left, right) => left - right),
+  );
+  assert.equal(
+    validateMemoryAblationLaunch({
+      questionIds: ids,
+      protocolQuestionIds: ids,
+      dryRun: false,
+      confirmed: true,
+      sourceIdentity: clean,
+    }),
+    null,
+  );
+  assert.match(
+    validateMemoryAblationLaunch({
+      questionIds: [1],
+      protocolQuestionIds: ids,
+      dryRun: false,
+      confirmed: true,
+      sourceIdentity: clean,
+    }) ?? "",
+    /精确匹配.*30 题/,
+  );
+});
+
+test("memory-off is fail-closed before SQLite for confirmation, ids, and source identity", async () => {
+  const clean = { gitCommit: "a".repeat(40), treeDirty: false };
+  const ids = readPhaseBQuestionIds();
+  assert.match(
+    validateMemoryAblationLaunch({
+      questionIds: ids,
+      protocolQuestionIds: ids,
+      dryRun: false,
+      confirmed: false,
+      sourceIdentity: clean,
+    }) ?? "",
+    /--confirm-memory-ablation/,
+  );
+  assert.match(
+    validateMemoryAblationLaunch({
+      questionIds: null,
+      protocolQuestionIds: ids,
+      dryRun: false,
+      confirmed: true,
+      sourceIdentity: clean,
+    }) ?? "",
+    /--ids/,
+  );
+  assert.match(
+    validateMemoryAblationLaunch({
+      questionIds: ids,
+      protocolQuestionIds: ids,
+      dryRun: false,
+      confirmed: true,
+      sourceIdentity: null,
+    }) ?? "",
+    /source identity/,
+  );
+  assert.match(
+    validateMemoryAblationLaunch({
+      questionIds: ids,
+      protocolQuestionIds: ids,
+      dryRun: false,
+      confirmed: true,
+      sourceIdentity: { ...clean, treeDirty: true },
+    }) ?? "",
+    /tree clean/,
+  );
+  assert.equal(
+    validateMemoryAblationLaunch({
+      questionIds: [1],
+      protocolQuestionIds: ids,
+      dryRun: true,
+      confirmed: false,
+      sourceIdentity: null,
+    }),
+    null,
+  );
+
+  const t = { onTestFinished };
+  const dir = workspace(t);
+  const dbPath = join(dir, "runtime", "runs.db");
+  let output = "";
+  const originalWrite = process.stdout.write.bind(process.stdout) as typeof process.stdout.write;
+  process.stdout.write = ((chunk: unknown) => {
+    output += String(chunk);
+    return true;
+  }) as typeof process.stdout.write;
+  t.onTestFinished(() => {
+    process.stdout.write = originalWrite;
+  });
+  const missingConfirmationDb = join(dir, "runtime", "missing-confirmation.db");
+  const missingConfirmationCode = await main(["--ids", "1", "--no-memory", "--db", missingConfirmationDb], {
+    bunVersion: "1.4.0",
+  });
+  assert.equal(missingConfirmationCode, 2);
+  assert.match(output, /--confirm-memory-ablation/);
+  assert.equal(existsSync(missingConfirmationDb), false);
+
+  const code = await main(["--ids", "1", "--no-memory", "--confirm-memory-ablation", "--db", dbPath], {
+    bunVersion: "1.4.0",
+  });
+  assert.equal(code, 2);
+  assert.match(output, /精确匹配.*30 题/);
+  assert.equal(existsSync(dbPath), false);
+});
+
+test("memory-off resume requires the same clean commit and off arm", () => {
+  const current = { gitCommit: "a".repeat(40), treeDirty: false };
+  const run = {
+    runId: "run-1",
+    science125Id: 1,
+    status: "completed" as const,
+    errorCode: null,
+    sourceIdentity: current,
+    memoryArm: "off" as const,
+  };
+  assert.equal(validateMemoryAblationResume(current, []), null);
+  assert.equal(validateMemoryAblationResume(current, [run]), null);
+  assert.match(validateMemoryAblationResume(null, [run]) ?? "", /source identity/);
+  assert.match(validateMemoryAblationResume({ ...current, treeDirty: true }, [run]) ?? "", /tree clean/);
+  assert.match(
+    validateMemoryAblationResume(current, [
+      { ...run, sourceIdentity: { gitCommit: "b".repeat(40), treeDirty: false } },
+    ]) ?? "",
+    /commit/,
+  );
+  assert.match(
+    validateMemoryAblationResume(current, [{ ...run, sourceIdentity: { ...current, treeDirty: true } }]) ?? "",
+    /dirty/,
+  );
+  assert.match(validateMemoryAblationResume(current, [{ ...run, memoryArm: "on" }]) ?? "", /memory arm/);
+});
+
+test("formal Science-125 launch requires clean source and a fresh database, while resume may reuse both", () => {
+  const ids = Array.from({ length: 125 }, (_, index) => index + 1);
+  const base = { questionIds: ids, dryRun: false, confirmed: true, manifestId: null };
+
+  assert.match(
+    validateScience125Launch({ ...base, sourceIdentity: null, existingDatabaseArtifacts: [] }) ?? "",
+    /source identity/,
+  );
+  assert.match(
+    validateScience125Launch({
+      ...base,
+      sourceIdentity: { gitCommit: "a".repeat(40), treeDirty: true },
+      existingDatabaseArtifacts: [],
+    }) ?? "",
+    /tree clean/,
+  );
+  assert.match(
+    validateScience125Launch({
+      ...base,
+      sourceIdentity: { gitCommit: "a".repeat(40), treeDirty: false },
+      existingDatabaseArtifacts: ["runs.db-wal"],
+    }) ?? "",
+    /runs\.db-wal/,
+  );
+  assert.equal(
+    validateScience125Launch({
+      ...base,
+      sourceIdentity: { gitCommit: "a".repeat(40), treeDirty: false },
+      existingDatabaseArtifacts: [],
+    }),
+    null,
+  );
+  assert.equal(
+    validateScience125Launch({
+      ...base,
+      manifestId: "manifest-1",
+      sourceIdentity: null,
+      existingDatabaseArtifacts: ["runs.db", "runs.db-wal"],
+    }),
+    null,
+  );
+  assert.match(
+    validateScience125Launch({
+      ...base,
+      confirmed: false,
+      manifestId: "manifest-1",
+      sourceIdentity: null,
+      existingDatabaseArtifacts: ["runs.db"],
+    }) ?? "",
+    /--confirm-science125/,
+  );
+  assert.equal(
+    validateScience125Launch({
+      ...base,
+      dryRun: true,
+      confirmed: false,
+      sourceIdentity: null,
+      existingDatabaseArtifacts: ["runs.db"],
+    }),
+    null,
+  );
+  assert.equal(
+    validateScience125Launch({
+      ...base,
+      questionIds: [1, 2],
+      confirmed: false,
+      sourceIdentity: null,
+      existingDatabaseArtifacts: ["runs.db"],
+    }),
+    null,
+  );
+});
+
+test("formal Science-125 database guard detects SQLite and writer-lock sidecars", () => {
+  const t = { onTestFinished };
+  const dir = workspace(t);
+  const dbPath = join(dir, "runs.db");
+  writeFileSync(`${dbPath}-wal`, "old");
+  writeFileSync(`${dbPath}.writer-lock.db-journal`, "old");
+
+  assert.deepEqual(existingBatchDatabaseArtifacts(dbPath), [`${dbPath}-wal`, `${dbPath}.writer-lock.db-journal`]);
+});
+
+test("formal Science-125 resume keeps one clean source cohort and one memory arm", () => {
+  const ids = Array.from({ length: 125 }, (_, index) => index + 1);
+  const current = { gitCommit: "a".repeat(40), treeDirty: false };
+  const run = {
+    runId: "run-1",
+    science125Id: 1,
+    status: "completed" as const,
+    errorCode: null,
+    sourceIdentity: current,
+    memoryArm: "on" as const,
+  };
+
+  assert.equal(
+    validateScience125Resume(ids, current, "on", []),
+    null,
+    "empty manifest only needs current clean source",
+  );
+  assert.equal(validateScience125Resume(ids, current, "on", [run]), null);
+  assert.match(validateScience125Resume(ids, null, "on", [run]) ?? "", /source identity/);
+  assert.match(validateScience125Resume(ids, { ...current, treeDirty: true }, "on", [run]) ?? "", /tree clean/);
+  assert.match(validateScience125Resume(ids, current, "on", [{ ...run, sourceIdentity: null }]) ?? "", /run-1/);
+  assert.match(
+    validateScience125Resume(ids, current, "on", [
+      { ...run, sourceIdentity: { gitCommit: "b".repeat(40), treeDirty: false } },
+    ]) ?? "",
+    /commit/,
+  );
+  assert.match(
+    validateScience125Resume(ids, current, "on", [
+      { ...run, sourceIdentity: { gitCommit: current.gitCommit, treeDirty: true } },
+    ]) ?? "",
+    /dirty/,
+  );
+  assert.match(validateScience125Resume(ids, current, "off", [run]) ?? "", /memory arm/);
+  assert.equal(
+    validateScience125Resume([1, 2], null, "off", [{ ...run, sourceIdentity: null, memoryArm: null }]),
+    null,
+    "subset resume behavior is unchanged",
+  );
 });
 
 test("formal live batch requires the pinned Bun runtime, while dry-run is portable", () => {

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { onTestFinished, test } from "bun:test";
 
 import type { DomainArtifact } from "../src/agent/contracts.ts";
+import { BatchManifest } from "../src/batch/manifest.ts";
 import {
   buildUsageReport,
   exportUsageReport,
@@ -88,6 +89,36 @@ test("usage report emits run/question/role records and keeps configured cost met
     source: "explicit test price sheet",
     unit: "per_million_tokens",
   });
+});
+
+test("usage report can be scoped to a manifest and reports excluded database runs", () => {
+  const path = databasePath();
+  const store = makeStore(path);
+  const includedRun = completedRun(store, 1, { input: 100, output: 40 });
+  const excludedRun = completedRun(store, 2, { input: 200, output: 80 });
+  const manifest = BatchManifest.create(store, [1]);
+  manifest.record({ questionId: 1, status: "success", runId: includedRun });
+
+  const report = buildUsageReport(path, undefined, "2026-08-22T00:00:00.000Z", manifest.id);
+
+  assert.equal(report.runs.length, 1);
+  assert.equal(report.runs[0]!.run_id, includedRun);
+  assert.deepEqual(report.manifest_scope, {
+    manifest_id: manifest.id,
+    included_run_count: 1,
+    excluded_db_run_count: 1,
+    excluded_db_run_ids: [excludedRun],
+  });
+});
+
+test("usage report rejects an unknown or run-less manifest instead of silently exporting an empty cohort", () => {
+  const path = databasePath();
+  const store = makeStore(path);
+  assert.throws(() => buildUsageReport(path, undefined, undefined, "does-not-exist"), /manifest.*not found/i);
+
+  const manifest = BatchManifest.create(store, [1]);
+  manifest.record({ questionId: 1, status: "success" });
+  assert.throws(() => buildUsageReport(path, undefined, undefined, manifest.id), /no valid run/i);
 });
 
 test("missing usage is represented as null at every aggregate instead of zero", () => {

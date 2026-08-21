@@ -466,3 +466,100 @@ test("representative export writes JSON and Markdown side by side", () => {
   assert.equal(JSON.parse(readFileSync(jsonPath, "utf8")).run.status, "running");
   assert.equal(readFileSync(markdownPath, "utf8"), renderRepresentativeCaseMarkdown(result));
 });
+
+test("strict representative export requires the frozen question and auditable two-round facts", () => {
+  const store = testStore();
+  const runId = store.createRun("Science-125 #1", { science125Id: 1 });
+  const attemptId = store.startAttempt(runId, "research-plan");
+  const planId = store.publishArtifact(runId, attemptId, { artifact_type: "research-plan" } as never, [], 0).id;
+  store.emit(runId, "evaluation.round", {
+    round: 1,
+    phase: "raw",
+    action: "revise",
+    plan_artifact_id: planId,
+    review_artifact_id: planId,
+    raw_plan_artifact_id: planId,
+    raw_review_artifact_id: planId,
+  });
+  store.emit(runId, "feedback.received", {
+    round: 1,
+    source: "model_reviewer",
+    feedback_source: "auto",
+    action: "revise",
+    feedback_count: 1,
+    feedback_artifact_id: planId,
+  });
+  store.emit(runId, "revision.applied", {
+    round: 2,
+    from_artifact_id: planId,
+    to_artifact_id: planId,
+    changed_fields: "execution_plan",
+  });
+  store.emit(runId, "evaluation.round", {
+    round: 2,
+    phase: "revision",
+    action: "accept",
+    plan_artifact_id: planId,
+    review_artifact_id: planId,
+    raw_plan_artifact_id: planId,
+    raw_review_artifact_id: planId,
+  });
+  store.emit(runId, "verification.references", {
+    ok: true,
+    checks: [
+      { id: "B1.paper", pass: true },
+      { id: "B2.paper", pass: true },
+      { id: "B3.count", pass: true },
+      { id: "B4.paper", pass: true },
+    ],
+  });
+  store.emit(runId, "sdk.usage", {
+    agent: "researcher",
+    input_tokens: 10,
+    output_tokens: 5,
+    total_tokens: 15,
+  });
+  store.finishRun(runId, "completed", { finalArtifactId: planId });
+
+  const dir = mkdtempSync(join(tmpdir(), "luup-representative-case-strict-"));
+  onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
+  const result = exportRepresentativeCase({
+    dbPath: ":memory:",
+    runId,
+    jsonPath: join(dir, "case.json"),
+    markdownPath: join(dir, "case.md"),
+    strict: true,
+    store,
+    generatedAt: "2026-08-22T00:00:00.000Z",
+  });
+
+  assert.equal(result.strict?.passed, true);
+  assert.deepEqual(result.strict?.reasons, []);
+  assert.equal(JSON.parse(readFileSync(join(dir, "case.json"), "utf8")).strict.passed, true);
+});
+
+test("strict representative export reports every missing readiness fact", () => {
+  const store = testStore();
+  const runId = store.createRun("not a frozen question", { science125Id: 999 });
+  const dir = mkdtempSync(join(tmpdir(), "luup-representative-case-strict-fail-"));
+  onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
+
+  const result = exportRepresentativeCase({
+    dbPath: ":memory:",
+    runId,
+    jsonPath: join(dir, "case.json"),
+    strict: true,
+    store,
+    generatedAt: "2026-08-22T00:00:00.000Z",
+  });
+
+  assert.equal(result.strict?.passed, false);
+  assert.ok(result.strict?.reasons.includes("science125_id_not_in_frozen_catalog"));
+  assert.ok(result.strict?.reasons.includes("run_not_completed"));
+  assert.ok(result.strict?.reasons.includes("round1_missing"));
+  assert.ok(result.strict?.reasons.includes("round2_missing"));
+  assert.ok(result.strict?.reasons.includes("feedback_missing"));
+  assert.ok(result.strict?.reasons.includes("revision_missing"));
+  assert.ok(result.strict?.reasons.includes("verification_b1_missing"));
+  assert.ok(result.strict?.reasons.includes("usage_missing_or_unknown"));
+});

@@ -28,6 +28,8 @@ export type BatchRunFacts = {
   science125Id: number | null;
   status: RunStatus;
   errorCode: string | null;
+  sourceIdentity: SourceIdentity | null;
+  memoryArm: MemoryArm | null;
 };
 
 const shortId = () => randomUUID().replaceAll("-", "");
@@ -280,15 +282,36 @@ export class SqliteStore {
     return row ? String(row.id) : null;
   }
 
+  /**
+   * 续跑/消融的唯一 skip 判据：completed Run 必须属于同一 memory arm。
+   *
+   * `completedRunForQuestion` 保留给非批跑的历史查询；批跑不能把 on 当成
+   * off（或把无臂的单跑当成任一实验臂），否则两臂无法形成可解释的配对。
+   */
+  completedRunForQuestionInArm(science125Id: number, memoryArm: MemoryArm | null): string | null {
+    const row = this.#get(
+      "SELECT id FROM runs WHERE science125_id = ? AND status = 'completed' AND memory_arm IS ? " +
+        "ORDER BY created_at DESC, rowid DESC LIMIT 1",
+      science125Id,
+      memoryArm,
+    );
+    return row ? String(row.id) : null;
+  }
+
   /** Read the terminal facts for a manifest record without exposing the raw run row. */
   batchRunFacts(runId: string): BatchRunFacts | null {
-    const row = this.#get("SELECT id, science125_id, status, error_code FROM runs WHERE id = ?", runId);
+    const row = this.#get(
+      "SELECT id, science125_id, status, error_code, source_identity_json, memory_arm FROM runs WHERE id = ?",
+      runId,
+    );
     if (!row) return null;
     return {
       runId: String(row.id),
       science125Id: typeof row.science125_id === "number" ? row.science125_id : null,
       status: String(row.status) as RunStatus,
       errorCode: row.error_code === null ? null : String(row.error_code),
+      sourceIdentity: parseSourceIdentity(row.source_identity_json),
+      memoryArm: row.memory_arm === "on" || row.memory_arm === "off" ? row.memory_arm : null,
     };
   }
 
@@ -636,6 +659,28 @@ export class SqliteStore {
       recent_events: this.eventsAfter(runId, 0),
     };
   }
+}
+
+function parseSourceIdentity(value: unknown): SourceIdentity | null {
+  if (typeof value !== "string") return null;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      typeof (parsed as Record<string, unknown>).gitCommit === "string" &&
+      (parsed as Record<string, unknown>).gitCommit !== "" &&
+      typeof (parsed as Record<string, unknown>).treeDirty === "boolean"
+    ) {
+      return {
+        gitCommit: (parsed as Record<string, unknown>).gitCommit as string,
+        treeDirty: (parsed as Record<string, unknown>).treeDirty as boolean,
+      };
+    }
+  } catch {
+    // Corrupt provenance is unknown; resume guards fail closed on null.
+  }
+  return null;
 }
 
 /** 把一个还在 running 的 Run 及其 Attempt 就地判失败。

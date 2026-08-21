@@ -22,6 +22,8 @@ import { dirname, resolve } from "node:path";
 import { Database } from "bun:sqlite";
 import { parseArgs } from "node:util";
 
+import { resolveManifestRunScope, type ManifestRunScope } from "../reporting/manifest-scope.ts";
+
 /** 不反映提案质量的失败类别：环境、供应商、凭据、超时 —— 换个模型再跑一遍也修不掉，
  *  只有改环境才修得掉。质量分母把它们整个排除。
  *
@@ -78,7 +80,9 @@ export type RunFacts = {
   readonly deliverable: boolean;
   readonly attempts: number;
   readonly correctedAttempts: number;
-  readonly corrections: number;
+  readonly corrections: number | null;
+  /** Attempts whose correction count was missing or malformed. */
+  readonly unknownCorrectionAttempts: number;
   /** 走到过 Reviewer（有一个完成的 reviewer Attempt）。 */
   readonly reviewed: boolean;
   /** 终态是 review_rejected：Reviewer 的否决没有被一次修订救回来。 */
@@ -105,7 +109,8 @@ export function ablationEffective(facts: RunFacts): boolean | null {
 // --- 从 SQLite 读事实 ---------------------------------------------------
 
 const text = (value: unknown): string | null => (typeof value === "string" && value ? value : null);
-const count = (value: unknown): number => (typeof value === "number" ? value : 0);
+const count = (value: unknown): number | null =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
 
 function injectionCount(row: Row | undefined): number | null {
   if (!row) return null;
@@ -138,30 +143,43 @@ function cohortLabel(raw: unknown): string {
 }
 
 /** 把一个库里所有 Run 读成 RunFacts。只读打开，绝不会写到被评的库。 */
-export function loadRunFacts(dbPath: string): RunFacts[] {
+export function loadRunFacts(dbPath: string, manifestId?: string): RunFacts[] {
   const db = new Database(dbPath, { readonly: true });
   try {
-    // memory_arm 是 Wave 2 才补的列。评估是只读的，补不了列，所以缺列时读 null
-    // 而不是让整份报告炸掉 —— 老库仍要能被读出交付率。
-    const columns = new Set(
-      (db.prepare("PRAGMA table_info(runs)").all() as Array<{ name: string }>).map((item) => item.name),
-    );
-    const arm = columns.has("memory_arm") ? "memory_arm" : "NULL AS memory_arm";
-    const runs = db
-      .prepare(
-        `SELECT id, science125_id, status, error_code, source_identity_json, ${arm} ` +
-          "FROM runs ORDER BY created_at, rowid",
-      )
-      .all() as Row[];
-    return runs.map((run) => collectRunFacts(db, run));
+    const scope = manifestId === undefined ? undefined : resolveManifestRunScope(db, manifestId);
+    return loadRunFactsFromDatabase(db, scope);
   } finally {
     db.close();
   }
 }
 
-function collectRunFacts(db: Database, run: Row): RunFacts {
+function loadRunFactsFromDatabase(db: Database, scope?: ManifestRunScope): RunFacts[] {
+  // memory_arm 是 Wave 2 才补的列。评估是只读的，补不了列，所以缺列时读 null
+  // 而不是让整份报告炸掉 —— 老库仍要能被读出交付率。
+  const columns = new Set(
+    (db.prepare("PRAGMA table_info(runs)").all() as Array<{ name: string }>).map((item) => item.name),
+  );
+  const arm = columns.has("memory_arm") ? "memory_arm" : "NULL AS memory_arm";
+  const attemptColumns = new Set(
+    (db.prepare("PRAGMA table_info(attempts)").all() as Array<{ name: string }>).map((item) => item.name),
+  );
+  const corrections = attemptColumns.has("corrections") ? "corrections" : "NULL AS corrections";
+  const runs = db
+    .prepare(
+      `SELECT id, science125_id, status, error_code, source_identity_json, ${arm} ` +
+        "FROM runs ORDER BY created_at, rowid",
+    )
+    .all() as Row[];
+  return runs
+    .filter((run) => scope === undefined || scope.includedRunIds.includes(String(run.id)))
+    .map((run) => collectRunFacts(db, run, corrections));
+}
+
+function collectRunFacts(db: Database, run: Row, correctionsColumn: string): RunFacts {
   const runId = String(run.id);
-  const attempts = db.prepare("SELECT role, status, corrections FROM attempts WHERE run_id = ?").all(runId) as Row[];
+  const attempts = db
+    .prepare(`SELECT role, status, ${correctionsColumn} FROM attempts WHERE run_id = ?`)
+    .all(runId) as Row[];
   const queries = (
     db
       .prepare(
@@ -175,6 +193,9 @@ function collectRunFacts(db: Database, run: Row): RunFacts {
     .get(runId, INJECTION_EVENT) as Row | undefined;
 
   const questionId = run.science125_id;
+  const correctionValues = attempts.map((item) => count(item.corrections));
+  const unknownCorrectionAttempts = correctionValues.filter((value) => value === null).length;
+  const knownCorrections = correctionValues.filter((value): value is number => value !== null);
   return {
     runId,
     questionId: typeof questionId === "number" ? questionId : null,
@@ -184,8 +205,9 @@ function collectRunFacts(db: Database, run: Row): RunFacts {
     cohort: cohortLabel(run.source_identity_json),
     deliverable: run.status === "completed",
     attempts: attempts.length,
-    correctedAttempts: attempts.filter((item) => count(item.corrections) > 0).length,
-    corrections: attempts.reduce((sum, item) => sum + count(item.corrections), 0),
+    correctedAttempts: knownCorrections.filter((value) => value > 0).length,
+    corrections: unknownCorrectionAttempts > 0 ? null : knownCorrections.reduce((sum, value) => sum + value, 0),
+    unknownCorrectionAttempts,
     reviewed: attempts.some((item) => item.role === "reviewer" && item.status === "completed"),
     rejected: run.status === "review_rejected",
     arxivCalls: queries.length,
@@ -260,12 +282,19 @@ export function passSquared(facts: readonly RunFacts[]) {
 /** 结构化纠错的用量。分母是 Attempt，不是 Run：纠错是 Attempt 内的第二次调用。 */
 export function correctionRate(facts: readonly RunFacts[]) {
   const attempts = facts.reduce((sum, item) => sum + item.attempts, 0);
+  const unknownAttempts = facts.reduce((sum, item) => sum + item.unknownCorrectionAttempts, 0);
+  const knownAttempts = attempts - unknownAttempts;
   const corrected = facts.reduce((sum, item) => sum + item.correctedAttempts, 0);
+  const knownCorrections = facts.every((item) => item.corrections !== null)
+    ? facts.reduce((sum, item) => sum + (item.corrections ?? 0), 0)
+    : null;
   return {
     attempts,
+    knownAttempts,
+    unknownAttempts,
     correctedAttempts: corrected,
-    corrections: facts.reduce((sum, item) => sum + item.corrections, 0),
-    ...proportion(corrected, attempts),
+    corrections: knownCorrections,
+    ...proportion(corrected, knownAttempts),
   };
 }
 
@@ -451,10 +480,26 @@ export function memoryArmComparison(facts: readonly RunFacts[]): McNemar | null 
 
 export type MetricsReport = ReturnType<typeof evaluate>;
 
-/** 一整份离线报告。输入是一组 RunFacts，输出是纯 JSON —— 不读时钟、不碰网络。 */
-export function evaluate(facts: readonly RunFacts[], source: string) {
-  const identified = facts.filter((item) => item.questionId !== null);
+export type MetricsManifestScope = {
+  manifest_id: string;
+  included_run_count: number;
+  excluded_db_run_count: number;
+  excluded_db_run_ids: string[];
+};
+
+function manifestScopeReport(scope: ManifestRunScope): MetricsManifestScope {
   return {
+    manifest_id: scope.manifestId,
+    included_run_count: scope.includedRunIds.length,
+    excluded_db_run_count: scope.excludedDbRunIds.length,
+    excluded_db_run_ids: [...scope.excludedDbRunIds],
+  };
+}
+
+/** 一整份离线报告。输入是一组 RunFacts，输出是纯 JSON —— 不读时钟、不碰网络。 */
+export function evaluate(facts: readonly RunFacts[], source: string, scope?: ManifestRunScope) {
+  const identified = facts.filter((item) => item.questionId !== null);
+  const report = {
     source,
     runs: facts.length,
     statistics: {
@@ -469,10 +514,19 @@ export function evaluate(facts: readonly RunFacts[], source: string) {
     },
     pairedComparison: { memoryArms: memoryArmComparison(identified) },
   };
+  return (scope === undefined ? report : { ...report, manifest_scope: manifestScopeReport(scope) }) as typeof report & {
+    manifest_scope?: MetricsManifestScope;
+  };
 }
 
-export function evaluateDatabase(dbPath: string): MetricsReport {
-  return evaluate(loadRunFacts(dbPath), resolve(dbPath));
+export function evaluateDatabase(dbPath: string, manifestId?: string): MetricsReport {
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    const scope = manifestId === undefined ? undefined : resolveManifestRunScope(db, manifestId);
+    return evaluate(loadRunFactsFromDatabase(db, scope), resolve(dbPath), scope);
+  } finally {
+    db.close();
+  }
 }
 
 // --- Markdown 报告 ------------------------------------------------------
@@ -488,6 +542,15 @@ export function renderMarkdown(report: MetricsReport): string {
     "",
     `- 数据源：\`${report.source}\``,
     `- Run 总数：${report.runs}`,
+    ...(report.manifest_scope === undefined
+      ? []
+      : [
+          `- Manifest：\`${report.manifest_scope.manifest_id}\`；纳入 Run：${report.manifest_scope.included_run_count}；` +
+            `排除的 DB Run：${report.manifest_scope.excluded_db_run_count}`,
+          report.manifest_scope.excluded_db_run_count === 0
+            ? "- 排除的 DB Run IDs：无"
+            : `- 排除的 DB Run IDs：${report.manifest_scope.excluded_db_run_ids.join("、")}`,
+        ]),
     "",
     "## 交付率（M4）",
     "",
@@ -511,8 +574,8 @@ export function renderMarkdown(report: MetricsReport): string {
     "| --- | ---: | ---: |",
     `| Pass^2（同题相邻两 run，机会样本） | ${stats.passSquared.both} / ${stats.passSquared.pairs} | ` +
       `${pct(stats.passSquared.rate)} |`,
-    `| 结构化纠错 | ${stats.corrections.correctedAttempts} / ${stats.corrections.attempts} Attempt | ` +
-      `${pct(stats.corrections.rate)} |`,
+    `| 结构化纠错 | ${stats.corrections.correctedAttempts} / ${stats.corrections.knownAttempts} 已知 Attempt | ` +
+      `${pct(stats.corrections.rate)}（未知 ${stats.corrections.unknownAttempts}） |`,
     `| Reviewer 否决 | ${stats.review.rejected} / ${stats.review.reviewed} 已评审 | ${pct(stats.review.rate)} |`,
     `| 重复检索 | ${stats.searchHealth.arxivCalls - stats.searchHealth.distinctQueries} / ` +
       `${stats.searchHealth.arxivCalls} 次 arXiv | ${pct(stats.searchHealth.repeatedRate)} |`,
@@ -564,12 +627,14 @@ export function renderMarkdown(report: MetricsReport): string {
 }
 
 function main(): void {
-  const { values } = parseArgs({ options: { db: { type: "string" }, out: { type: "string" } } });
+  const { values } = parseArgs({
+    options: { db: { type: "string" }, out: { type: "string" }, "manifest-id": { type: "string" } },
+  });
   if (!values.db) {
-    console.error("用法：metrics.ts --db <runs.db> [--out <report.md>]");
+    console.error("用法：metrics.ts --db <runs.db> [--out <report.md>] [--manifest-id <id>]");
     process.exit(2);
   }
-  const report = evaluateDatabase(values.db);
+  const report = evaluateDatabase(values.db, values["manifest-id"]);
   if (values.out) {
     mkdirSync(dirname(resolve(values.out)), { recursive: true });
     writeFileSync(values.out, renderMarkdown(report), "utf8");

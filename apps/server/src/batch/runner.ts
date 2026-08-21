@@ -14,7 +14,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, relative, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { parseArgs } from "node:util";
@@ -28,7 +28,7 @@ import { findQuestion, science125Integrity, science125Text, type Science125Quest
 import type { StageExecutor } from "../roles.ts";
 import { modelConfigStatus } from "../seams/index.ts";
 import type { MemoryArm, SourceIdentity } from "../store/contracts.ts";
-import { SqliteStore } from "../store/store.ts";
+import { SqliteStore, type BatchRunFacts } from "../store/store.ts";
 
 /** 40 分钟还没终态的流水线是挂了，不是慢。
  *
@@ -153,6 +153,17 @@ export type BatchOptions = {
   log?: (line: string) => void;
 };
 
+/** Internal run options shared by every question in one batch.
+ *
+ * `sourceIdentity` is deliberately captured once by `runBatch`, before any
+ * question can write campaign memory or other tracked files.  Reading Git per
+ * question makes one logical cohort appear to come from different trees.
+ */
+type BatchQuestionOptions = BatchOptions & {
+  repoRoot: string;
+  sourceIdentity: SourceIdentity | null;
+};
+
 const RANGE = /^(\d+)-(\d+)$/;
 const SINGLE = /^\d+$/;
 
@@ -202,6 +213,13 @@ function sameIds(left: readonly number[], right: readonly number[]): boolean {
   return left.every((id, index) => id === right[index]);
 }
 
+function sameIdSet(left: readonly number[], right: readonly number[]): boolean {
+  return sameIds(
+    [...left].sort((a, b) => a - b),
+    [...right].sort((a, b) => a - b),
+  );
+}
+
 /** 批次启动前一次性确认所有题号，避免滚动池已经为前面的题花钱后才发现尾部写错。 */
 export function preflightQuestionIds(questionIds: readonly number[]): void {
   const integrity = science125Integrity();
@@ -222,15 +240,180 @@ export function preflightQuestionIds(questionIds: readonly number[]): void {
   }
 }
 
+export type Science125LaunchPreflight = {
+  questionIds: readonly number[];
+  dryRun: boolean;
+  confirmed: boolean;
+  manifestId: string | null;
+  sourceIdentity: SourceIdentity | null;
+  existingDatabaseArtifacts: readonly string[];
+};
+
+type RegisteredExperimentProtocol = {
+  phase_b_subset?: {
+    question_ids?: unknown;
+  };
+};
+
+/** Read the registered Phase B cohort instead of duplicating its IDs in a CLI guard. */
+const MODULE_REPO_ROOT = resolve(import.meta.dir, "../../../..");
+
+export function readPhaseBQuestionIds(repoRoot: string = MODULE_REPO_ROOT): number[] {
+  const path = resolve(repoRoot, "docs/design/experiment-protocol.json");
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(path, "utf8")) as unknown;
+  } catch (error) {
+    throw new Error(`无法读取预注册实验协议 ${path}：${describe(error)}`);
+  }
+  const subset =
+    typeof raw === "object" && raw !== null && !Array.isArray(raw)
+      ? (raw as RegisteredExperimentProtocol).phase_b_subset
+      : undefined;
+  const ids = subset?.question_ids;
+  const numericIds =
+    Array.isArray(ids) && ids.every((id) => Number.isSafeInteger(id) && (id as number) >= 1) ? (ids as number[]) : null;
+  const sortedIds = numericIds === null ? null : [...numericIds].sort((left, right) => left - right);
+  if (
+    numericIds === null ||
+    numericIds.length !== 30 ||
+    new Set(numericIds).size !== numericIds.length ||
+    !sameIds(numericIds, sortedIds!)
+  ) {
+    throw new Error(`预注册实验协议的 phase_b_subset.question_ids 必须是 30 个升序且唯一的正整数。`);
+  }
+  return [...numericIds];
+}
+
+export type MemoryAblationLaunchPreflight = {
+  questionIds: readonly number[] | null;
+  protocolQuestionIds: readonly number[];
+  dryRun: boolean;
+  confirmed: boolean;
+  sourceIdentity: SourceIdentity | null;
+};
+
+/** Guard the paid memory-off arm before opening SQLite or constructing a model executor. */
+export function validateMemoryAblationLaunch(options: MemoryAblationLaunchPreflight): string | null {
+  if (options.dryRun) return null;
+  if (!options.confirmed) {
+    return "非 dry-run 的 memory-off 消融必须显式传 --confirm-memory-ablation。";
+  }
+  if (options.questionIds === null) {
+    return "memory-off 消融必须显式传 --ids，并与预注册 Phase B 的 30 题完全一致；续跑也不能省略 --ids。";
+  }
+  if (!sameIdSet(options.questionIds, options.protocolQuestionIds)) {
+    return `memory-off 消融的 --ids 必须精确匹配预注册 Phase B 30 题：${compactIds(options.protocolQuestionIds)}。`;
+  }
+  if (options.sourceIdentity === null) {
+    return "memory-off 消融无法取得 source identity；请从可识别的 Git 仓库启动。";
+  }
+  if (options.sourceIdentity.treeDirty) {
+    return "memory-off 消融要求当前 git tree clean；请先固定待运行版本。";
+  }
+  return null;
+}
+
+/** A memory-off resume may only continue the same clean commit and the same arm. */
+export function validateMemoryAblationResume(
+  currentSourceIdentity: SourceIdentity | null,
+  existingRuns: readonly BatchRunFacts[],
+): string | null {
+  if (currentSourceIdentity === null) {
+    return "memory-off 消融续跑无法取得 source identity；请从可识别的 Git 仓库启动。";
+  }
+  if (currentSourceIdentity.treeDirty) {
+    return "memory-off 消融续跑要求当前 git tree clean。";
+  }
+  for (const run of existingRuns) {
+    if (run.sourceIdentity === null) return `memory-off 消融续跑中 run ${run.runId} 缺少 source identity。`;
+    if (run.sourceIdentity.treeDirty) return `memory-off 消融续跑中 run ${run.runId} 来自 dirty tree。`;
+    if (run.sourceIdentity.gitCommit !== currentSourceIdentity.gitCommit) {
+      return `memory-off 消融续跑中 run ${run.runId} 的 commit 与当前 commit 不一致。`;
+    }
+    if (run.memoryArm !== "off") {
+      return `memory-off 消融续跑中 run ${run.runId} 的 memory arm 不是 off。`;
+    }
+  }
+  return null;
+}
+
+/** Guard the one operation that can spend the complete official Science-125 budget. */
+export function validateScience125Launch(options: Science125LaunchPreflight): string | null {
+  if (options.dryRun || !isCompleteScience125(options.questionIds)) return null;
+  if (!options.confirmed) {
+    return "正式 Science-125 全量批跑必须显式传 --confirm-science125。";
+  }
+  // A named manifest is an explicit resume. Its existing database is the checkpoint, not contamination.
+  if (options.manifestId !== null) return null;
+  if (options.sourceIdentity === null) {
+    return "首次正式 Science-125 批跑无法取得 source identity；请从可识别的 Git 仓库启动。";
+  }
+  if (options.sourceIdentity.treeDirty) {
+    return "首次正式 Science-125 批跑要求 git tree clean；请先固定待运行版本。";
+  }
+  if (options.existingDatabaseArtifacts.length > 0) {
+    return `首次正式 Science-125 批跑拒绝使用已存在的 DB/sidecar：${options.existingDatabaseArtifacts.join(", ")}`;
+  }
+  return null;
+}
+
+/** A formal resume may only continue the same clean commit and the same memory arm. */
+export function validateScience125Resume(
+  questionIds: readonly number[],
+  currentSourceIdentity: SourceIdentity | null,
+  expectedMemoryArm: MemoryArm,
+  existingRuns: readonly BatchRunFacts[],
+): string | null {
+  if (!isCompleteScience125(questionIds)) return null;
+  if (currentSourceIdentity === null) {
+    return "正式 Science-125 续跑无法取得 source identity；请从可识别的 Git 仓库启动。";
+  }
+  if (currentSourceIdentity.treeDirty) {
+    return "正式 Science-125 续跑要求当前 git tree clean。";
+  }
+  for (const run of existingRuns) {
+    if (run.sourceIdentity === null) return `正式 Science-125 续跑中 run ${run.runId} 缺少 source identity。`;
+    if (run.sourceIdentity.treeDirty) return `正式 Science-125 续跑中 run ${run.runId} 来自 dirty tree。`;
+    if (run.sourceIdentity.gitCommit !== currentSourceIdentity.gitCommit) {
+      return `正式 Science-125 续跑中 run ${run.runId} 的 commit 与当前 commit 不一致。`;
+    }
+    if (run.memoryArm !== expectedMemoryArm) {
+      return `正式 Science-125 续跑中 run ${run.runId} 的 memory arm 与本次选择不一致。`;
+    }
+  }
+  return null;
+}
+
+/** Existing SQLite facts and lock sidecars that would make a first formal run ambiguous. */
+export function existingBatchDatabaseArtifacts(dbPath: string): string[] {
+  if (dbPath === ":memory:") return [];
+  return [
+    dbPath,
+    `${dbPath}-wal`,
+    `${dbPath}-shm`,
+    `${dbPath}-journal`,
+    `${dbPath}.writer-lock.db`,
+    `${dbPath}.writer-lock.db-wal`,
+    `${dbPath}.writer-lock.db-shm`,
+    `${dbPath}.writer-lock.db-journal`,
+  ].filter((path) => existsSync(path));
+}
+
+function isCompleteScience125(questionIds: readonly number[]): boolean {
+  return questionIds.length === 125 && questionIds.every((id, index) => id === index + 1);
+}
+
 /** 哪个 build 产出了这些 Run。取不到就是 null —— 采集失败绝不能让一道题跑不起来。
  *
  * `--untracked-files=no`：批跑自己会往 `outputs/` 写文件，把未跟踪文件算进去
- * 会让每个 Run 都是脏的，这个标志也就什么都不说明了。
+ * 会让每个 Run 都是脏的，这个标志也就什么都不说明了。`memory/` 是唯一的
+ * 例外：它是批跑 append 的 tracked runtime evidence，不能把同一批的续跑判成源码漂移。
  */
 export function readSourceIdentity(repoRoot: string): SourceIdentity | null {
   try {
     const commit = git(repoRoot, ["rev-parse", "HEAD"]);
-    const dirty = git(repoRoot, ["status", "--porcelain", "--untracked-files=no"]);
+    const dirty = git(repoRoot, ["status", "--porcelain", "--untracked-files=no", "--", ".", ":(exclude)memory/**"]);
     if (commit === null || dirty === null) return null;
     return { gitCommit: commit.trim(), treeDirty: dirty.trim().length > 0 };
   } catch {
@@ -297,6 +480,10 @@ export function parseConcurrency(spec: string | undefined): number {
  */
 export async function runBatch(questionIds: readonly number[], options: BatchOptions): Promise<BatchReport> {
   preflightQuestionIds(questionIds);
+  const repoRoot = resolve(options.repoRoot ?? process.cwd());
+  // Freeze provenance before creating/starting any question.  The batch owns
+  // one source cohort even when its memory append changes tracked files.
+  const sourceIdentity = readSourceIdentity(repoRoot);
   const manifest = options.manifestId
     ? BatchManifest.open(options.store, options.manifestId)
     : BatchManifest.create(options.store, questionIds);
@@ -319,7 +506,6 @@ export async function runBatch(questionIds: readonly number[], options: BatchOpt
   const runnableIds = options.manifestId ? manifest.pendingIds() : [...questionIds];
   const log = options.log ?? ((line: string) => process.stdout.write(`${line}\n`));
   if (!options.dryRun) log(`[batch] manifestId ${manifest.id}`);
-  const repoRoot = resolve(options.repoRoot ?? process.cwd());
   const limit = boundConcurrency(options.concurrency ?? 1);
   const total = runnableIds.length;
   const outcomes: QuestionOutcome[] = [];
@@ -343,7 +529,11 @@ export async function runBatch(questionIds: readonly number[], options: BatchOpt
       ticket += 1;
       inflight.set(
         seat,
-        runOne(questionId, { ...options, repoRoot }).then((outcome) => ({ ticket: seat, slot, outcome })),
+        runOne(questionId, { ...options, repoRoot, sourceIdentity }).then((outcome) => ({
+          ticket: seat,
+          slot,
+          outcome,
+        })),
       );
     }
   };
@@ -430,9 +620,9 @@ export function remainingPath(repoRoot: string): string {
   return resolve(repoRoot, "outputs/batch-remaining.json");
 }
 
-async function runOne(questionId: number, options: BatchOptions & { repoRoot: string }): Promise<QuestionOutcome> {
+async function runOne(questionId: number, options: BatchQuestionOptions): Promise<QuestionOutcome> {
   const { store } = options;
-  const settled = store.completedRunForQuestion(questionId);
+  const settled = store.completedRunForQuestionInArm(questionId, options.memoryArm ?? null);
   if (settled !== null) {
     return outcome(questionId, "skipped", 0, `已有 completed 的 run ${settled}`, null, settled);
   }
@@ -450,8 +640,9 @@ async function runOne(questionId: number, options: BatchOptions & { repoRoot: st
   try {
     runId = store.createRun(science125Text(question), {
       science125Id: questionId,
-      // 每道题现场采一次：跑了几小时的批次中途换了 commit，也要各记各的。
-      sourceIdentity: readSourceIdentity(options.repoRoot),
+      // Every question reuses the batch's frozen provenance.  Do not sample Git
+      // after campaign memory has had a chance to touch the working tree.
+      sourceIdentity: options.sourceIdentity,
       memoryArm: options.memoryArm ?? null,
     });
   } catch (error) {
@@ -705,12 +896,14 @@ export async function main(
       options: {
         ids: { type: "string" },
         "manifest-id": { type: "string" },
+        "confirm-science125": { type: "boolean", default: false },
         // 同时在飞几道题。默认 3、上限 MAX_CONCURRENCY，安全性论证见 `runBatch`。
         concurrency: { type: "string" },
         "dry-run": { type: "boolean", default: false },
         // 消融臂：关掉跨 run 记忆的注入与写回。被消融的是数据通道本身，不是一个返回
         // 空结果的工具 —— TS 栈没有 memory_search，模型的记忆面只有注入这一条。
         "no-memory": { type: "boolean", default: false },
+        "confirm-memory-ablation": { type: "boolean", default: false },
         "repo-root": { type: "string" },
         db: { type: "string" },
       },
@@ -737,6 +930,8 @@ export async function main(
 
   const dryRun = parsed.values["dry-run"] === true;
   const noMemory = parsed.values["no-memory"] === true;
+  const confirmedScience125 = parsed.values["confirm-science125"] === true;
+  const confirmedMemoryAblation = parsed.values["confirm-memory-ablation"] === true;
   const runtimeError = validateBatchBunRuntime({
     bunVersion:
       runtime.bunVersion ??
@@ -748,23 +943,94 @@ export async function main(
     process.stdout.write(`[batch] ${runtimeError}\n`);
     return 2;
   }
-  if (!dryRun && modelConfigStatus().credential === "absent") {
-    process.stdout.write("[batch] 缺少 QWEN_API_KEY，非 dry-run 批跑已拒绝启动。\n");
-    return 2;
-  }
   const requestedDbPath = parsed.values.db || process.env.LUUP_DATABASE || "outputs/runtime/typescript-runs.db";
   // Pure planning must not leave an empty manifest or SQLite files behind. Resuming by manifest ID is
   // intentionally read-only planning against the durable batch that the operator named.
   const dbPath = dryRun && !manifestId ? ":memory:" : requestedDbPath;
-  const repoRoot = resolve(parsed.values["repo-root"] ?? process.cwd());
+  const repoRoot = resolve(parsed.values["repo-root"] ?? MODULE_REPO_ROOT);
+  let memoryAblationSourceIdentity: SourceIdentity | null = null;
+  if (!dryRun && noMemory) {
+    let protocolQuestionIds: number[];
+    try {
+      protocolQuestionIds = readPhaseBQuestionIds(repoRoot);
+    } catch (error) {
+      process.stdout.write(`[batch] ${describe(error)}\n`);
+      return 2;
+    }
+    memoryAblationSourceIdentity = readSourceIdentity(repoRoot);
+    const launchError = validateMemoryAblationLaunch({
+      questionIds,
+      protocolQuestionIds,
+      dryRun,
+      confirmed: confirmedMemoryAblation,
+      sourceIdentity: memoryAblationSourceIdentity,
+    });
+    if (launchError !== null) {
+      process.stdout.write(`[batch] ${launchError}\n`);
+      return 2;
+    }
+  }
+  if (questionIds !== null) {
+    const fullFirstRun = !dryRun && !manifestId && isCompleteScience125(questionIds);
+    const launchError = validateScience125Launch({
+      questionIds,
+      dryRun,
+      confirmed: confirmedScience125,
+      manifestId: manifestId ?? null,
+      sourceIdentity: fullFirstRun ? readSourceIdentity(repoRoot) : null,
+      existingDatabaseArtifacts: fullFirstRun ? existingBatchDatabaseArtifacts(requestedDbPath) : [],
+    });
+    if (launchError !== null) {
+      process.stdout.write(`[batch] ${launchError}\n`);
+      return 2;
+    }
+  }
+  if (!dryRun && modelConfigStatus().credential === "absent") {
+    process.stdout.write("[batch] 缺少 QWEN_API_KEY，非 dry-run 批跑已拒绝启动。\n");
+    return 2;
+  }
   const store = new SqliteStore(dbPath);
   try {
-    if (questionIds === null) {
+    let openedManifest: BatchManifestSnapshot | null = null;
+    if (manifestId) {
       try {
-        questionIds = BatchManifest.open(store, manifestId!).snapshot().expectedIds;
+        openedManifest = BatchManifest.open(store, manifestId).snapshot();
+        questionIds ??= openedManifest.expectedIds;
       } catch (error) {
         process.stdout.write(`[batch] ${describe(error)}\n`);
         return 2;
+      }
+    }
+    if (questionIds === null) {
+      process.stdout.write("[batch] 无法确定批次题集。\n");
+      return 2;
+    }
+    if (openedManifest !== null) {
+      const launchError = validateScience125Launch({
+        questionIds,
+        dryRun,
+        confirmed: confirmedScience125,
+        manifestId: manifestId ?? null,
+        sourceIdentity: null,
+        existingDatabaseArtifacts: [],
+      });
+      if (launchError !== null) {
+        process.stdout.write(`[batch] ${launchError}\n`);
+        return 2;
+      }
+      if (!dryRun) {
+        const existingRuns = openedManifest.records.flatMap((record) => {
+          if (record.runId === null) return [];
+          const facts = store.batchRunFacts(record.runId);
+          return facts === null ? [] : [facts];
+        });
+        const resumeError = noMemory
+          ? validateMemoryAblationResume(memoryAblationSourceIdentity, existingRuns)
+          : validateScience125Resume(questionIds, readSourceIdentity(repoRoot), "on", existingRuns);
+        if (resumeError !== null) {
+          process.stdout.write(`[batch] ${resumeError}\n`);
+          return 2;
+        }
       }
     }
     const report = await runBatch(questionIds, {

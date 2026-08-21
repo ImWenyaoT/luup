@@ -8,7 +8,9 @@ import type { DomainArtifact } from "../src/agent/contracts.ts";
 import { BatchManifest, type BatchTerminalStatus } from "../src/batch/manifest.ts";
 import {
   buildBatchSubmissionIndex,
+  checkScience125BatchIndex,
   exportBatchSubmissionIndex,
+  main,
   type BatchSubmissionIndex,
 } from "../src/batch/submission-export.ts";
 import { SqliteStore } from "../src/store/store.ts";
@@ -165,4 +167,49 @@ test("submission index has a stable format marker", () => {
   const index: BatchSubmissionIndex = buildBatchSubmissionIndex(store, manifest.id, "2026-08-22T00:00:00.000Z");
   assert.equal(index.format, "luup.batch-submission-index");
   assert.equal(index.version, 1);
+});
+
+test("science125 strict gate rejects a diagnostic index with a precise reason", () => {
+  const store = testStore();
+  const manifest = BatchManifest.create(store, [1, 2]);
+  const run = completeRun(store, 1);
+  manifest.record({ questionId: 1, status: "success", runId: run.runId });
+
+  const index = buildBatchSubmissionIndex(store, manifest.id, "2026-08-22T00:00:00.000Z");
+  const gate = checkScience125BatchIndex(index);
+
+  assert.equal(gate.passed, false);
+  assert.ok(gate.reasons.includes("expected_ids_not_exact_science125"));
+  assert.ok(gate.reasons.includes("manifest_incomplete"));
+  assert.ok(gate.reasons.includes("omitted_ids_present"));
+});
+
+test("science125 strict gate accepts exactly one durable success for every frozen ID", () => {
+  const store = testStore();
+  const ids = Array.from({ length: 125 }, (_, index) => index + 1);
+  const manifest = BatchManifest.create(store, ids);
+  for (const questionId of ids) {
+    const run = completeRun(store, questionId);
+    manifest.record({ questionId, status: "success", runId: run.runId });
+  }
+
+  const index = buildBatchSubmissionIndex(store, manifest.id, "2026-08-22T00:00:00.000Z");
+  assert.deepEqual(checkScience125BatchIndex(index), { passed: true, reasons: [] });
+});
+
+test("batch export strict mode still writes the incomplete diagnostic index", () => {
+  const dir = mkdtempSync(join(tmpdir(), "luup-submission-export-strict-"));
+  onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
+  const dbPath = join(dir, "runs.db");
+  const output = join(dir, "science125-index.json");
+  const store = new SqliteStore(dbPath);
+  const manifest = BatchManifest.create(store, [1]);
+  store.close();
+
+  const exitCode = main(["--manifest-id", manifest.id, "--db", dbPath, "--out", output, "--require-science125"]);
+
+  assert.equal(exitCode, 1);
+  const index = JSON.parse(readFileSync(output, "utf8")) as BatchSubmissionIndex;
+  assert.equal(index.expectedIds.length, 1);
+  assert.equal(index.complete, false);
 });

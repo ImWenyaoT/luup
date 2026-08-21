@@ -64,6 +64,37 @@ export type ExportBatchSubmissionOptions = {
   store?: SqliteStore;
 };
 
+export type Science125BatchExportGate = {
+  passed: boolean;
+  reasons: string[];
+};
+
+const SCIENCE125_IDS = Array.from({ length: 125 }, (_, index) => index + 1);
+
+/**
+ * Strict pre-submission gate for the official Science-125 export.
+ *
+ * The normal index remains a diagnostic projection for arbitrary manifests. This
+ * gate is deliberately a separate pure seam so callers can always write that
+ * projection first, then fail closed without losing the evidence of why it was
+ * not eligible for submission.
+ */
+export function checkScience125BatchIndex(index: BatchSubmissionIndex): Science125BatchExportGate {
+  const reasons: string[] = [];
+  if (!sameIds(index.expectedIds, SCIENCE125_IDS)) reasons.push("expected_ids_not_exact_science125");
+  if (!index.complete) reasons.push("manifest_incomplete");
+  if (index.counts.invalid > 0 || index.invalidRecords.length > 0) reasons.push("invalid_records_present");
+  if (index.counts.omitted > 0 || index.omittedIds.length > 0) reasons.push("omitted_ids_present");
+  if (index.duplicateIds.length > 0 || index.expectedDuplicateIds.length > 0) {
+    reasons.push("duplicate_ids_present");
+  }
+  if (index.unexpectedIds.length > 0) reasons.push("unexpected_ids_present");
+  if (index.counts.expected !== SCIENCE125_IDS.length || index.counts.records !== SCIENCE125_IDS.length) {
+    reasons.push("record_count_not_125");
+  }
+  return { passed: reasons.length === 0, reasons };
+}
+
 /** Build a submission index from durable manifest/run facts without copying any body. */
 export function buildBatchSubmissionIndex(
   store: SqliteStore,
@@ -162,7 +193,7 @@ export function exportBatchSubmissionIndex(options: ExportBatchSubmissionOptions
 }
 
 export function main(argv: string[] = process.argv.slice(2)): number {
-  let values;
+  let values: { "manifest-id"?: string; db?: string; out?: string; "require-science125"?: boolean };
   try {
     values = parseArgs({
       args: argv,
@@ -170,6 +201,7 @@ export function main(argv: string[] = process.argv.slice(2)): number {
         "manifest-id": { type: "string" },
         db: { type: "string" },
         out: { type: "string" },
+        "require-science125": { type: "boolean", default: false },
       },
       strict: true,
     }).values;
@@ -178,7 +210,9 @@ export function main(argv: string[] = process.argv.slice(2)): number {
     return 2;
   }
   if (!values["manifest-id"] || !values.out) {
-    process.stderr.write("用法：submission-export.ts --manifest-id <id> --out <index.json> [--db <runs.db>]\n");
+    process.stderr.write(
+      "用法：bun run batch:export --manifest-id <id> --out <index.json> [--db <runs.db>] [--require-science125]\n",
+    );
     return 2;
   }
   const dbPath = values.db || process.env.LUUP_DATABASE || "outputs/runtime/typescript-runs.db";
@@ -193,11 +227,22 @@ export function main(argv: string[] = process.argv.slice(2)): number {
         `expected=${index.counts.expected} omitted=${index.counts.omitted} invalid=${index.counts.invalid} ` +
         `out=${resolve(values.out)}\n`,
     );
+    if (values["require-science125"]) {
+      const gate = checkScience125BatchIndex(index);
+      if (!gate.passed) {
+        process.stderr.write(`[batch:export] Science-125 strict gate failed: ${gate.reasons.join(", ")}\n`);
+        return 1;
+      }
+    }
     return index.complete ? 0 : 1;
   } catch (error) {
     process.stderr.write(`[batch:export] ${describe(error)}\n`);
     return 2;
   }
+}
+
+function sameIds(left: readonly number[], right: readonly number[]): boolean {
+  return left.length === right.length && left.every((id, index) => id === right[index]);
 }
 
 function question(

@@ -4,6 +4,8 @@ import { parseArgs } from "node:util";
 
 import { Database } from "bun:sqlite";
 
+import { resolveManifestRunScope, type ManifestRunScope } from "../reporting/manifest-scope.ts";
+
 export const USAGE_REPORT_FORMAT = "luup.usage-report" as const;
 export const USAGE_REPORT_VERSION = 2 as const;
 
@@ -117,6 +119,14 @@ export type UsageReport = {
   runs: UsageRunRecord[];
   questions: UsageQuestionRecord[];
   summary: UsageSummary;
+  manifest_scope?: ManifestScopeReport;
+};
+
+export type ManifestScopeReport = {
+  manifest_id: string;
+  included_run_count: number;
+  excluded_db_run_count: number;
+  excluded_db_run_ids: string[];
 };
 
 export type UsageExportOptions = {
@@ -125,6 +135,7 @@ export type UsageExportOptions = {
   markdownPath?: string;
   pricing?: UsagePricing;
   generatedAt?: string;
+  manifestId?: string;
 };
 
 type RawRow = Record<string, unknown>;
@@ -180,17 +191,21 @@ export function buildUsageReport(
   dbPath: string,
   pricing?: UsagePricing,
   generatedAt = new Date().toISOString(),
+  manifestId?: string,
 ): UsageReport {
   const db = new Database(dbPath, { readonly: true });
   try {
+    const scope = manifestId === undefined ? undefined : resolveManifestRunScope(db, manifestId);
     const runs = (
       db.prepare("SELECT id, question, science125_id, status FROM runs ORDER BY created_at, rowid").all() as RawRow[]
-    ).map((row) => ({
-      id: stringColumn(row, "id"),
-      question: stringColumn(row, "question"),
-      questionId: nullableInteger(row.science125_id),
-      status: stringColumn(row, "status"),
-    }));
+    )
+      .map((row) => ({
+        id: stringColumn(row, "id"),
+        question: stringColumn(row, "question"),
+        questionId: nullableInteger(row.science125_id),
+        status: stringColumn(row, "status"),
+      }))
+      .filter((run) => scope === undefined || scope.includedRunIds.includes(run.id));
 
     const attempts: AttemptUsage[] = runs.flatMap((run) => loadAttempts(db, run.id, run.questionId));
     const attemptRecords = attempts.map((item) => toAttemptRecord(item, pricing));
@@ -241,6 +256,7 @@ export function buildUsageReport(
       runs: runRecords,
       questions,
       summary,
+      ...(scope === undefined ? {} : { manifest_scope: manifestScopeReport(scope) }),
     };
   } finally {
     db.close();
@@ -249,7 +265,7 @@ export function buildUsageReport(
 
 /** 写 JSONL；首行是元数据，末行是汇总，中间行按 scope 展开。 */
 export function exportUsageReport(options: UsageExportOptions): UsageReport {
-  const report = buildUsageReport(options.dbPath, options.pricing, options.generatedAt);
+  const report = buildUsageReport(options.dbPath, options.pricing, options.generatedAt, options.manifestId);
   mkdirSync(dirname(resolve(options.outputPath)), { recursive: true });
   const lines = [
     JSON.stringify({
@@ -259,6 +275,7 @@ export function exportUsageReport(options: UsageExportOptions): UsageReport {
       generated_at: report.generated_at,
       db_path: report.db_path,
       pricing: report.pricing,
+      ...(report.manifest_scope === undefined ? {} : { manifest_scope: report.manifest_scope }),
     }),
     ...report.attempts.map((record) => JSON.stringify(record)),
     ...report.roles.map((record) => JSON.stringify(record)),
@@ -285,6 +302,15 @@ export function renderUsageMarkdown(report: UsageReport): string {
     `- 数据源：${report.db_path}`,
     `- 成本配置：${pricingLine}`,
     `- Run：${report.summary.run_count}；题目分组：${report.summary.question_count}；Attempt：${report.summary.attempt_count}`,
+    ...(report.manifest_scope === undefined
+      ? []
+      : [
+          `- Manifest：\`${report.manifest_scope.manifest_id}\`；纳入 Run：${report.manifest_scope.included_run_count}；` +
+            `排除的 DB Run：${report.manifest_scope.excluded_db_run_count}`,
+          report.manifest_scope.excluded_db_run_count === 0
+            ? "- 排除的 DB Run IDs：无"
+            : `- 排除的 DB Run IDs：${report.manifest_scope.excluded_db_run_ids.join("、")}`,
+        ]),
     "",
     "所有 token 均直接来自 SQLite 的 `sdk.usage` 事实；缺失或损坏保持 `null`，不以 0 代替。",
     "",
@@ -332,6 +358,7 @@ export function main(argv: string[] = process.argv.slice(2)): number {
         db: { type: "string" },
         out: { type: "string" },
         markdown: { type: "string" },
+        "manifest-id": { type: "string" },
         "input-price-per-million": { type: "string" },
         "output-price-per-million": { type: "string" },
         currency: { type: "string" },
@@ -347,6 +374,7 @@ export function main(argv: string[] = process.argv.slice(2)): number {
   if (!values.db || !values.out) {
     process.stderr.write(
       "用法：usage-export.ts --db <runs.db> --out <usage.jsonl> [--markdown <usage.md>] " +
+        "[--manifest-id <id>] " +
         "[--input-price-per-million <n> --output-price-per-million <n> --currency <code> --model <id> --price-source <text>]\n",
     );
     return 2;
@@ -356,6 +384,7 @@ export function main(argv: string[] = process.argv.slice(2)): number {
       dbPath: values.db,
       outputPath: values.out,
       markdownPath: values.markdown,
+      manifestId: values["manifest-id"],
       pricing:
         parsePricing({
           input: values["input-price-per-million"],
@@ -368,6 +397,7 @@ export function main(argv: string[] = process.argv.slice(2)): number {
     process.stdout.write(
       `[usage:export] runs=${report.summary.run_count} attempts=${report.summary.attempt_count} ` +
         `unknown=${report.summary.unknown_attempts} cost=${report.pricing.configured ? "configured" : "N/A"} ` +
+        `${report.manifest_scope === undefined ? "" : `manifest=${report.manifest_scope.manifest_id} `}` +
         `out=${resolve(values.out)}\n`,
     );
     return 0;
@@ -375,6 +405,15 @@ export function main(argv: string[] = process.argv.slice(2)): number {
     process.stderr.write(`[usage:export] ${describe(error)}\n`);
     return 2;
   }
+}
+
+function manifestScopeReport(scope: ManifestRunScope): ManifestScopeReport {
+  return {
+    manifest_id: scope.manifestId,
+    included_run_count: scope.includedRunIds.length,
+    excluded_db_run_count: scope.excludedDbRunIds.length,
+    excluded_db_run_ids: [...scope.excludedDbRunIds],
+  };
 }
 
 function loadAttempts(db: Database, runId: string, questionId: number | null): AttemptUsage[] {

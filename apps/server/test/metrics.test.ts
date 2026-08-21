@@ -9,6 +9,7 @@ type TestContext = { onTestFinished: typeof onTestFinished };
 
 import type { DomainArtifact } from "../src/agent/contracts.ts";
 import { FAILURE_CODES } from "../src/agent/failures.ts";
+import { BatchManifest } from "../src/batch/manifest.ts";
 import {
   ablationEffective,
   evaluate,
@@ -102,6 +103,7 @@ const facts = (overrides: Partial<RunFacts> = {}): RunFacts => ({
   attempts: 1,
   correctedAttempts: 0,
   corrections: 0,
+  unknownCorrectionAttempts: 0,
   reviewed: false,
   rejected: false,
   arxivCalls: 0,
@@ -137,6 +139,38 @@ test("delivery is reported over both denominators, infrastructure excluded from 
   assert.equal(delivery.excludingInfrastructure.rate, 0.5);
   assert.deepEqual(report.statistics.failureClasses.infrastructure.byClass, { infra_error: 1, infra_timeout: 1 });
   assert.deepEqual(report.statistics.failureClasses.quality.byClass, { invalid_output: 1 });
+});
+
+test("metrics can be scoped to one manifest and exposes excluded database runs", () => {
+  const dir = mkdtempSync(join(tmpdir(), "luup-metrics-manifest-"));
+  const path = join(dir, "runs.db");
+  const store = new SqliteStore(path);
+  const includedRun = store.createRun("题 1", { science125Id: 1 });
+  store.finishRun(includedRun, "failed", { errorCode: "invalid_output" });
+  const excludedRun = store.createRun("题 2", { science125Id: 2 });
+  store.finishRun(excludedRun, "failed", { errorCode: "invalid_output" });
+  const manifest = BatchManifest.create(store, [1]);
+  manifest.record({ questionId: 1, status: "failure", runId: includedRun });
+  store.close();
+  onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
+
+  const report = evaluateDatabase(path, manifest.id);
+  assert.equal(report.runs, 1);
+  assert.equal(report.manifest_scope?.manifest_id, manifest.id);
+  assert.equal(report.manifest_scope?.excluded_db_run_count, 1);
+  assert.deepEqual(report.manifest_scope?.excluded_db_run_ids, [excludedRun]);
+});
+
+test("metrics rejects an unknown manifest or a manifest without a valid run", () => {
+  const t = { onTestFinished };
+  const path = fixture(t, [{ questionId: 1, status: "completed" }]);
+  assert.throws(() => evaluateDatabase(path, "does-not-exist"), /manifest.*not found/i);
+
+  const store = new SqliteStore(path);
+  const manifest = BatchManifest.create(store, [1]);
+  manifest.record({ questionId: 1, status: "success" });
+  store.close();
+  assert.throws(() => evaluateDatabase(path, manifest.id), /no valid run/i);
 });
 
 test("the two reading buckets partition the nine failure codes, with none left over", () => {
@@ -290,6 +324,31 @@ test("corrections and reviewer rejections are counted over the right denominator
     { reviewed: review.reviewed, rejected: review.rejected, rate: review.rate },
     { reviewed: 2, rejected: 1, rate: 0.5 },
   );
+});
+
+test("malformed correction facts remain unknown instead of being counted as zero", () => {
+  const t = { onTestFinished };
+  const path = fixture(t, [{ questionId: 1, status: "completed", corrections: 1 }]);
+  const db = new Database(path);
+  db.exec("UPDATE attempts SET corrections = 'not-a-number'");
+  db.close();
+
+  const report = evaluateDatabase(path);
+  assert.equal(report.statistics.corrections.unknownAttempts, 1);
+  assert.equal(report.statistics.corrections.corrections, null);
+  assert.equal(report.statistics.corrections.rate, null);
+});
+
+test("a legacy database without the corrections column reports unknown instead of failing or using zero", () => {
+  const t = { onTestFinished };
+  const path = fixture(t, [{ questionId: 1, status: "completed" }]);
+  const db = new Database(path);
+  db.exec("ALTER TABLE attempts DROP COLUMN corrections");
+  db.close();
+
+  const report = evaluateDatabase(path);
+  assert.equal(report.statistics.corrections.unknownAttempts, 1);
+  assert.equal(report.statistics.corrections.corrections, null);
 });
 
 test("search health counts arXiv calls and how many of them were the same query again", () => {
