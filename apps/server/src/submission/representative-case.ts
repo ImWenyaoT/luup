@@ -9,7 +9,7 @@ import { findQuestion, science125Integrity } from "../domain/science125.ts";
 import { SqliteStore } from "../store/store.ts";
 
 export const REPRESENTATIVE_CASE_FORMAT = "luup.representative-case" as const;
-export const REPRESENTATIVE_CASE_VERSION = 2 as const;
+export const REPRESENTATIVE_CASE_VERSION = 3 as const;
 
 type CaseStatus = "running" | "completed" | "review_rejected" | "failed" | "unknown";
 type FactStatus = "known" | "partial" | "unknown";
@@ -126,6 +126,8 @@ export type RepresentativeCaseExport = {
     hypothesis: RepresentativeCasePublicArtifact[];
     evidence_review: RepresentativeCasePublicArtifact[];
   };
+  /** 每条实际检索来源的可核验说明；不含 tool output、prompt 或 rationale。 */
+  source_ledger: RepresentativeCaseSourceLedger;
   rounds: { round1: RepresentativeCaseRound; round2: RepresentativeCaseRound };
   verification: RepresentativeCaseVerification;
   trace: RepresentativeCaseTrace;
@@ -211,6 +213,60 @@ export type RepresentativeCasePublicArtifact = {
   content: SubmissionPublicContent;
 };
 
+export type RepresentativeCaseSourceLedgerEntry = {
+  /** 一个检索事件的 durable ID；同一事件的多条 citation 各有一行。 */
+  evidence_id: string;
+  attempt_id: string | null;
+  evidence_status: string | null;
+  acquisition: {
+    method: "search_tool" | "unknown";
+    tool: string | null;
+    query: string | null;
+  };
+  availability: {
+    status: "available" | "partial" | "unavailable" | "unknown";
+    evidence_status: string | null;
+  };
+  source: {
+    source_type: "web" | "arxiv" | null;
+    title: string | null;
+    locator: string | null;
+    url: string | null;
+  } | null;
+  /** 直接从候选的 supporting/opposing_evidence_ids join，不从正文推断。 */
+  hypothesis_roles: Array<{
+    artifact_id: string;
+    candidate_id: string;
+    role: "supporting" | "opposing";
+  }>;
+  /** 只暴露 Artifact ID、类型和结构化关系，不暴露 rationale 或原始 payload。 */
+  artifact_uses: Array<{
+    artifact_id: string;
+    artifact_type: "research" | "hypothesis" | "evidence-review" | "research-plan" | "review";
+    relation:
+      | "research_query"
+      | "research_claim"
+      | "hypothesis_supporting"
+      | "hypothesis_opposing"
+      | "hypothesis_comparison"
+      | "evidence_review"
+      | "plan_grounding"
+      | "plan_verification"
+      | "review_independent";
+    candidate_id: string | null;
+  }>;
+  /** 仅记录由检索通路/状态决定的限制；不冒充 citation 原文的科学限制。 */
+  limitations: string[];
+  unknown_reasons: string[];
+};
+
+export type RepresentativeCaseSourceLedger = {
+  status: FactStatus;
+  records: RepresentativeCaseSourceLedgerEntry[];
+  unknown_records: number;
+  unknown_reasons: string[];
+};
+
 /** Build a representative-case package from durable facts only.
  *
  * Artifact bodies, tool output, prompt/input text, provider errors, and credentials
@@ -239,6 +295,7 @@ export function buildRepresentativeCase(
   const events = readEvents(snapshot.recent_events, rootReasons);
   const artifacts = readArtifacts(snapshot.artifacts, rootReasons);
   const publicArtifacts = buildPublicArtifacts(store, artifacts, rootReasons);
+  const sourceLedger = buildSourceLedger(snapshot.tool_evidence, store, artifacts, rootReasons);
   const round1 = buildRound(1, store, events, artifacts, rootReasons);
   const round2 = buildRound(2, store, events, artifacts, rootReasons);
   const verification = buildVerification(events, rootReasons);
@@ -259,6 +316,7 @@ export function buildRepresentativeCase(
     },
     artifacts,
     public_artifacts: publicArtifacts,
+    source_ledger: sourceLedger,
     rounds: { round1, round2 },
     verification,
     trace,
@@ -286,6 +344,13 @@ export function checkRepresentativeCaseStrict(
   if (value.run.status !== "completed") reasons.push("run_not_completed");
   if (!value.rounds.round1.present) reasons.push("round1_missing");
   if (!value.rounds.round2.present) reasons.push("round2_missing");
+  if (
+    value.source_ledger.status !== "known" ||
+    value.source_ledger.records.length === 0 ||
+    value.source_ledger.unknown_records > 0
+  ) {
+    reasons.push("source_ledger_missing_or_unknown");
+  }
 
   const snapshot = value.run_id === null ? null : store.snapshot(value.run_id);
   const events = snapshot === null ? [] : readEvents(snapshot.recent_events, []);
@@ -406,6 +471,10 @@ export function renderRepresentativeCaseMarkdown(value: RepresentativeCaseExport
     "",
     ...value.public_artifacts.hypothesis.flatMap((artifact) => renderPublicArtifactMarkdown("候选假设", artifact)),
     ...(value.public_artifacts.hypothesis.length === 0 ? ["- public hypothesis projection: unknown", ""] : []),
+    "## 证据来源台账",
+    "",
+    `- status: ${value.source_ledger.status}; records: ${value.source_ledger.records.length}; unknown records: ${value.source_ledger.unknown_records}`,
+    ...renderSourceLedgerMarkdown(value.source_ledger),
     "## Verification",
     "",
     `- status: ${value.verification.status}`,
@@ -441,6 +510,28 @@ export function renderRepresentativeCaseMarkdown(value: RepresentativeCaseExport
     ...strictSection,
     "",
   ].join("\n");
+}
+
+function renderSourceLedgerMarkdown(ledger: RepresentativeCaseSourceLedger): string[] {
+  if (ledger.records.length === 0) {
+    return ["- sources: unknown", `- unknown: ${ledger.unknown_reasons.join(", ") || "none"}`, ""];
+  }
+  return [
+    ...ledger.records.flatMap((record) => [
+      `### ${escapeMarkdown(display(record.source?.title))}`,
+      `- evidence: ${escapeMarkdown(record.evidence_id)}`,
+      `- source: ${escapeMarkdown(display(record.source?.locator))}`,
+      `- URL: ${escapeMarkdown(display(record.source?.url))}`,
+      `- acquisition: ${escapeMarkdown(display(record.acquisition.tool))} / ${escapeMarkdown(display(record.acquisition.query))}`,
+      `- availability: ${record.availability.status} (${escapeMarkdown(display(record.evidence_status))})`,
+      `- hypothesis roles: ${record.hypothesis_roles.length > 0 ? record.hypothesis_roles.map((item) => `${escapeMarkdown(item.candidate_id)}:${item.role}`).join(", ") : "none"}`,
+      `- limitations: ${record.limitations.map(escapeMarkdown).join("；") || "unknown"}`,
+      `- unknown: ${record.unknown_reasons.join(", ") || "none"}`,
+      "",
+    ]),
+    `- ledger unknown reasons: ${ledger.unknown_reasons.join(", ") || "none"}`,
+    "",
+  ];
 }
 
 function renderPublicArtifactMarkdown(label: string, artifact: RepresentativeCasePublicArtifact | null): string[] {
@@ -640,6 +731,421 @@ function readArtifacts(value: unknown, reasons: string[]): RepresentativeCaseExp
   }
   result.unknown.sort();
   return result;
+}
+
+type SourceLedgerUse = RepresentativeCaseSourceLedgerEntry["artifact_uses"][number];
+type HypothesisRole = RepresentativeCaseSourceLedgerEntry["hypothesis_roles"][number];
+type SourceLedgerRelations = { artifactUses: SourceLedgerUse[]; hypothesisRoles: HypothesisRole[] };
+
+/**
+ * Build the P4 source ledger from two durable seams:
+ *
+ * - `tool_evidence` is the retrieval fact (tool/query/status/citation metadata);
+ * - frozen Artifact bodies are the only authority for how an evidence ID was used.
+ *
+ * This intentionally does not read `result_summary`, abstracts, rationale, or any raw
+ * tool payload. A failed search remains a known unavailable retrieval, while malformed
+ * rows become partial/unknown rather than being turned into a fake source.
+ */
+function buildSourceLedger(
+  value: unknown,
+  store: SqliteStore,
+  artifacts: RepresentativeCaseExport["artifacts"],
+  rootReasons: string[],
+): RepresentativeCaseSourceLedger {
+  const relations = new Map<string, SourceLedgerRelations>();
+  const addRelation = (evidenceId: string, use: SourceLedgerUse): void => {
+    const existing = relations.get(evidenceId) ?? { artifactUses: [], hypothesisRoles: [] };
+    const useKey = `${use.artifact_id}\u0000${use.relation}\u0000${use.candidate_id ?? ""}`;
+    if (
+      !existing.artifactUses.some(
+        (item) => `${item.artifact_id}\u0000${item.relation}\u0000${item.candidate_id ?? ""}` === useKey,
+      )
+    ) {
+      existing.artifactUses.push(use);
+    }
+    relations.set(evidenceId, existing);
+  };
+  const addHypothesisRole = (evidenceId: string, role: HypothesisRole): void => {
+    const existing = relations.get(evidenceId) ?? { artifactUses: [], hypothesisRoles: [] };
+    const roleKey = `${role.artifact_id}\u0000${role.candidate_id}\u0000${role.role}`;
+    if (
+      !existing.hypothesisRoles.some(
+        (item) => `${item.artifact_id}\u0000${item.candidate_id}\u0000${item.role}` === roleKey,
+      )
+    ) {
+      existing.hypothesisRoles.push(role);
+    }
+    relations.set(evidenceId, existing);
+  };
+
+  const relationReasonStart = rootReasons.length;
+  collectSourceRelations(store, artifacts, addRelation, addHypothesisRole, rootReasons);
+  const relationReasons = rootReasons.slice(relationReasonStart);
+  if (!Array.isArray(value)) {
+    rootReasons.push("source_ledger_unknown");
+    return {
+      status: "unknown",
+      records: [],
+      unknown_records: 0,
+      unknown_reasons: unique([...relationReasons, "source_ledger_unknown"]),
+    };
+  }
+
+  const records: RepresentativeCaseSourceLedgerEntry[] = [];
+  const ledgerReasons: string[] = [...relationReasons];
+  const observedEvidenceIds = new Set<string>();
+  let unknownRecords = relationReasons.length;
+  for (const row of value) {
+    if (!isRecord(row)) {
+      ledgerReasons.push("source_evidence_row_malformed");
+      unknownRecords += 1;
+      continue;
+    }
+    const evidenceId = safeId(row.id);
+    if (evidenceId === null) {
+      ledgerReasons.push("source_evidence_id_unknown");
+      unknownRecords += 1;
+      continue;
+    }
+    const rowReasons: string[] = [];
+    const attemptId = safeNullableId(row.attempt_id);
+    if (row.attempt_id !== null && row.attempt_id !== undefined && attemptId === null) {
+      rowReasons.push("source_attempt_id_unknown");
+    }
+    const tool = safeToolName(row.tool_name);
+    if (tool === null) rowReasons.push("source_tool_unknown");
+    const query = safeRedactedSourceText(row.query);
+    if (query === null) rowReasons.push("source_query_unknown");
+    const evidenceStatus = safeEvidenceStatus(row.status);
+    if (evidenceStatus === null) rowReasons.push("source_status_unknown");
+    const output = isRecord(row.output) ? row.output : null;
+    if (output === null) rowReasons.push("source_output_unknown");
+
+    const citations = output === null ? [] : readSourceCitations(output.citations, rowReasons);
+    const sourceRows = citations.length === 0 ? [null] : citations;
+    if (citations.length === 0 && evidenceStatus !== null && evidenceStatus === "succeeded") {
+      rowReasons.push("succeeded_without_citation");
+    }
+    for (const citation of sourceRows) {
+      observedEvidenceIds.add(evidenceId);
+      const citationResult = citation === null ? { source: null, reasons: [] } : sourceFromCitation(citation);
+      const reasons = unique([
+        ...rowReasons,
+        ...citationResult.reasons,
+        ...(citation === null ? ["no_citable_source"] : []),
+      ]);
+      const relationsForEvidence = relations.get(evidenceId) ?? { artifactUses: [], hypothesisRoles: [] };
+      const entry: RepresentativeCaseSourceLedgerEntry = {
+        evidence_id: evidenceId,
+        attempt_id: attemptId,
+        evidence_status: evidenceStatus,
+        acquisition: {
+          method: tool !== null && query !== null ? "search_tool" : "unknown",
+          tool,
+          query,
+        },
+        availability: {
+          status: availabilityStatus(evidenceStatus),
+          evidence_status: evidenceStatus,
+        },
+        source: citationResult.source,
+        hypothesis_roles: [...relationsForEvidence.hypothesisRoles].sort(compareHypothesisRole),
+        artifact_uses: [...relationsForEvidence.artifactUses].sort(compareSourceUse),
+        limitations: sourceLimitations(tool, evidenceStatus, citationResult.source),
+        unknown_reasons: reasons,
+      };
+      records.push(entry);
+      if (reasons.some((reason) => reason !== "no_citable_source")) unknownRecords += 1;
+    }
+    ledgerReasons.push(...rowReasons.filter((reason) => reason !== "no_citable_source"));
+  }
+  for (const [evidenceId, sourceRelations] of relations) {
+    if (observedEvidenceIds.has(evidenceId)) continue;
+    const unknownReasons = ["evidence_missing"];
+    records.push({
+      evidence_id: evidenceId,
+      attempt_id: null,
+      evidence_status: null,
+      acquisition: { method: "unknown", tool: null, query: null },
+      availability: { status: "unknown", evidence_status: null },
+      source: null,
+      hypothesis_roles: [...sourceRelations.hypothesisRoles].sort(compareHypothesisRole),
+      artifact_uses: [...sourceRelations.artifactUses].sort(compareSourceUse),
+      limitations: ["evidence_not_found"],
+      unknown_reasons: unknownReasons,
+    });
+    ledgerReasons.push(...unknownReasons);
+    unknownRecords += 1;
+  }
+  const unknownReasons = unique(ledgerReasons);
+  rootReasons.push(...unknownReasons);
+  return {
+    status: records.length === 0 ? "unknown" : unknownRecords === 0 ? "known" : "partial",
+    records,
+    unknown_records: unknownRecords,
+    unknown_reasons: unknownReasons,
+  };
+}
+
+function collectSourceRelations(
+  store: SqliteStore,
+  artifacts: RepresentativeCaseExport["artifacts"],
+  addRelation: (evidenceId: string, use: SourceLedgerUse) => void,
+  addHypothesisRole: (evidenceId: string, role: HypothesisRole) => void,
+  rootReasons: string[],
+): void {
+  const groups: Array<{
+    artifactType: SourceLedgerUse["artifact_type"];
+    ids: readonly string[];
+  }> = [
+    { artifactType: "research", ids: artifacts.research },
+    { artifactType: "hypothesis", ids: artifacts.hypothesis },
+    { artifactType: "evidence-review", ids: artifacts.evidence_review },
+    { artifactType: "research-plan", ids: artifacts.research_plan },
+    { artifactType: "review", ids: artifacts.review },
+  ];
+  for (const group of groups) {
+    for (const artifactId of group.ids) {
+      let stored;
+      try {
+        stored = store.artifact(artifactId);
+      } catch {
+        rootReasons.push(`source_${group.artifactType}_artifact_unavailable`);
+        continue;
+      }
+      if (stored === null || !isRecord(stored.content)) {
+        rootReasons.push(`source_${group.artifactType}_artifact_unknown`);
+        continue;
+      }
+      collectArtifactRelations(
+        group.artifactType,
+        artifactId,
+        stored.content,
+        addRelation,
+        addHypothesisRole,
+        rootReasons,
+      );
+    }
+  }
+}
+
+function collectArtifactRelations(
+  artifactType: SourceLedgerUse["artifact_type"],
+  artifactId: string,
+  content: UnknownRecord,
+  addRelation: (evidenceId: string, use: SourceLedgerUse) => void,
+  addHypothesisRole: (evidenceId: string, role: HypothesisRole) => void,
+  reasons: string[],
+): void {
+  const addIds = (value: unknown, relation: SourceLedgerUse["relation"], candidateId: string | null = null): void => {
+    if (!Array.isArray(value)) {
+      if (value !== undefined && value !== null) reasons.push(`source_${artifactType}_${relation}_unknown`);
+      return;
+    }
+    for (const item of value) {
+      const evidenceId = safeId(item);
+      if (evidenceId === null) {
+        reasons.push(`source_${artifactType}_evidence_id_unknown`);
+        continue;
+      }
+      addRelation(evidenceId, {
+        artifact_id: artifactId,
+        artifact_type: artifactType,
+        relation,
+        candidate_id: candidateId,
+      });
+    }
+  };
+
+  switch (artifactType) {
+    case "research": {
+      const queries = Array.isArray(content.queries) ? content.queries : [];
+      for (const query of queries) {
+        if (isRecord(query))
+          addIds(query.evidence_id === undefined ? undefined : [query.evidence_id], "research_query");
+      }
+      const claims = Array.isArray(content.claims) ? content.claims : [];
+      for (const claim of claims) {
+        if (isRecord(claim)) addIds(claim.evidence_ids, "research_claim");
+      }
+      break;
+    }
+    case "hypothesis": {
+      const candidates = Array.isArray(content.candidates) ? content.candidates : [];
+      for (const candidate of candidates) {
+        if (!isRecord(candidate)) {
+          reasons.push("source_hypothesis_candidate_unknown");
+          continue;
+        }
+        const candidateId = safeRedactedSourceText(candidate.candidate_id);
+        if (candidateId === null) {
+          reasons.push("source_hypothesis_candidate_id_unknown");
+          continue;
+        }
+        for (const [field, role] of [
+          ["supporting_evidence_ids", "supporting"],
+          ["opposing_evidence_ids", "opposing"],
+        ] as const) {
+          if (!Array.isArray(candidate[field])) {
+            reasons.push(`source_hypothesis_${role}_unknown`);
+            continue;
+          }
+          for (const value of candidate[field]) {
+            const evidenceId = safeId(value);
+            if (evidenceId === null) {
+              reasons.push("source_hypothesis_evidence_id_unknown");
+              continue;
+            }
+            addHypothesisRole(evidenceId, { artifact_id: artifactId, candidate_id: candidateId, role });
+            addRelation(evidenceId, {
+              artifact_id: artifactId,
+              artifact_type: artifactType,
+              relation: role === "supporting" ? "hypothesis_supporting" : "hypothesis_opposing",
+              candidate_id: candidateId,
+            });
+          }
+        }
+      }
+      const comparison = isRecord(content.comparison) ? content.comparison : null;
+      const evaluations = comparison && Array.isArray(comparison.evaluations) ? comparison.evaluations : [];
+      for (const evaluation of evaluations) {
+        if (!isRecord(evaluation)) continue;
+        const candidateId = safeRedactedSourceText(evaluation.candidate_id);
+        addIds(evaluation.evidence_ids, "hypothesis_comparison", candidateId);
+      }
+      break;
+    }
+    case "evidence-review": {
+      const assessments = Array.isArray(content.assessments) ? content.assessments : [];
+      for (const assessment of assessments) {
+        if (isRecord(assessment)) addIds(assessment.evidence_ids, "evidence_review");
+      }
+      break;
+    }
+    case "research-plan": {
+      const experiments = isRecord(content.experiments) ? content.experiments : null;
+      for (const field of ["baselines", "metrics"] as const) {
+        const items = experiments && Array.isArray(experiments[field]) ? experiments[field] : [];
+        for (const item of items) {
+          if (isRecord(item)) addIds(item.evidence_id === undefined ? undefined : [item.evidence_id], "plan_grounding");
+        }
+      }
+      addIds(content.verification_evidence_ids, "plan_verification");
+      break;
+    }
+    case "review":
+      addIds(content.independent_evidence_ids, "review_independent");
+      break;
+  }
+}
+
+function readSourceCitations(value: unknown, reasons: string[]): UnknownRecord[] {
+  if (!Array.isArray(value)) {
+    reasons.push("source_citations_unknown");
+    return [];
+  }
+  return value.filter((item): item is UnknownRecord => {
+    if (!isRecord(item)) {
+      reasons.push("source_citation_malformed");
+      return false;
+    }
+    return true;
+  });
+}
+
+function sourceFromCitation(citation: UnknownRecord): {
+  source: RepresentativeCaseSourceLedgerEntry["source"];
+  reasons: string[];
+} {
+  const reasons: string[] = [];
+  const sourceType = citation.source_type === "web" || citation.source_type === "arxiv" ? citation.source_type : null;
+  if (sourceType === null) reasons.push("source_type_unknown");
+  const title = safeRedactedSourceText(citation.title);
+  if (title === null) reasons.push("source_title_unknown");
+  const locator = safeRedactedSourceText(citation.locator);
+  if (locator === null) reasons.push("source_locator_unknown");
+  const url = safeSourceUrl(citation.url);
+  if (citation.url !== null && citation.url !== undefined && url === null) reasons.push("source_url_unknown");
+  return { source: { source_type: sourceType, title, locator, url }, reasons };
+}
+
+function sourceLimitations(
+  tool: string | null,
+  status: string | null,
+  source: RepresentativeCaseSourceLedgerEntry["source"],
+): string[] {
+  const limitations: string[] = [];
+  if (tool === "arxiv_search" || tool === "crossref_search" || (source !== null && source.source_type !== null)) {
+    limitations.push("metadata_only_no_full_text_verification", "no_causal_validity_verification");
+  }
+  if (status === null) limitations.push("retrieval_status_unknown");
+  else if (status !== "succeeded") limitations.push(`retrieval_status_${status}`);
+  if (source === null) limitations.push("no_citable_source_returned");
+  return [...new Set(limitations)];
+}
+
+function availabilityStatus(status: string | null): RepresentativeCaseSourceLedgerEntry["availability"]["status"] {
+  if (status === "succeeded") return "available";
+  if (status === "partial") return "partial";
+  if (
+    status === "empty" ||
+    status === "failed" ||
+    status === "timeout" ||
+    status === "rate_limited" ||
+    status === "source_unavailable" ||
+    status === "refused"
+  ) {
+    return "unavailable";
+  }
+  return "unknown";
+}
+
+function safeToolName(value: unknown): string | null {
+  return typeof value === "string" && /^[A-Za-z][A-Za-z0-9_.-]{0,100}$/.test(value) ? value : null;
+}
+
+function safeEvidenceStatus(value: unknown): string | null {
+  const statuses = new Set([
+    "succeeded",
+    "empty",
+    "partial",
+    "failed",
+    "timeout",
+    "rate_limited",
+    "source_unavailable",
+    "refused",
+  ]);
+  return typeof value === "string" && statuses.has(value) ? value : null;
+}
+
+function safeRedactedSourceText(value: unknown): string | null {
+  const text = safeText(value);
+  return text === null ? null : redactSensitiveText(text);
+}
+
+function safeSourceUrl(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  const text = safeRedactedSourceText(value);
+  if (text === null) return null;
+  try {
+    const parsed = new URL(text);
+    return parsed.protocol === "https:" || parsed.protocol === "http:" ? text : null;
+  } catch {
+    return null;
+  }
+}
+
+function compareHypothesisRole(left: HypothesisRole, right: HypothesisRole): number {
+  return `${left.candidate_id}\u0000${left.role}\u0000${left.artifact_id}`.localeCompare(
+    `${right.candidate_id}\u0000${right.role}\u0000${right.artifact_id}`,
+  );
+}
+
+function compareSourceUse(left: SourceLedgerUse, right: SourceLedgerUse): number {
+  return `${left.artifact_type}\u0000${left.relation}\u0000${left.artifact_id}\u0000${left.candidate_id ?? ""}`.localeCompare(
+    `${right.artifact_type}\u0000${right.relation}\u0000${right.artifact_id}\u0000${right.candidate_id ?? ""}`,
+  );
 }
 
 function buildPublicArtifacts(
@@ -1101,6 +1607,12 @@ function unknownCase(runId: string | null, generatedAt: string, reason: string):
     run: { science125_id: null, status: "unknown", question: null, error_code: null, final_artifact_id: null },
     artifacts: { research: [], hypothesis: [], evidence_review: [], research_plan: [], review: [], unknown: [] },
     public_artifacts: { research: [], hypothesis: [], evidence_review: [] },
+    source_ledger: {
+      status: "unknown",
+      records: [],
+      unknown_records: 0,
+      unknown_reasons: ["source_ledger_unknown"],
+    },
     rounds: { round1: round(1), round2: round(2) },
     verification: {
       status: "unknown",

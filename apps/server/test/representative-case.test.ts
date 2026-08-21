@@ -409,6 +409,11 @@ test("representative export includes only public projected round outputs and can
   assert.equal(exported.rounds.round2.public_outputs.review?.id, revisedReviewId);
   assert.equal(exported.rounds.round2.public_outputs.plan?.content.artifact_type, "research-plan");
   assert.equal(exported.public_artifacts.hypothesis[0]?.content.artifact_type, "hypothesis");
+  assert.equal(exported.source_ledger.status, "partial");
+  assert.ok(
+    exported.source_ledger.records.some((record) => record.evidence_id === "evidence-1" && record.source === null),
+  );
+  assert.ok(exported.source_ledger.records.some((record) => record.unknown_reasons.includes("evidence_missing")));
 
   const json = JSON.stringify(exported);
   assert.doesNotMatch(json, /prompt|INTERNAL_RATIONALE|QWEN_API_KEY|tool_raw|error_detail/i);
@@ -467,9 +472,160 @@ test("representative export writes JSON and Markdown side by side", () => {
   assert.equal(readFileSync(markdownPath, "utf8"), renderRepresentativeCaseMarkdown(result));
 });
 
+test("representative export includes a source ledger with retrieval facts and hypothesis roles", () => {
+  const store = testStore();
+  const runId = store.createRun("Science-125 #1", { science125Id: 1 });
+  const evidenceAttempt = store.startAttempt(runId, "researcher");
+  store.recordEvidence(runId, evidenceAttempt, {
+    evidenceId: "ev_arxiv_1",
+    tool: "arxiv_search",
+    sourceType: "arxiv",
+    query: "retrieval evaluation",
+    status: "succeeded",
+    resultSummary: "one citable record",
+    citations: [
+      {
+        source_type: "arxiv",
+        title: "Frozen arXiv source",
+        locator: "arxiv:1234.5678",
+        url: "https://arxiv.org/abs/1234.5678",
+      },
+    ],
+  });
+  store.recordEvidence(runId, evidenceAttempt, {
+    evidenceId: "ev_crossref_1",
+    tool: "crossref_search",
+    sourceType: "web",
+    query: "doi metadata",
+    status: "partial",
+    resultSummary: "one partial record",
+    citations: [
+      {
+        source_type: "web",
+        title: "Frozen DOI source",
+        locator: "doi:10.1000/example",
+        url: "https://doi.org/10.1000/example",
+      },
+    ],
+  });
+  store.recordEvidence(runId, evidenceAttempt, {
+    evidenceId: "ev_failed_1",
+    tool: "arxiv_search",
+    sourceType: "arxiv",
+    query: "unavailable source",
+    status: "source_unavailable",
+    resultSummary: "source unavailable",
+    citations: [],
+  });
+  const research = publicResearch() as Record<string, unknown>;
+  research.claims = [
+    { statement: "检索结果可核验。", evidence_ids: ["ev_arxiv_1"] },
+    { statement: "DOI 结果部分可用。", evidence_ids: ["ev_crossref_1"] },
+  ];
+  research.queries = [
+    {
+      evidence_id: "ev_arxiv_1",
+      source_type: "arxiv",
+      query: "retrieval evaluation",
+      status: "succeeded",
+      result_summary: "one citable record",
+    },
+    {
+      evidence_id: "ev_crossref_1",
+      source_type: "web",
+      query: "doi metadata",
+      status: "partial",
+      result_summary: "one partial record",
+    },
+    {
+      evidence_id: "ev_failed_1",
+      source_type: "arxiv",
+      query: "unavailable source",
+      status: "source_unavailable",
+      result_summary: "source unavailable",
+    },
+  ];
+  research.citations = [
+    {
+      evidence_id: "ev_arxiv_1",
+      source_type: "arxiv",
+      title: "Frozen arXiv source",
+      locator: "arxiv:1234.5678",
+      url: "https://arxiv.org/abs/1234.5678",
+    },
+    {
+      evidence_id: "ev_crossref_1",
+      source_type: "web",
+      title: "Frozen DOI source",
+      locator: "doi:10.1000/example",
+      url: "https://doi.org/10.1000/example",
+    },
+  ];
+  const researchId = store.publishArtifact(runId, evidenceAttempt, research as never, [], 0).id;
+  const hypothesis = publicHypothesis(researchId) as Record<string, unknown>;
+  const candidates = hypothesis.candidates as Array<Record<string, unknown>>;
+  candidates[0]!.supporting_evidence_ids = ["ev_arxiv_1"];
+  candidates[0]!.opposing_evidence_ids = ["ev_crossref_1"];
+  candidates[1]!.supporting_evidence_ids = ["ev_crossref_1"];
+  candidates[1]!.opposing_evidence_ids = ["ev_arxiv_1"];
+  const evaluations = (hypothesis.comparison as Record<string, unknown>).evaluations as Array<Record<string, unknown>>;
+  evaluations[0]!.evidence_ids = ["ev_arxiv_1"];
+  evaluations[1]!.evidence_ids = ["ev_crossref_1"];
+  publishPublicArtifact(store, runId, "hypothesis-generation", hypothesis);
+
+  const exported = buildRepresentativeCase(store, runId, "2026-08-22T00:00:00.000Z");
+
+  assert.equal(exported.source_ledger.status, "known");
+  assert.equal(exported.source_ledger.records.length, 3);
+  const arxiv = exported.source_ledger.records.find((record) => record.evidence_id === "ev_arxiv_1");
+  assert.deepEqual(arxiv?.source, {
+    source_type: "arxiv",
+    title: "Frozen arXiv source",
+    locator: "arxiv:1234.5678",
+    url: "https://arxiv.org/abs/1234.5678",
+  });
+  assert.deepEqual(arxiv?.acquisition, {
+    method: "search_tool",
+    tool: "arxiv_search",
+    query: "retrieval evaluation",
+  });
+  assert.deepEqual(arxiv?.availability, { status: "available", evidence_status: "succeeded" });
+  assert.deepEqual(arxiv?.hypothesis_roles, [
+    { artifact_id: exported.public_artifacts.hypothesis[0]!.id, candidate_id: "H1", role: "supporting" },
+    { artifact_id: exported.public_artifacts.hypothesis[0]!.id, candidate_id: "H2", role: "opposing" },
+  ]);
+  assert.ok(arxiv?.limitations.includes("metadata_only_no_full_text_verification"));
+  assert.ok(arxiv?.artifact_uses.some((use) => use.relation === "research_claim"));
+
+  const partial = exported.source_ledger.records.find((record) => record.evidence_id === "ev_crossref_1");
+  assert.deepEqual(partial?.availability, { status: "partial", evidence_status: "partial" });
+  const failed = exported.source_ledger.records.find((record) => record.evidence_id === "ev_failed_1");
+  assert.equal(failed?.source, null);
+  assert.ok(failed?.unknown_reasons.includes("no_citable_source"));
+  assert.ok(failed?.limitations.includes("retrieval_status_source_unavailable"));
+
+  const json = JSON.stringify(exported);
+  assert.doesNotMatch(json, /output_json|resultSummary|INTERNAL_RATIONALE|tool_raw/i);
+  const markdown = renderRepresentativeCaseMarkdown(exported);
+  assert.match(markdown, /证据来源台账/);
+  assert.match(markdown, /Frozen arXiv source/);
+  assert.match(markdown, /source_unavailable/);
+});
+
 test("strict representative export requires the frozen question and auditable two-round facts", () => {
   const store = testStore();
   const runId = store.createRun("Science-125 #1", { science125Id: 1 });
+  const evidenceAttemptId = store.startAttempt(runId, "researcher");
+  store.recordEvidence(runId, evidenceAttemptId, {
+    evidenceId: "ev_strict_1",
+    tool: "arxiv_search",
+    sourceType: "arxiv",
+    query: "strict source",
+    status: "succeeded",
+    resultSummary: "one source",
+    citations: [{ source_type: "arxiv", title: "Strict source", locator: "arxiv:1", url: null }],
+  });
+  store.publishArtifact(runId, evidenceAttemptId, { artifact_type: "research" } as never, [], 0);
   const attemptId = store.startAttempt(runId, "research-plan");
   const planId = store.publishArtifact(runId, attemptId, { artifact_type: "research-plan" } as never, [], 0).id;
   store.emit(runId, "evaluation.round", {

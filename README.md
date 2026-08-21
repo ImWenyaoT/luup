@@ -234,10 +234,12 @@ checker 不会把这些缺失项伪装成通过。
 
 `submission:case` 从指定 SQLite `runId` 生成同目录的 JSON 与 Markdown 代表性案例；它保留题号、终态、两轮
 原始 Artifact ID、反馈来源、修订字段、评分/用量/限制变化和 B1–B4 验收计数，并通过与公开 API 相同的白名单
-投影输出候选比较、两轮研究计划和评审反馈。prompt、内部 rationale、工具原始返回、内部错误正文或凭证不会进入
-导出；失败、缺失和 unknown 会显式保留。该命令只读 SQLite，不会启动模型。默认模式仍是诊断模式；`--strict`
-要求 science125_id 属冻结题库、Run 已 completed、round1/round2 及 feedback/revision 事实齐全、verification 事件含
-B1/B2/B3/B4 且均通过、用量记录完整。严格门失败会在 JSON 中保留 `strict.reasons` 并返回非零。
+投影输出候选比较、两轮研究计划和评审反馈。`source_ledger` 逐条列出实际检索来源的 locator/URL、search tool/query、
+可用性、候选假设的 supporting/opposing 关系、Artifact 使用关系和由检索通路决定的限制；缺失/失败来源仍保留为
+unknown 或 unavailable。prompt、内部 rationale、工具原始返回、内部错误正文或凭证不会进入导出；失败、缺失和 unknown
+会显式保留。该命令只读 SQLite，不会启动模型。默认模式仍是诊断模式；`--strict` 要求 science125_id 属冻结题库、
+Run 已 completed、round1/round2 及 feedback/revision 事实齐全、source ledger 完整、verification 事件含 B1/B2/B3/B4
+且均通过、用量记录完整。严格门失败会在 JSON 中保留 `strict.reasons` 并返回非零。
 
 ## 验证
 
