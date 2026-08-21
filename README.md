@@ -151,6 +151,8 @@ bun run db:restore -- \
 ```sh
 bun run canary                              # 单题冒烟，走 live 模型并持久化证据
 bun run batch --ids 1-125 --dry-run         # 先看计划，零执行
+bun run batch --ids 1-125 --preflight --confirm-science125 --release-commit <40hex> \
+  --db outputs/runtime/science125-formal.db  # 正式 Phase A 零费用就绪检查；不建库、不建 manifest
 bun run batch --ids 3,54,61                 # 断点续跑：已交付的题自动跳过
 bun run batch --ids 1-125 --confirm-science125 --release-commit <40hex> \
   --db outputs/runtime/science125-formal.db --concurrency 3  # 正式全量首次开跑
@@ -198,6 +200,10 @@ Canary 默认写 `outputs/runtime/canary.db`，并在 stdout 返回 `database` �
 `LUUP_DATABASE` 改写位置。除非只做临时诊断，不要把 live canary 指到 `:memory:`。
 每次 live 批跑都会在执行前输出 durable `manifestId`；纯 `--ids ... --dry-run` 使用内存规划且不创建
 SQLite 或 manifest。使用 `--manifest-id` 时可省略 `--ids`，若同时提供则必须与原 manifest 的题集完全一致。
+`--preflight` 复用正式付费启动门，额外检查 Bun 1.4.0、题库、确认参数、Qwen 凭据、clean release commit
+以及 Phase A 的 fresh DB/sidecar（Phase B 则核对预注册 30 题），输出结构化 admitted plan 后退出；它不会打开
+SQLite、创建 manifest、构造 executor 或调用模型。它不能与 `--dry-run` 或 `--manifest-id` 混用：resume 的
+source/arm/terminal 一致性必须开库核对，不能伪装成零副作用检查。
 非 dry-run 且题集恰为 1–125 时必须显式传 `--confirm-science125`。首次正式全量开跑还要求 Git source
 identity 可取得、工作树 clean，并拒绝目标 DB 或任何 SQLite/writer-lock sidecar 已存在。正式全量续跑
 还要求当前工作树 clean、commit 与 manifest 已有 Run 一致，且 memory arm 与本次 `--no-memory` 选择一致；

@@ -23,7 +23,7 @@ import {
   type QuestionOutcome,
   type RunQuestion,
 } from "../src/batch/runner.ts";
-import { readSourceIdentity } from "../src/batch/admission.ts";
+import { readPhaseBQuestionIds, readSourceIdentity } from "../src/batch/admission.ts";
 import { findQuestion, readScience125, science125Integrity, science125Text } from "../src/domain/science125.ts";
 import { clearModelOverride, modelConfigStatus } from "../src/seams/model.ts";
 import { SqliteStore } from "../src/store/store.ts";
@@ -728,6 +728,184 @@ test("live batch rejects an unsupported Bun runtime before opening SQLite", asyn
   assert.match(output, /1\.3\.9/);
   assert.match(output, /Bun 1\.4\.0/);
   assert.equal(existsSync(dbPath), false);
+});
+
+test("formal preflight prints an admitted plan and never creates SQLite", async () => {
+  const t = { onTestFinished };
+  const { repoRoot, commit } = createCleanGitWorkspace(t);
+  const dbPath = join(repoRoot, "outputs", "formal.db");
+  let output = "";
+  const originalWrite = process.stdout.write.bind(process.stdout) as typeof process.stdout.write;
+  process.stdout.write = ((chunk: unknown) => {
+    output += String(chunk);
+    return true;
+  }) as typeof process.stdout.write;
+  t.onTestFinished(() => {
+    process.stdout.write = originalWrite;
+  });
+
+  const code = await main(
+    [
+      "--ids",
+      "1-125",
+      "--preflight",
+      "--confirm-science125",
+      "--release-commit",
+      commit,
+      "--repo-root",
+      repoRoot,
+      "--db",
+      dbPath,
+    ],
+    { bunVersion: "1.4.0", modelCredential: true },
+  );
+
+  assert.equal(code, 0);
+  assert.match(output, /preflight admitted/);
+  assert.match(output, /"phase": "phase_a"/);
+  assert.match(output, new RegExp(`"gitCommit": "${commit}"`));
+  assert.equal(existsSync(dbPath), false);
+  assert.equal(existsSync(`${dbPath}.writer-lock.db`), false);
+});
+
+test("formal preflight admits only the preregistered Phase B ids without touching its paired database", async () => {
+  const t = { onTestFinished };
+  const repo = createCleanGitWorkspace(t);
+  const phaseBIds = readPhaseBQuestionIds();
+  mkdirSync(join(repo.repoRoot, "docs", "design"), { recursive: true });
+  writeFileSync(
+    join(repo.repoRoot, "docs", "design", "experiment-protocol.json"),
+    JSON.stringify({ phase_b_subset: { question_ids: phaseBIds } }),
+  );
+  gitCommand(repo.repoRoot, ["add", "docs/design/experiment-protocol.json"]);
+  gitCommand(repo.repoRoot, ["commit", "-qm", "protocol"]);
+  const commit = gitCommand(repo.repoRoot, ["rev-parse", "HEAD"]);
+  mkdirSync(join(repo.repoRoot, "outputs"), { recursive: true });
+  const dbPath = join(repo.repoRoot, "outputs", "paired.db");
+  writeFileSync(dbPath, "phase-a-facts");
+  let output = "";
+  const originalWrite = process.stdout.write.bind(process.stdout) as typeof process.stdout.write;
+  process.stdout.write = ((chunk: unknown) => {
+    output += String(chunk);
+    return true;
+  }) as typeof process.stdout.write;
+  t.onTestFinished(() => {
+    process.stdout.write = originalWrite;
+  });
+
+  const code = await main(
+    [
+      "--ids",
+      phaseBIds.join(","),
+      "--preflight",
+      "--no-memory",
+      "--confirm-memory-ablation",
+      "--release-commit",
+      commit,
+      "--repo-root",
+      repo.repoRoot,
+      "--db",
+      dbPath,
+    ],
+    { bunVersion: "1.4.0", modelCredential: true },
+  );
+
+  assert.equal(code, 0);
+  assert.match(output, /"phase": "phase_b"/);
+  assert.match(output, /"memoryArm": "off"/);
+  assert.equal(readFileSync(dbPath, "utf8"), "phase-a-facts");
+  assert.equal(existsSync(`${dbPath}.writer-lock.db`), false);
+});
+
+test("formal preflight rejects missing credentials, dirty source, and existing DB before side effects", async () => {
+  const t = { onTestFinished };
+  const clean = createCleanGitWorkspace(t);
+  let output = "";
+  const originalWrite = process.stdout.write.bind(process.stdout) as typeof process.stdout.write;
+  process.stdout.write = ((chunk: unknown) => {
+    output += String(chunk);
+    return true;
+  }) as typeof process.stdout.write;
+  t.onTestFinished(() => {
+    process.stdout.write = originalWrite;
+  });
+  const missingCredentialDb = join(clean.repoRoot, "outputs", "missing-credential.db");
+  assert.equal(
+    await main(
+      [
+        "--ids",
+        "1-125",
+        "--preflight",
+        "--confirm-science125",
+        "--release-commit",
+        clean.commit,
+        "--repo-root",
+        clean.repoRoot,
+        "--db",
+        missingCredentialDb,
+      ],
+      { bunVersion: "1.4.0", modelCredential: false },
+    ),
+    2,
+  );
+  assert.match(output, /缺少 QWEN_API_KEY/);
+  assert.equal(existsSync(missingCredentialDb), false);
+
+  output = "";
+  writeFileSync(clean.trackedPath, "dirty\n");
+  const dirtyDb = join(clean.repoRoot, "outputs", "dirty.db");
+  assert.equal(
+    await main(
+      [
+        "--ids",
+        "1-125",
+        "--preflight",
+        "--confirm-science125",
+        "--release-commit",
+        clean.commit,
+        "--repo-root",
+        clean.repoRoot,
+        "--db",
+        dirtyDb,
+      ],
+      { bunVersion: "1.4.0", modelCredential: true },
+    ),
+    2,
+  );
+  assert.match(output, /git tree clean/);
+  assert.equal(existsSync(dirtyDb), false);
+
+  output = "";
+  writeFileSync(clean.trackedPath, "initial\n");
+  mkdirSync(join(clean.repoRoot, "outputs"), { recursive: true });
+  const existingDb = join(clean.repoRoot, "outputs", "existing.db");
+  writeFileSync(existingDb, "occupied");
+  assert.equal(
+    await main(
+      [
+        "--ids",
+        "1-125",
+        "--preflight",
+        "--confirm-science125",
+        "--release-commit",
+        clean.commit,
+        "--repo-root",
+        clean.repoRoot,
+        "--db",
+        existingDb,
+      ],
+      { bunVersion: "1.4.0", modelCredential: true },
+    ),
+    2,
+  );
+  assert.match(output, /已存在的 DB\/sidecar/);
+  assert.equal(readFileSync(existingDb, "utf8"), "occupied");
+  assert.equal(existsSync(`${existingDb}.writer-lock.db`), false);
+});
+
+test("preflight rejects manifest resume and dry-run instead of pretending to inspect durable facts", async () => {
+  assert.equal(await main(["--manifest-id", "resume", "--preflight"], { bunVersion: "1.4.0" }), 2);
+  assert.equal(await main(["--ids", "1-125", "--preflight", "--dry-run"], { bunVersion: "1.4.0" }), 2);
 });
 
 test("--dry-run plans without creating a single run", async () => {

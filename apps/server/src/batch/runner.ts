@@ -699,7 +699,7 @@ export function createHarnessRunner(store: SqliteStore, memory: CampaignMemory |
 
 export async function main(
   argv: string[] = process.argv.slice(2),
-  runtime: { bunVersion?: string } = {},
+  runtime: { bunVersion?: string; modelCredential?: boolean } = {},
 ): Promise<number> {
   let parsed;
   try {
@@ -713,6 +713,7 @@ export async function main(
         // 同时在飞几道题。默认 3、上限 MAX_CONCURRENCY，安全性论证见 `runBatch`。
         concurrency: { type: "string" },
         "dry-run": { type: "boolean", default: false },
+        preflight: { type: "boolean", default: false },
         // 消融臂：关掉跨 run 记忆的注入与写回。被消融的是数据通道本身，不是一个返回
         // 空结果的工具 —— TS 栈没有 memory_search，模型的记忆面只有注入这一条。
         "no-memory": { type: "boolean", default: false },
@@ -727,6 +728,15 @@ export async function main(
     return 2;
   }
   const manifestId = parsed.values["manifest-id"];
+  const preflight = parsed.values.preflight === true;
+  if (preflight && parsed.values["dry-run"] === true) {
+    process.stdout.write("[batch] --preflight 与 --dry-run 不能同时使用；前者检查正式付费启动门，后者只规划题目。\n");
+    return 2;
+  }
+  if (preflight && manifestId) {
+    process.stdout.write("[batch] --preflight 不能与 --manifest-id 混用；resume 必须打开 SQLite 核对既有事实。\n");
+    return 2;
+  }
   if (!parsed.values.ids && !manifestId) {
     process.stdout.write("[batch] 缺少 --ids 或 --manifest-id，例如 `--ids 1-125`。\n");
     return 2;
@@ -786,9 +796,40 @@ export async function main(
     process.stdout.write(`[batch] ${launchAdmission.error}\n`);
     return 2;
   }
-  if (!dryRun && modelConfigStatus().credential === "absent") {
+  const credentialAvailable = runtime.modelCredential ?? modelConfigStatus().credential !== "absent";
+  if (!dryRun && !credentialAvailable) {
     process.stdout.write("[batch] 缺少 QWEN_API_KEY，非 dry-run 批跑已拒绝启动。\n");
     return 2;
+  }
+  if (preflight) {
+    if (!launchAdmission.plan.formal) {
+      process.stdout.write("[batch] --preflight 只验收正式 Phase A 全量或预注册 Phase B memory-off 批次。\n");
+      return 2;
+    }
+    const bunVersion =
+      runtime.bunVersion ??
+      (globalThis as typeof globalThis & { Bun?: { version: string } }).Bun?.version ??
+      "unavailable";
+    process.stdout.write("[batch] preflight admitted\n");
+    process.stdout.write(
+      `${JSON.stringify(
+        {
+          status: "admitted",
+          phase: noMemory ? "phase_b" : "phase_a",
+          questionCount: questionIds?.length ?? 0,
+          questionIds: compactIds(questionIds ?? []),
+          memoryArm: launchAdmission.plan.memoryArm,
+          databasePath: requestedDbPath,
+          bunVersion,
+          sourceIdentity: launchAdmission.plan.sourceIdentity,
+          releaseGuarded: launchAdmission.plan.releaseGuarded,
+          credential: "configured",
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    return 0;
   }
   const store = new SqliteStore(dbPath);
   try {
