@@ -2,7 +2,14 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
-import { BatchManifest, type BatchTerminalStatus } from "./manifest.ts";
+import {
+  BatchManifest,
+  deriveBatchManifestSnapshot,
+  type BatchManifestReadSource,
+  type BatchManifestSnapshot,
+  type BatchTerminalStatus,
+  type StoredBatchManifest,
+} from "./manifest.ts";
 import { SqliteStore } from "../store/store.ts";
 
 export const BATCH_SUBMISSION_INDEX_FORMAT = "luup.batch-submission-index" as const;
@@ -64,6 +71,12 @@ export type ExportBatchSubmissionOptions = {
   store?: SqliteStore;
 };
 
+/** The minimal read seam needed by the submission index. */
+export type BatchSubmissionReadSource = BatchManifestReadSource & {
+  readBatchManifest(manifestId: string): StoredBatchManifest | null;
+  snapshot(runId: string): Record<string, unknown> | null;
+};
+
 export type Science125BatchExportGate = {
   passed: boolean;
   reasons: string[];
@@ -102,6 +115,25 @@ export function buildBatchSubmissionIndex(
   generatedAt = new Date().toISOString(),
 ): BatchSubmissionIndex {
   const snapshot = BatchManifest.open(store, manifestId).snapshot();
+  return buildBatchSubmissionIndexFromSnapshot(store, snapshot, generatedAt);
+}
+
+/** Build the same index through a read-only fact seam; this never opens SqliteStore. */
+export function buildBatchSubmissionIndexReadOnly(
+  source: BatchSubmissionReadSource,
+  manifestId: string,
+  generatedAt = new Date().toISOString(),
+): BatchSubmissionIndex {
+  const stored = source.readBatchManifest(manifestId);
+  if (stored === null) throw new Error(`unknown batch manifest: ${manifestId}`);
+  return buildBatchSubmissionIndexFromSnapshot(source, deriveBatchManifestSnapshot(source, stored), generatedAt);
+}
+
+function buildBatchSubmissionIndexFromSnapshot(
+  source: BatchSubmissionReadSource,
+  snapshot: BatchManifestSnapshot,
+  generatedAt: string,
+): BatchSubmissionIndex {
   const expected = new Set(snapshot.expectedIds);
   const byQuestion = new Map<number, typeof snapshot.records>();
   for (const record of snapshot.records) {
@@ -132,18 +164,18 @@ export function buildBatchSubmissionIndex(
     const records = byQuestion.get(questionId) ?? [];
     const first = records[0] ?? null;
     if (snapshot.expectedDuplicateIds.includes(questionId)) {
-      return question(questionId, "invalid", first?.runId ?? null, "duplicate_expected_id", store);
+      return question(questionId, "invalid", first?.runId ?? null, "duplicate_expected_id", source);
     }
-    if (records.length === 0) return question(questionId, "omitted", null, "omitted", store);
+    if (records.length === 0) return question(questionId, "omitted", null, "omitted", source);
     if (records.length > 1) {
-      return question(questionId, "invalid", first?.runId ?? null, "duplicate_manifest_records", store);
+      return question(questionId, "invalid", first?.runId ?? null, "duplicate_manifest_records", source);
     }
     const reason = first
       ? (invalidByRecord.get(recordKey(first.questionId, first.status, first.runId)) ??
         (!expected.has(first.questionId) ? "unexpected_question_id" : null))
       : null;
-    if (reason !== null) return question(questionId, "invalid", first?.runId ?? null, reason, store);
-    return question(questionId, first!.status, first!.runId, null, store);
+    if (reason !== null) return question(questionId, "invalid", first?.runId ?? null, reason, source);
+    return question(questionId, first!.status, first!.runId, null, source);
   });
 
   const counts = {
@@ -250,20 +282,20 @@ function question(
   status: SubmissionQuestionStatus,
   runId: string | null,
   reason: string | null,
-  store: SqliteStore,
+  source: BatchSubmissionReadSource,
 ): SubmissionQuestion {
   return {
     questionId,
     status,
     runId,
     reason,
-    links: linksFor(store, runId),
+    links: linksFor(source, runId),
   };
 }
 
-function linksFor(store: SqliteStore, runId: string | null): SubmissionQuestion["links"] {
+function linksFor(source: BatchSubmissionReadSource, runId: string | null): SubmissionQuestion["links"] {
   if (runId === null) return null;
-  const run = store.snapshot(runId);
+  const run = source.snapshot(runId);
   if (run === null) return null;
   const finalArtifactId = typeof run.final_artifact_id === "string" ? run.final_artifact_id : null;
   return {

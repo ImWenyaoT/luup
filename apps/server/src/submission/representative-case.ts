@@ -6,7 +6,7 @@ import { FAILURE_CODES } from "../agent/failures.ts";
 import type { Role } from "../agent/contracts.ts";
 import { projectArtifact, type PublicArtifact } from "../api/projection.ts";
 import { findQuestion, science125Integrity } from "../domain/science125.ts";
-import { SqliteStore } from "../store/store.ts";
+import { SqliteStore, type StoredArtifact } from "../store/store.ts";
 
 export const REPRESENTATIVE_CASE_FORMAT = "luup.representative-case" as const;
 export const REPRESENTATIVE_CASE_VERSION = 3 as const;
@@ -143,6 +143,12 @@ export type RepresentativeCaseStrictReport = {
   reasons: string[];
 };
 
+/** Read-only store seam used by both the normal exporter and offline readiness. */
+export type RepresentativeCaseReadSource = {
+  snapshot(runId: string): Record<string, unknown> | null;
+  artifact(artifactId: string): StoredArtifact | null;
+};
+
 export type ExportRepresentativeCaseOptions = {
   dbPath: string;
   runId: string;
@@ -274,7 +280,7 @@ export type RepresentativeCaseSourceLedger = {
  * stable reason codes instead of being guessed or silently dropped.
  */
 export function buildRepresentativeCase(
-  store: SqliteStore,
+  store: RepresentativeCaseReadSource,
   runId: string,
   generatedAt = new Date().toISOString(),
 ): RepresentativeCaseExport {
@@ -331,7 +337,7 @@ export function buildRepresentativeCase(
  * the CLI can fail closed while leaving the generated case available for audit.
  */
 export function checkRepresentativeCaseStrict(
-  store: SqliteStore,
+  store: RepresentativeCaseReadSource,
   value: RepresentativeCaseExport,
 ): RepresentativeCaseStrictReport {
   const reasons: string[] = [];
@@ -749,7 +755,7 @@ type SourceLedgerRelations = { artifactUses: SourceLedgerUse[]; hypothesisRoles:
  */
 function buildSourceLedger(
   value: unknown,
-  store: SqliteStore,
+  store: RepresentativeCaseReadSource,
   artifacts: RepresentativeCaseExport["artifacts"],
   rootReasons: string[],
 ): RepresentativeCaseSourceLedger {
@@ -889,7 +895,7 @@ function buildSourceLedger(
 }
 
 function collectSourceRelations(
-  store: SqliteStore,
+  store: RepresentativeCaseReadSource,
   artifacts: RepresentativeCaseExport["artifacts"],
   addRelation: (evidenceId: string, use: SourceLedgerUse) => void,
   addHypothesisRole: (evidenceId: string, role: HypothesisRole) => void,
@@ -1149,7 +1155,7 @@ function compareSourceUse(left: SourceLedgerUse, right: SourceLedgerUse): number
 }
 
 function buildPublicArtifacts(
-  store: SqliteStore,
+  store: RepresentativeCaseReadSource,
   artifacts: RepresentativeCaseExport["artifacts"],
   rootReasons: string[],
 ): RepresentativeCaseExport["public_artifacts"] {
@@ -1161,7 +1167,7 @@ function buildPublicArtifacts(
 }
 
 function publicArtifactList(
-  store: SqliteStore,
+  store: RepresentativeCaseReadSource,
   ids: readonly string[],
   rootReasons: string[],
   label: string,
@@ -1174,7 +1180,7 @@ function publicArtifactList(
 
 /** Load an Artifact only through the same public projection used by the API. */
 function readPublicArtifact(
-  store: SqliteStore,
+  store: RepresentativeCaseReadSource,
   artifactId: string | null,
   reasons: string[],
   label: string,
@@ -1285,7 +1291,7 @@ function toSubmissionPublicArtifact(artifact: PublicArtifact): RepresentativeCas
 
 function buildRound(
   round: 1 | 2,
-  store: SqliteStore,
+  store: RepresentativeCaseReadSource,
   events: readonly CaseEvent[],
   artifacts: RepresentativeCaseExport["artifacts"],
   rootReasons: string[],

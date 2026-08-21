@@ -193,6 +193,16 @@ bun run submission:check -- outputs/submission/编号-学校-申报人姓名-作
 bun run submission:case -- --db /private/tmp/luup-science125-canary-final-20260822.db \
   --run-id <run_id> --out outputs/submission/science125-representative-case.json \
   --strict  # 严格要求冻结题号、completed、两轮反馈/修订、B1–B4 和用量事实
+bun run submission:ready -- \
+  --db outputs/runtime/science125-formal.db \
+  --manifest-id <phase_a_manifest_id> \
+  --representative-run-id <run_id> \
+  --out outputs/submission/readiness-$(date +%Y%m%d-%H%M%S) \
+  --input-price-per-million <input单价> \
+  --output-price-per-million <output单价> \
+  --currency CNY --model <Qwen模型> \
+  --price-source '<官方价目表/控制台凭证>' \
+  --submission-file <编号-学校-申报人姓名-作品名称.pdf>  # 统一生成/核验赛前材料
 ```
 
 批跑默认写 `outputs/runtime/typescript-runs.db`，`--db` 或 `LUUP_DATABASE` 可改。
@@ -240,6 +250,14 @@ unknown 或 unavailable。prompt、内部 rationale、工具原始返回、内�
 会显式保留。该命令只读 SQLite，不会启动模型。默认模式仍是诊断模式；`--strict` 要求 science125_id 属冻结题库、
 Run 已 completed、round1/round2 及 feedback/revision 事实齐全、source ledger 完整、verification 事件含 B1/B2/B3/B4
 且均通过、用量记录完整。严格门失败会在 JSON 中保留 `strict.reasons` 并返回非零。
+
+`submission:ready` 是正式批跑后的统一赛前 readiness 控制面：以只读方式打开指定 SQLite，按 manifest 生成严格
+Science-125 逐题索引、manifest-scoped 指标、评分、usage JSONL/Markdown 和 strict representative case，并输出
+新的 `readiness.json`/`readiness.md`。输出目录必须不存在，命令通过临时目录原子改名，不覆盖已有材料。它不会
+调用模型、推断价格、修复 running Run 或部署服务；价格缺失保持 `unknown`。报名表截图、Qwen 调用凭证、身份水印、
+最终 PDF、公开 API 和 WebUI 即使传入路径/地址，也仍作为 `manual` 门展示，任何必需门为 `fail`、`unknown` 或
+`manual` 时整体返回非零。派生文件包括 `batch-index.json`、`metrics.{json,md}`、`scoring.{json,md}`、
+`usage.{jsonl,md}` 和 `representative-case.{json,md}`。
 
 ## 验证
 

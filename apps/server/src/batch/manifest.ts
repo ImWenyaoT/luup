@@ -43,6 +43,15 @@ export type BatchManifestRecordInput = {
   runId?: string | null;
 };
 
+/** Narrow read-only seam used to reconcile manifest records with durable Runs. */
+export type BatchManifestReadSource = {
+  batchRunFacts(runId: string): {
+    science125Id: number | null;
+    status: string;
+    errorCode: string | null;
+  } | null;
+};
+
 /**
  * The manifest is deliberately a thin handle over SQLite. It does not cache the
  * expected set or records, so every snapshot and gate reads the durable facts.
@@ -105,54 +114,7 @@ export class BatchManifest {
   snapshot(): BatchManifestSnapshot {
     const stored = this.#store.readBatchManifest(this.id);
     if (stored === null) throw new Error(`unknown batch manifest: ${this.id}`);
-
-    const expectedIds = uniqueSorted(stored.expectedIds);
-    const expectedDuplicateIds = duplicateIds(stored.expectedIds);
-    const records = stored.records.map((record) => ({
-      questionId: record.questionId,
-      status: record.status,
-      runId: record.runId,
-    }));
-    const expected = new Set(expectedIds);
-    const seen = countBy(records.map((record) => record.questionId));
-    const omittedIds = expectedIds.filter((questionId) => !seen.has(questionId));
-    const duplicateIdsInRecords = [...seen.entries()]
-      .filter(([, count]) => count > 1)
-      .map(([questionId]) => questionId)
-      .sort((left, right) => left - right);
-    const unexpectedIds = uniqueSorted(records.map((record) => record.questionId).filter((id) => !expected.has(id)));
-    const counts = {
-      success: 0,
-      partial: 0,
-      failure: 0,
-      human_review: 0,
-      total: records.length,
-    } satisfies Record<BatchTerminalStatus, number> & { total: number };
-    for (const record of records) counts[record.status] += 1;
-
-    const invalidRecords = records.flatMap((record) => {
-      const reason = durableRecordError(this.#store, record);
-      return reason === null ? [] : [{ ...record, reason }];
-    });
-
-    const complete =
-      expectedDuplicateIds.length === 0 &&
-      omittedIds.length === 0 &&
-      duplicateIdsInRecords.length === 0 &&
-      unexpectedIds.length === 0 &&
-      invalidRecords.length === 0;
-    return {
-      id: stored.id,
-      expectedIds,
-      expectedDuplicateIds,
-      records,
-      invalidRecords,
-      counts,
-      omittedIds,
-      duplicateIds: duplicateIdsInRecords,
-      unexpectedIds,
-      complete,
-    };
+    return deriveBatchManifestSnapshot(this.#store, stored);
   }
 
   assertComplete(): BatchManifestSnapshot {
@@ -175,9 +137,59 @@ export class BatchManifest {
   }
 }
 
-function durableRecordError(store: SqliteStore, record: BatchTerminalRecord): string | null {
+export function deriveBatchManifestSnapshot(
+  source: BatchManifestReadSource,
+  stored: StoredBatchManifest,
+): BatchManifestSnapshot {
+  const expectedIds = uniqueSorted(stored.expectedIds);
+  const expectedDuplicateIds = duplicateIds(stored.expectedIds);
+  const records = stored.records.map((record) => ({
+    questionId: record.questionId,
+    status: record.status,
+    runId: record.runId,
+  }));
+  const expected = new Set(expectedIds);
+  const seen = countBy(records.map((record) => record.questionId));
+  const omittedIds = expectedIds.filter((questionId) => !seen.has(questionId));
+  const duplicateIdsInRecords = [...seen.entries()]
+    .filter(([, count]) => count > 1)
+    .map(([questionId]) => questionId)
+    .sort((left, right) => left - right);
+  const unexpectedIds = uniqueSorted(records.map((record) => record.questionId).filter((id) => !expected.has(id)));
+  const counts = {
+    success: 0,
+    partial: 0,
+    failure: 0,
+    human_review: 0,
+    total: records.length,
+  } satisfies Record<BatchTerminalStatus, number> & { total: number };
+  for (const record of records) counts[record.status] += 1;
+  const invalidRecords = records.flatMap((record) => {
+    const reason = durableRecordError(source, record);
+    return reason === null ? [] : [{ ...record, reason }];
+  });
+  return {
+    id: stored.id,
+    expectedIds,
+    expectedDuplicateIds,
+    records,
+    invalidRecords,
+    counts,
+    omittedIds,
+    duplicateIds: duplicateIdsInRecords,
+    unexpectedIds,
+    complete:
+      expectedDuplicateIds.length === 0 &&
+      omittedIds.length === 0 &&
+      duplicateIdsInRecords.length === 0 &&
+      unexpectedIds.length === 0 &&
+      invalidRecords.length === 0,
+  };
+}
+
+function durableRecordError(source: BatchManifestReadSource, record: BatchTerminalRecord): string | null {
   if (record.runId === null) return "missing_run_id";
-  const facts = store.batchRunFacts(record.runId);
+  const facts = source.batchRunFacts(record.runId);
   if (facts === null) return "unknown_run";
   if (facts.science125Id !== record.questionId) return "science125_id_mismatch";
   switch (record.status) {

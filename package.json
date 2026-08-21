@@ -22,6 +22,7 @@
     "usage:export": "bun apps/server/src/submission/usage-export.ts",
     "submission:check": "bun apps/server/src/submission/checker.ts",
     "submission:case": "bun apps/server/src/submission/representative-case.ts",
+    "submission:ready": "bun apps/server/src/submission/readiness.ts",
     "typecheck": "bun run --filter @luup/server typecheck && bun run --filter @luup/frontend typecheck",
     "test": "bun run --filter '*' test",
     "test:coverage": "bun run --filter @luup/server test:coverage",

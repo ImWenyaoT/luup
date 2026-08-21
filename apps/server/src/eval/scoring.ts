@@ -375,7 +375,7 @@ function manifestScopeReport(scope: ManifestRunScope): ScoringManifestScope {
 }
 
 /** 给库里每一个 Run 打分。只读打开，绝不会写到被评的库。 */
-function loadRunScoresWithScope(
+export function loadRunScoresWithScope(
   dbPath: string,
   manifestId?: string,
 ): { scores: RunScore[]; scope?: ScoringManifestScope } {
