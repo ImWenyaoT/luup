@@ -208,8 +208,8 @@
       "before_phase_a": false,
       "before_definitive_phase_a": true,
       "before_any_reading": false,
-      "recorded_when": "**历史 pilot/v2/v3 已读、正式全量 Science-125 尚未启动。** 本轮只运行了确定性测试、125 题 dry-run 与一条不带 science125_id 的付费 free-form canary；它们均不得并入正式 Phase A。",
-      "registered_commit_amended": null,
+      "recorded_when": "**历史 pilot/v2/v3 已读、正式全量 Science-125 尚未启动。** 本轮运行了确定性测试、125 题 dry-run、早期诊断 canary 与一条最终通过的 Science-125 q1 付费 canary；它们均不得并入正式 Phase A。",
+      "registered_commit_amended": "90a5363fa75668a60c3946cc1f2fb61e7901c0f0",
       "summary": "正式批重启前的执行合同升级：运行时由 Node/pnpm/node:sqlite 全量迁为 Bun 1.4/Bun workspace/bun:sqlite；保留 @openai/agents 0.16 + Qwen 百炼 seam。产物合同新增多个候选假设、结构化研究边界与可执行研究计划；RunTrace、BatchManifest 与失败诊断成为 SQLite 事实。",
       "changes": {
         "runtime": "所有根入口改为 `bun run`，正式 live batch 在打开数据库前强制 Bun 1.4.0；TypeScript 由 Bun 原生执行，无后端构建或 transpile 产物。旧修订中的 pnpm/node 命令均作为历史坐标保留，不再是当前执行入口。",
@@ -219,6 +219,22 @@
       },
       "unchanged": "正式 Phase A 仍必须使用全新数据库运行 1–125 全集；arms、phase_b_subset、统计设计、双分母、失败桶、熔断阈值、最多两轮补证/修订与不作显著性主张的纪律不变。历史 pilot/v2/v3、free-form canary 和确定性运行全部围出正式读数。",
       "effect_on_numbers": "这些合同会改变未来正式批的交付率、失败分布、token 与 corrections，方向未知；没有任何历史结果被重写或合并。正式全量批尚未启动。"
+    },
+    {
+      "date": "2026-08-22",
+      "before_phase_a": false,
+      "before_definitive_phase_a": true,
+      "before_any_reading": false,
+      "recorded_when": "**最终 q1 canary 与其用量、评分已经读取，正式 Phase A 和 Phase B 均未启动。** 本条只固定开跑保护、cohort 归属和提交导出的操作合同，不改变题集、模型输出合同、验收判据或任何统计口径。",
+      "registered_commit_amended": "2e63266a3934fecf36c542e6d4aa1b71da44d0af",
+      "summary": "正式运行与报告链 fail-closed：Phase A 必须显式确认、clean Git、全新 SQLite；Phase B 必须显式确认并精确使用预注册 30 题；续跑只接受同 commit、同 memory arm 的 manifest。正式索引和离线报告必须以 manifest 限定 cohort。",
+      "changes": {
+        "phase_a_launch": "首次 `bun run batch --ids 1-125 --confirm-science125 --db <new.db>` 在打开 SQLite 或构造模型执行器前校验 Bun 1.4、题库完整性、Git source identity、clean tree 与 DB/sidecar 不存在。续跑只允许 `--manifest-id` 指向原库，且已有 Run 必须来自同一 clean commit 与 memory_arm=on。批次开始时 source identity 冻结一次；`memory/**` 属 tracked runtime evidence，不计入源码 dirty 判定。",
+        "phase_b_launch": "memory-off 付费臂必须显式传 `--confirm-memory-ablation`，其 `--ids` 在运行时从本协议 `phase_b_subset.question_ids` 校验为精确 30 题；on/off completed skip 按 memory arm 隔离，因此可在同一正式库形成配对。续跑已有 Run 必须来自同一 clean commit 且 memory_arm=off。",
+        "report_scope": "`batch:export --require-science125` 只接受 expected IDs 精确 1–125 且 manifest complete；`usage:export`、`eval`、`score` 的 `--manifest-id` 只纳入该 manifest 能回查到同题号与匹配终态的 Run，并显式报告被排除的 DB Run。代表案例 `--strict` 要求冻结题号、completed、两轮反馈/修订、B1–B4 和完整 usage facts。"
+      },
+      "unchanged": "phase_b_subset 的 30 题、digest `498002a5...`、arms、指标、双分母、失败桶、熔断阈值、最多两轮补证/修订及禁止显著性主张全部不变。正式 Phase A 与 Phase B 仍未启动；所有 canary 继续围出正式读数。",
+      "effect_on_numbers": "只改变错误开跑、跨 commit/arm 混批和报告串库能否发生，不改变任何 Run 的科学判定或统计公式。"
     }
   ],
   "interpretation": "这是对已记录架构取舍的证据，不是普适优越性主张。结论的形状只能是「在这一条 harness commit、这一个题库、这一条串行顺序下，跨 run 记忆让交付率朝某个方向动了多少」，不能读成「记忆机制优于无记忆」或反过来。Do not claim superiority from one successful trace, one direction, or an unpriced token count.",
