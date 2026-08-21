@@ -235,6 +235,22 @@
       },
       "unchanged": "phase_b_subset 的 30 题、digest `498002a5...`、arms、指标、双分母、失败桶、熔断阈值、最多两轮补证/修订及禁止显著性主张全部不变。正式 Phase A 与 Phase B 仍未启动；所有 canary 继续围出正式读数。",
       "effect_on_numbers": "只改变错误开跑、跨 commit/arm 混批和报告串库能否发生，不改变任何 Run 的科学判定或统计公式。"
+    },
+    {
+      "date": "2026-08-22",
+      "before_phase_a": false,
+      "before_definitive_phase_a": true,
+      "before_any_reading": false,
+      "recorded_when": "**一次隔离的误启动已经发生并被中止，正式 Phase A 仍未启动。** 验收付费启动门时，环境实际存在 QWEN_API_KEY；命令在隔离数据库 `/private/tmp/luup-formal-guard.db` 创建 manifest `0e4ba864aaa74109a1d30d682961de01` 并派发 q1–q3，发现后立即终止。三条 Run 均结算为 `failed/interrupted`，manifest record 为 0；已落盘的两条 researcher usage 合计 44117 tokens（input 39076 / output 5041），其他未完整落盘的调用费用未知。该数据库及其任何 Run 永久排除正式 Phase A、Phase B、代表案例和提交报告。",
+      "registered_commit_amended": "a67935122c63b30c1811faffb0ea28ad234caae9",
+      "summary": "付费批跑再加一道不可猜测的 release 绑定：正式 Phase A、付费 Phase B 与任何 manifest resume 都必须显式提供当前已审阅的 40 位 Git commit，且在读取模型凭据或打开 SQLite 前 fail-closed。事故事实不删除、不美化，也不并入正式 cohort。",
+      "changes": {
+        "phase_a_launch": "首次正式命令改为 `bun run batch --ids 1-125 --confirm-science125 --release-commit <40hex> --db <new.db>`；resume 同样必须带 `--release-commit <40hex>`。该值必须是 40 位小写十六进制并精确等于当前 clean source identity 的 commit。",
+        "phase_b_launch": "预注册 memory-off 付费臂除 `--confirm-memory-ablation` 和精确 30 题外，同样必须带与当前 clean source identity 精确一致的 `--release-commit <40hex>`。",
+        "incident_disposition": "隔离 manifest 没有任何题目 record，三条 Run 均为 interrupted，不能通过 manifest 完整性或 manifest-scoped report gate。已知 usage 可用于成本事故审计，不得用作科学结果、交付率、失败分布、配对消融或代表案例。总费用因未完整落盘而保持 unknown，不以已知两条 usage 冒充总额。"
+      },
+      "unchanged": "题集、arms、phase_b_subset、模型与 Artifact 合同、B1–B4、统计设计、双分母、失败桶、熔断阈值、两轮上界和禁止显著性主张全部不变。正式 Phase A 仍须从全新数据库开始。",
+      "effect_on_numbers": "只提高付费启动的操作授权强度，并把一次误启动围出正式 cohort；不改变任何科学判据或统计公式。"
     }
   ],
   "interpretation": "这是对已记录架构取舍的证据，不是普适优越性主张。结论的形状只能是「在这一条 harness commit、这一个题库、这一条串行顺序下，跨 run 记忆让交付率朝某个方向动了多少」，不能读成「记忆机制优于无记忆」或反过来。Do not claim superiority from one successful trace, one direction, or an unpriced token count.",
