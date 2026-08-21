@@ -152,6 +152,8 @@ export type BatchOptions = {
   graceMs?: number;
   /** 这一批属于消融实验的哪一臂。批跑之外的 run 不属于任何一臂，见 store 的 memory_arm。 */
   memoryArm?: MemoryArm;
+  /** A CLI admission may freeze provenance before opening SQLite; library callers may omit it. */
+  sourceIdentity?: SourceIdentity | null;
   log?: (line: string) => void;
 };
 
@@ -291,7 +293,9 @@ export async function runBatch(questionIds: readonly number[], options: BatchOpt
   const repoRoot = resolve(options.repoRoot ?? process.cwd());
   // Freeze provenance before creating/starting any question.  The batch owns
   // one source cohort even when its memory append changes tracked files.
-  const sourceIdentity = readSourceIdentity(repoRoot);
+  const sourceIdentity = Object.hasOwn(options, "sourceIdentity")
+    ? (options.sourceIdentity ?? null)
+    : readSourceIdentity(repoRoot);
   const manifest = options.manifestId
     ? BatchManifest.open(options.store, options.manifestId)
     : BatchManifest.create(options.store, questionIds);
@@ -758,6 +762,14 @@ export async function main(
   // intentionally read-only planning against the durable batch that the operator named.
   const dbPath = dryRun && !manifestId ? ":memory:" : requestedDbPath;
   const repoRoot = resolve(parsed.values["repo-root"] ?? MODULE_REPO_ROOT);
+  if (questionIds !== null) {
+    try {
+      preflightQuestionIds(questionIds);
+    } catch (error) {
+      process.stdout.write(`[batch] ${describe(error)}\n`);
+      return 2;
+    }
+  }
   const launchAdmission = admitPaidBatch({
     stage: "launch",
     questionIds,
@@ -794,6 +806,12 @@ export async function main(
       process.stdout.write("[batch] 无法确定批次题集。\n");
       return 2;
     }
+    try {
+      preflightQuestionIds(questionIds);
+    } catch (error) {
+      process.stdout.write(`[batch] ${describe(error)}\n`);
+      return 2;
+    }
     if (openedManifest !== null) {
       if (!dryRun) {
         const existingRuns = openedManifest.records.flatMap((record) => {
@@ -820,11 +838,15 @@ export async function main(
       // dry-run 一次运行都不发起，所以也不构造需要 QWEN_API_KEY 的执行器。
       runQuestion: dryRun
         ? () => Promise.reject(new Error("dry-run 不执行"))
-        : createHarnessRunner(store, noMemory ? null : createCampaignMemory(repoRoot, dbPath)),
+        : createHarnessRunner(
+            store,
+            launchAdmission.plan.memoryArm === "off" ? null : createCampaignMemory(repoRoot, dbPath),
+          ),
       repoRoot,
       dryRun,
       concurrency,
-      memoryArm: noMemory ? "off" : "on",
+      memoryArm: launchAdmission.plan.memoryArm,
+      sourceIdentity: launchAdmission.plan.sourceIdentity,
       manifestId,
     });
     if (dryRun && !manifestId) process.stdout.write("[batch] dry-run 不创建 manifest。\n");

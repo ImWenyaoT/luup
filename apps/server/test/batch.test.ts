@@ -335,7 +335,7 @@ test("source identity is this repo's commit, and null where git cannot answer", 
   assert.equal(typeof identity.treeDirty, "boolean");
 });
 
-test("source identity ignores tracked memory evidence but catches source edits", () => {
+test("source identity ignores runtime evidence but catches tracked and untracked source edits", () => {
   const t = { onTestFinished };
   const { repoRoot } = createCleanGitWorkspace(t);
   const memoryPath = join(repoRoot, "memory", "questions", "q1.md");
@@ -350,6 +350,16 @@ test("source identity ignores tracked memory evidence but catches source edits",
 
   writeFileSync(memoryPath, "appended evidence\n");
   assert.deepEqual(readSourceIdentity(repoRoot), { gitCommit: commit, treeDirty: false });
+
+  const outputPath = join(repoRoot, "outputs", "runtime", "diagnostic.db");
+  mkdirSync(join(repoRoot, "outputs", "runtime"), { recursive: true });
+  writeFileSync(outputPath, "runtime evidence\n");
+  assert.deepEqual(readSourceIdentity(repoRoot), { gitCommit: commit, treeDirty: false });
+
+  const untrackedSource = join(repoRoot, "apps", "server", "src", "untracked.ts");
+  writeFileSync(untrackedSource, "export const untracked = true;\n");
+  assert.deepEqual(readSourceIdentity(repoRoot), { gitCommit: commit, treeDirty: true });
+  rmSync(untrackedSource);
 
   writeFileSync(sourcePath, "export const value = 2;\n");
   assert.deepEqual(readSourceIdentity(repoRoot), { gitCommit: commit, treeDirty: true });

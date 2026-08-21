@@ -165,7 +165,15 @@ export function readPhaseBQuestionIds(repoRoot: string = resolve(import.meta.dir
 export function readSourceIdentity(repoRoot: string): SourceIdentity | null {
   try {
     const commit = git(repoRoot, ["rev-parse", "HEAD"]);
-    const dirty = git(repoRoot, ["status", "--porcelain", "--untracked-files=no", "--", ".", ":(exclude)memory/**"]);
+    const dirty = git(repoRoot, [
+      "status",
+      "--porcelain",
+      "--untracked-files=normal",
+      "--",
+      ".",
+      ":(exclude)memory/**",
+      ":(exclude)outputs/**",
+    ]);
     return commit === null || dirty === null ? null : { gitCommit: commit.trim(), treeDirty: dirty.trim().length > 0 };
   } catch {
     return null;
