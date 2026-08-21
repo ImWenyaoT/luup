@@ -249,6 +249,31 @@ export type Science125LaunchPreflight = {
   existingDatabaseArtifacts: readonly string[];
 };
 
+/** Bind a paid formal run to the exact reviewed commit before credentials or SQLite are touched. */
+export function validateReleaseCommit(
+  required: boolean,
+  releaseCommit: string | undefined,
+  sourceIdentity: SourceIdentity | null,
+): string | null {
+  if (!required) return null;
+  if (releaseCommit === undefined) {
+    return "正式付费批跑必须显式传 --release-commit <40hex>。";
+  }
+  if (!/^[0-9a-f]{40}$/.test(releaseCommit)) {
+    return "--release-commit 必须是 40 位小写十六进制 Git commit。";
+  }
+  if (sourceIdentity === null) {
+    return "正式付费批跑无法取得 source identity；请从可识别的 Git 仓库启动。";
+  }
+  if (sourceIdentity.treeDirty) {
+    return "正式付费批跑要求当前 git tree clean。";
+  }
+  if (releaseCommit !== sourceIdentity.gitCommit) {
+    return "--release-commit 必须精确等于当前 clean source identity 的 commit。";
+  }
+  return null;
+}
+
 type RegisteredExperimentProtocol = {
   phase_b_subset?: {
     question_ids?: unknown;
@@ -897,6 +922,7 @@ export async function main(
         ids: { type: "string" },
         "manifest-id": { type: "string" },
         "confirm-science125": { type: "boolean", default: false },
+        "release-commit": { type: "string" },
         // 同时在飞几道题。默认 3、上限 MAX_CONCURRENCY，安全性论证见 `runBatch`。
         concurrency: { type: "string" },
         "dry-run": { type: "boolean", default: false },
@@ -932,6 +958,7 @@ export async function main(
   const noMemory = parsed.values["no-memory"] === true;
   const confirmedScience125 = parsed.values["confirm-science125"] === true;
   const confirmedMemoryAblation = parsed.values["confirm-memory-ablation"] === true;
+  const releaseCommit = parsed.values["release-commit"];
   const runtimeError = validateBatchBunRuntime({
     bunVersion:
       runtime.bunVersion ??
@@ -984,6 +1011,16 @@ export async function main(
       process.stdout.write(`[batch] ${launchError}\n`);
       return 2;
     }
+  }
+  const releaseRequired = !dryRun && (noMemory || manifestId !== undefined || isCompleteScience125(questionIds ?? []));
+  const releaseError = validateReleaseCommit(
+    releaseRequired,
+    releaseCommit,
+    releaseRequired ? readSourceIdentity(repoRoot) : null,
+  );
+  if (releaseError !== null) {
+    process.stdout.write(`[batch] ${releaseError}\n`);
+    return 2;
   }
   if (!dryRun && modelConfigStatus().credential === "absent") {
     process.stdout.write("[batch] 缺少 QWEN_API_KEY，非 dry-run 批跑已拒绝启动。\n");

@@ -19,6 +19,7 @@ import {
   validateBatchBunRuntime,
   validateMemoryAblationLaunch,
   validateMemoryAblationResume,
+  validateReleaseCommit,
   validateScience125Launch,
   validateScience125Resume,
   readSourceIdentity,
@@ -644,6 +645,38 @@ test("formal Science-125 CLI requires an explicit confirmation before opening SQ
 
   assert.equal(code, 2);
   assert.match(output, /--confirm-science125/);
+  assert.equal(existsSync(dbPath), false);
+});
+
+test("paid formal phases require an exact release commit before credentials or SQLite", async () => {
+  const clean = { gitCommit: "a".repeat(40), treeDirty: false };
+  assert.match(validateReleaseCommit(true, undefined, clean) ?? "", /--release-commit/);
+  assert.match(validateReleaseCommit(true, "abc", clean) ?? "", /40/);
+  assert.match(validateReleaseCommit(true, "b".repeat(40), clean) ?? "", /当前.*commit/);
+  assert.match(validateReleaseCommit(true, "A".repeat(40), clean) ?? "", /40/);
+  assert.match(validateReleaseCommit(true, clean.gitCommit, { ...clean, treeDirty: true }) ?? "", /tree clean/);
+  assert.equal(validateReleaseCommit(true, clean.gitCommit, clean), null);
+  assert.equal(validateReleaseCommit(false, undefined, null), null);
+
+  const t = { onTestFinished };
+  const dir = workspace(t);
+  const dbPath = join(dir, "runtime", "release.db");
+  let output = "";
+  const originalWrite = process.stdout.write.bind(process.stdout) as typeof process.stdout.write;
+  process.stdout.write = ((chunk: unknown) => {
+    output += String(chunk);
+    return true;
+  }) as typeof process.stdout.write;
+  t.onTestFinished(() => {
+    process.stdout.write = originalWrite;
+  });
+
+  const code = await main(["--manifest-id", "formal-resume", "--confirm-science125", "--db", dbPath], {
+    bunVersion: "1.4.0",
+  });
+  assert.equal(code, 2);
+  assert.match(output, /--release-commit/);
+  assert.doesNotMatch(output, /QWEN_API_KEY/);
   assert.equal(existsSync(dbPath), false);
 });
 

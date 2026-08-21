@@ -140,12 +140,12 @@ bun run db:restore -- \
 bun run canary                              # 单题冒烟，走 live 模型并持久化证据
 bun run batch --ids 1-125 --dry-run         # 先看计划，零执行
 bun run batch --ids 3,54,61                 # 断点续跑：已交付的题自动跳过
-bun run batch --ids 1-125 --confirm-science125 \
+bun run batch --ids 1-125 --confirm-science125 --release-commit <40hex> \
   --db outputs/runtime/science125-formal.db --concurrency 3  # 正式全量首次开跑
-bun run batch --manifest-id <id> --confirm-science125 \
+bun run batch --manifest-id <id> --confirm-science125 --release-commit <40hex> \
   --db outputs/runtime/science125-formal.db  # 正式全量续跑；只处理遗漏/未通过 durable gate 的题
 bun run batch --ids 1,8,12,16,17,19,27,28,32,35,40,46,49,50,55,64,72,77,79,86,90,91,95,100,102,107,110,117,120,121 \
-  --no-memory --confirm-memory-ablation \
+  --no-memory --confirm-memory-ablation --release-commit <40hex> \
   --db outputs/runtime/science125-formal.db --concurrency 3  # 预注册 Phase B 记忆消融臂；与 Phase A 配对
 bun run batch:export --manifest-id <id> \
   --db outputs/runtime/typescript-runs.db \
@@ -190,6 +190,8 @@ SQLite 或 manifest。使用 `--manifest-id` 时可省略 `--ids`，若同时提
 identity 可取得、工作树 clean，并拒绝目标 DB 或任何 SQLite/writer-lock sidecar 已存在。正式全量续跑
 还要求当前工作树 clean、commit 与 manifest 已有 Run 一致，且 memory arm 与本次 `--no-memory` 选择一致；
 空 manifest 只校验当前 source identity。dry-run 与非全量题集不受此保护影响。
+正式 Phase A 与付费 Phase B（含 resume）还必须传 `--release-commit <40hex>`；它必须精确等于当前 clean
+source identity 的 commit。入口会在读取模型凭据或打开 SQLite 前拒绝缺失、格式错误或不匹配的值。
 非 dry-run 的 `--no-memory` 是付费消融，必须显式传 `--confirm-memory-ablation`，且 `--ids` 的集合必须精确对应
 `docs/design/experiment-protocol.json` 的 `phase_b_subset.question_ids`（当前为上述 30 题）；即使续跑也不能省略
 `--ids`。开库前会要求当前 source identity 可取得且 tree clean；续跑还要求已有 Run 与当前 commit、clean 状态一致，
