@@ -17,7 +17,7 @@ test("completes a deterministic research run through the Bun server", async ({ p
   await page.getByPlaceholder("提出一个可以设计实验去检验的研究问题").fill("冻结证据能降低科研 Agent 的无来源引用吗？");
   await page.getByRole("button", { name: "开始研究" }).click();
 
-  const completedBadge = page.locator('[data-slot="badge"]').filter({ hasText: /^已完成$/ });
+  const completedBadge = page.locator('[data-slot="badge"]').filter({ hasText: /^已完成$/ }).first();
   await expect(completedBadge).toBeVisible();
   await expect(page.getByText("执行轨迹 · 2 次检索")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Subagents · 5" })).toBeVisible();
