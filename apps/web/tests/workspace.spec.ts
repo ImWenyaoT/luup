@@ -21,6 +21,8 @@ test("completes a deterministic research run through the Bun server", async ({ p
   await expect(completedBadge).toBeVisible();
   await expect(page.getByText("执行轨迹 · 2 次检索")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Subagents · 5" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "审计轨迹 · Audit / Trace" })).toBeVisible();
+  await expect(page.getByText("暂无公开 trace · 状态未知")).toBeVisible();
   await expect(page.getByText("控制面")).toBeVisible();
   await expect(page.getByText("one-shot")).toHaveCount(5);
   await expect(page.getByText("counterevidence and methodological risks")).toBeVisible();
