@@ -60,7 +60,7 @@ export type RunTraceEvent =
       trace_id: string;
       agent: string;
       tool: string;
-      ordinal: number;
+      ordinal: number | null;
       status: "completed" | "unknown";
       duration_ms: number | null;
     }
@@ -91,6 +91,13 @@ const MAX_TEXT_LENGTH = 160;
 
 /** Runner hooks 属于 SDK 执行层；这个 sink 是唯一向控制面回传事实的窄接缝。 */
 type TraceSink = (event: RunTraceEvent) => void;
+type OpenTool = {
+  agent: string;
+  tool: string;
+  callId: string | null;
+  ordinal: number;
+  startedAt: number;
+};
 
 export function summarizeInput(input: string): TraceInputSummary {
   let topLevelFields: string[] = [];
@@ -180,7 +187,7 @@ export class TraceCollector {
   #dropped = 0;
   #toolOrdinal = 0;
   #turn = 0;
-  #openTools = new Map<string, { agent: string; tool: string; ordinal: number; startedAt: number }>();
+  #openTools = new Map<string, OpenTool>();
   #closed = false;
 
   constructor(
@@ -219,16 +226,26 @@ export class TraceCollector {
   }
 
   toolStarted(agent: string, tool: string, callId: string | null): void {
+    if (this.#closed) return;
     const ordinal = ++this.#toolOrdinal;
-    if (callId !== null) this.#openTools.set(callId, { agent, tool, ordinal, startedAt: Date.now() });
+    this.#openTools.set(`${callId === null ? "unknown" : "call"}:${ordinal}`, {
+      agent,
+      tool,
+      callId,
+      ordinal,
+      startedAt: Date.now(),
+    });
     this.emit({ kind: "tool_started", trace_id: this.#traceId, agent, tool, ordinal });
   }
 
   toolEnded(agent: string, tool: string, callId: string | null): void {
-    const open = callId === null ? undefined : this.#openTools.get(callId);
-    const ordinal = open?.ordinal ?? this.#toolOrdinal;
+    if (this.#closed) return;
+    const openEntry =
+      callId === null ? undefined : [...this.#openTools.entries()].find(([, candidate]) => candidate.callId === callId);
+    const open = openEntry?.[1];
+    const ordinal = open?.ordinal ?? null;
     const duration = open ? Math.max(0, Date.now() - open.startedAt) : null;
-    if (callId !== null && open) this.#openTools.delete(callId);
+    if (openEntry) this.#openTools.delete(openEntry[0]);
     this.emit({
       kind: "tool_ended",
       trace_id: this.#traceId,

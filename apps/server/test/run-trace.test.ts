@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
-import { Agent, Runner, Usage, type Model, type ModelProvider, type ModelResponse } from "@openai/agents";
+import {
+  Agent,
+  Runner,
+  Usage,
+  type Model,
+  type ModelProvider,
+  type ModelResponse,
+  type RunContext,
+} from "@openai/agents";
 import { test } from "bun:test";
 
 import {
@@ -132,6 +140,66 @@ test("same-name tool calls close by SDK callId rather than guessed order", () =>
     [
       [2, "completed"],
       [1, "completed"],
+      [null, "unknown"],
+    ],
+  );
+});
+
+test("runner hooks read the SDK tool call id from hook details", () => {
+  const events: RunTraceEvent[] = [];
+  const agent = new Agent({ name: "TraceProbe", instructions: "完成任务", model: "fake" });
+  const trace = new TraceCollector(
+    { traceId: "attempt_hook_call_id", role: "researcher", agent, task: "检索", input: "{}" },
+    (event) => events.push(event),
+  );
+  const traces = new Map([["attempt_hook_call_id", trace]]);
+  const listeners = new Map<string, (...args: unknown[]) => void>();
+  const runner = {
+    on(event: string, listener: (...args: unknown[]) => void): void {
+      listeners.set(event, listener);
+    },
+  };
+  installRunnerTraceHooks(runner as unknown as Pick<Runner, "on">, traces);
+
+  const context = { context: { trace_id: "attempt_hook_call_id" } } as RunContext<unknown>;
+  const tool = { name: "arxiv_search" };
+  listeners.get("agent_tool_start")?.(context, agent, tool, { toolCall: { callId: "sdk-call" } });
+  listeners.get("agent_tool_end")?.(context, agent, tool, "result", { toolCall: { callId: "sdk-call" } });
+
+  const ended = events.filter((event) => event.kind === "tool_ended");
+  assert.deepEqual(
+    ended.map((event) => [event.ordinal, event.status]),
+    [[1, "completed"]],
+  );
+});
+
+test("missing or unmatched tool call ids stay unknown without guessing an ordinal", () => {
+  const events: RunTraceEvent[] = [];
+  const agent = new Agent({ name: "TraceProbe", instructions: "完成任务", model: "fake" });
+  const trace = new TraceCollector(
+    { traceId: "attempt_missing_call_id", role: "researcher", agent, task: "检索", input: "{}" },
+    (event) => events.push(event),
+  );
+
+  trace.toolStarted("TraceProbe", "arxiv_search", null);
+  trace.toolEnded("TraceProbe", "arxiv_search", null);
+  trace.toolStarted("TraceProbe", "arxiv_search", "known-call");
+  trace.toolEnded("TraceProbe", "arxiv_search", "different-call");
+  trace.ended("failed", "missing_call_id", {
+    requests: null,
+    input_tokens: null,
+    output_tokens: null,
+    total_tokens: null,
+    tool_calls: null,
+  });
+
+  const ended = events.filter((event) => event.kind === "tool_ended");
+  assert.deepEqual(
+    ended.map((event) => [event.ordinal, event.status]),
+    [
+      [null, "unknown"],
+      [null, "unknown"],
+      [1, "unknown"],
       [2, "unknown"],
     ],
   );
