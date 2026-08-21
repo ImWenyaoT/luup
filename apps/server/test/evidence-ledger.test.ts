@@ -1,0 +1,33 @@
+import assert from "node:assert/strict";
+import { test } from "bun:test";
+
+import { EvidenceLedger } from "../src/agent/evidence.ts";
+
+const input = {
+  tool: "arxiv_search",
+  sourceType: "arxiv" as const,
+  query: "q",
+  status: "succeeded" as const,
+  resultSummary: "one result",
+  citations: [],
+};
+
+test("a persistence failure cannot leave ghost evidence in the in-memory ledger", () => {
+  let fail = true;
+  const ledger = new EvidenceLedger({
+    onRecord: () => {
+      if (fail) throw new Error("sqlite unavailable");
+    },
+  });
+  ledger.beginScope("attempt-1");
+
+  assert.throws(() => ledger.record(input), /sqlite unavailable/);
+  assert.deepEqual(ledger.values(), []);
+  assert.deepEqual(ledger.scopedRecords(), []);
+
+  fail = false;
+  const persisted = ledger.record(input);
+  assert.equal(persisted.evidenceId, "ev_02_arxiv");
+  assert.deepEqual(ledger.values(), [persisted]);
+  assert.deepEqual(ledger.scopedRecords(), [persisted]);
+});

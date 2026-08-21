@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
-import { test } from "vitest";
+import { RunContext } from "@openai/agents";
+import { test } from "bun:test";
 
 import { CrossrefLookupError, resolveCrossrefDoi, searchCrossref } from "../src/agent/crossref.ts";
 import { EvidenceLedger } from "../src/agent/evidence.ts";
 import { createRoles } from "../src/agent/roles/index.ts";
 import { createReviewerSearchPermit } from "../src/agent/roles/reviewer.ts";
+import { createCrossrefSearchTool } from "../src/agent/tools/crossref-search.ts";
 
 const work = (doi: string, title: string, extra: Record<string, unknown> = {}) => ({
   DOI: doi,
@@ -31,6 +33,38 @@ test("maps a Crossref result to a DOI-backed citable record", async () => {
   assert.equal(record.url, "https://doi.org/10.1234/abcd");
   assert.equal(record.published, "2024-3-1");
   assert.deepEqual(record.authors, ["Ada Lovelace"]);
+});
+
+test("Crossref tool freezes DOI authors and year in the canonical citation", async () => {
+  const ledger = new EvidenceLedger();
+  const search: typeof searchCrossref = async (query) => ({
+    query,
+    status: "succeeded",
+    resultSummary: "one record",
+    execution: {},
+    records: [
+      {
+        doi: "10.1234/abcd",
+        title: "Frozen Evidence Gates",
+        url: "https://doi.org/10.1234/abcd",
+        authors: ["Ada Lovelace"],
+        published: "2024-3-1",
+        container: "Journal of Fixtures",
+      },
+    ],
+  });
+  const crossref = createCrossrefSearchTool(ledger, undefined, search);
+
+  await crossref.invoke(new RunContext(), JSON.stringify({ query: "evidence gates" }));
+
+  assert.deepEqual(ledger.values()[0]!.citations[0], {
+    source_type: "web",
+    title: "Frozen Evidence Gates",
+    locator: "doi:10.1234/abcd",
+    url: "https://doi.org/10.1234/abcd",
+    authors: ["Ada Lovelace"],
+    year: 2024,
+  });
 });
 
 test("resolves one DOI through the exact works path with the Crossref User-Agent", async () => {
@@ -122,16 +156,14 @@ test("does not fetch after its Attempt signal is cancelled", async () => {
 test("Researcher and Reviewer have retrieval surfaces, and other roles remain tool-free", () => {
   const { agents } = createRoles(new EvidenceLedger());
   // 检索面两个源，外加一个上报面 —— structured_output 不是来源，是交作业的通道
-  assert.deepEqual(agents.researcher.tools.map((item: any) => item.name).sort(), [
-    "arxiv_search",
-    "crossref_search",
-    "structured_output",
-  ]);
-  assert.deepEqual(agents.reviewer.tools.map((item: any) => item.name).sort(), [
-    "arxiv_search",
-    "crossref_search",
-    "structured_output",
-  ]);
+  assert.deepEqual(
+    agents.researcher.tools.map((item: any) => item.name).sort((a: string, b: string) => a.localeCompare(b)),
+    ["arxiv_search", "crossref_search", "structured_output"],
+  );
+  assert.deepEqual(
+    agents.reviewer.tools.map((item: any) => item.name).sort((a: string, b: string) => a.localeCompare(b)),
+    ["arxiv_search", "crossref_search", "structured_output"],
+  );
   assert.match(agents.reviewer.instructions as string, /反证/);
   assert.match(agents.reviewer.instructions as string, /方法风险/);
   // 其余领域角色零工具；ResearchPlan 只有合成上报工具，不是检索面。

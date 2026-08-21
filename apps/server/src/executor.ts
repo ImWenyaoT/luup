@@ -10,6 +10,7 @@ import {
 } from "@openai/agents";
 
 import { ContractError, StageError } from "./agent/failures.ts";
+import { installRunnerTraceHooks, TraceCollector, type TraceUsage } from "./agent/run-trace.ts";
 import { modelConfigVersion, qwenModelProvider } from "./seams/index.ts";
 import type { StageExecutor } from "./roles.ts";
 import type { Role } from "./agent/contracts.ts";
@@ -216,10 +217,17 @@ export function createQwenExecutor(
   // 就吃到新接线；缺凭据也不再在构造期抛——它落在 run 里成 `missing_credential`
   // 终态，那正是这个失败分类存在的意义。注入的替身永远直用，不参与重建。
   let cached: { runner: Runner; version: number } | null = null;
+  const traces = new Map<string, TraceCollector>();
+  let traceSequence = 0;
+  const runnerWithTrace = (config: ConstructorParameters<typeof Runner>[0]): Runner => {
+    const runner = new Runner(config);
+    installRunnerTraceHooks(runner, traces);
+    return runner;
+  };
   const runnerFor = (): Runner => {
     if (modelProvider) {
       cached ??= {
-        runner: new Runner({ modelProvider, tracingDisabled: true, modelSettings: TRANSIENT_RETRY }),
+        runner: runnerWithTrace({ modelProvider, tracingDisabled: true, modelSettings: TRANSIENT_RETRY }),
         version: -1,
       };
       return cached.runner;
@@ -227,7 +235,7 @@ export function createQwenExecutor(
     const version = modelConfigVersion();
     if (cached === null || cached.version !== version) {
       cached = {
-        runner: new Runner({
+        runner: runnerWithTrace({
           modelProvider: qwenModelProvider(),
           tracingDisabled: true,
           modelSettings: TRANSIENT_RETRY,
@@ -237,9 +245,53 @@ export function createQwenExecutor(
     }
     return cached.runner;
   };
-  return async ({ runId, role, agent, input, timeoutMs, onUsage }) => {
-    const runner = runnerFor();
+  return async ({ runId, taskId, role, task, agent, input, timeoutMs, onUsage, onTrace }) => {
     const signal = AbortSignal.timeout(timeoutMs);
+    const traceId = `${taskId ?? `${runId}:${role}`}:${++traceSequence}`;
+    let traceWriteError: unknown = null;
+    const trace = new TraceCollector(
+      {
+        traceId,
+        role,
+        agent,
+        task: task ?? role,
+        input,
+      },
+      (event) => {
+        if (!onTrace) return;
+        try {
+          onTrace(event);
+        } catch (error) {
+          traceWriteError ??= error;
+        }
+      },
+    );
+    const reportCallbackError = (callback: "onUsage" | "onComplete", error: unknown): void => {
+      const errorType = error instanceof Error && error.name.length > 0 ? error.name : typeof error;
+      if (!onTrace) {
+        console.error(`executor ${callback} callback failed`, errorType);
+        return;
+      }
+      const previousTraceWriteError = traceWriteError;
+      trace.callbackError(callback, errorType);
+      // `onTrace` 是唯一的持久化接缝；它自己也可能失败。此时仍保留 stderr 诊断，
+      // 但不把已经成功的模型结果改判成失败。
+      if (traceWriteError !== previousTraceWriteError) {
+        console.error(`executor ${callback} callback diagnostic failed`, errorType);
+      }
+    };
+    traces.set(traceId, trace);
+    let runner: Runner;
+    try {
+      runner = runnerFor();
+      if (traceWriteError) {
+        throw new StageError("runtime_error", "run trace persistence failed", { cause: traceWriteError });
+      }
+    } catch (error) {
+      trace.ended("failed", error instanceof Error ? error.name : "runner_setup_failed", traceUsageOf(null, null));
+      traces.delete(traceId);
+      throw error;
+    }
     // `outputType` 校验失败时 SDK 不给异常挂 state：`runner/turnResolution.mjs` 直接
     // `new ModelBehaviorError(message)`，而 `attachRunStateToError` 只补 ToolCallError，
     // 于是 `usageOf` 在这条最常见的失败路径上永远读回 null。SDK 自己留了观测口 ——
@@ -250,6 +302,7 @@ export function createQwenExecutor(
     let result;
     try {
       result = await runner.run(agent, input, {
+        context: { trace_id: traceId },
         maxTurns: maxTurnsFor(role),
         signal,
         errorHandlers: {
@@ -265,6 +318,15 @@ export function createQwenExecutor(
       // 先记账再分类：下面每条分支都会抛，记账写进分支就会漏掉其中几条。
       // 记账本身失败绝不拖垮 Attempt —— 少一条用量事件，远好过因为记账把 Run 打死。
       const spent = usageOf(error) ?? observed.usage;
+      trace.ended(
+        "failed",
+        error instanceof Error ? error.name : "unknown_error",
+        traceUsageOf(spent, trace.toolCalls),
+      );
+      traces.delete(traceId);
+      if (traceWriteError) {
+        throw new StageError("runtime_error", "run trace persistence failed", { cause: traceWriteError });
+      }
       if (spent) {
         try {
           onComplete?.({ runId, role, ...spent, outcome: "failed" });
@@ -313,6 +375,11 @@ export function createQwenExecutor(
       );
     }
     if (result.finalOutput === undefined) {
+      trace.ended("failed", "missing_final_output", traceUsageOf(null, trace.toolCalls));
+      traces.delete(traceId);
+      if (traceWriteError) {
+        throw new StageError("runtime_error", "run trace persistence failed", { cause: traceWriteError });
+      }
       throw new StageError("provider_error", `${role} returned no final output`);
     }
     const usage = result.runContext.usage;
@@ -323,11 +390,34 @@ export function createQwenExecutor(
       totalTokens: usage.totalTokens,
       toolCalls: result.newItems.filter((item) => item.type === "tool_call_item").length,
     };
+    trace.ended("completed", "final_output", traceUsageOf(spent, spent.toolCalls));
+    traces.delete(traceId);
+    if (traceWriteError) {
+      throw new StageError("runtime_error", "run trace persistence failed", { cause: traceWriteError });
+    }
     // 成功也要记账，而且要落到与失败同一条通路上：`onUsage` 把用量交还给 runTask，
     // 由它按 Attempt 累加、再由 harness 落成唯一一条 `sdk.usage`。
     // `onComplete` 只是进程内遥测（canary 报告），不写库 —— 两者不重复记账。
-    onUsage?.(spent);
-    onComplete?.({ runId, role, ...spent, outcome: "completed" });
+    try {
+      onUsage?.(spent);
+    } catch (error) {
+      reportCallbackError("onUsage", error);
+    }
+    try {
+      onComplete?.({ runId, role, ...spent, outcome: "completed" });
+    } catch (error) {
+      reportCallbackError("onComplete", error);
+    }
     return result.finalOutput;
+  };
+}
+
+function traceUsageOf(usage: StageUsage | null, toolCalls: number | null): TraceUsage {
+  return {
+    requests: usage?.requests ?? null,
+    input_tokens: usage?.inputTokens ?? null,
+    output_tokens: usage?.outputTokens ?? null,
+    total_tokens: usage?.totalTokens ?? null,
+    tool_calls: usage?.toolCalls ?? (usage ? toolCalls : null),
   };
 }

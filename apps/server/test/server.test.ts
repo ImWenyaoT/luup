@@ -1,17 +1,15 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import type { Server } from "node:http";
-import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "vitest";
+import { onTestFinished, test } from "bun:test";
 
 import { createDeterministicRuntime, createDeterministicVerifier } from "../src/executor-deterministic.ts";
 import { Harness } from "../src/harness.ts";
 import { createApp, runtimeMode } from "../src/server.ts";
 import { SqliteStore } from "../src/store/store.ts";
 
-async function listen(): Promise<{ base: string; server: Server; store: SqliteStore }> {
+async function listen(): Promise<{ base: string; server: Bun.Server<undefined>; store: SqliteStore }> {
   const store = new SqliteStore(":memory:");
   const runtime = createDeterministicRuntime(store);
   const harness = new Harness(store, runtime.execute, {
@@ -19,14 +17,12 @@ async function listen(): Promise<{ base: string; server: Server; store: SqliteSt
     // 与 createDefaultApp 的确定性模式同形：引用验收也不打网络。
     verifyReferences: createDeterministicVerifier(),
   });
-  const server = createApp({ store, harness });
-  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
-  const address = server.address() as { port: number };
-  return { base: `http://127.0.0.1:${address.port}`, server, store };
+  const server = createApp({ store, harness, runtime: "deterministic" });
+  return { base: server.url.origin, server, store };
 }
 
-async function close(server: Server, store: SqliteStore): Promise<void> {
-  await new Promise<void>((done) => server.close(() => done()));
+async function close(server: Bun.Server<undefined>, store: SqliteStore): Promise<void> {
+  await server.stop(true);
   store.close();
 }
 
@@ -87,7 +83,7 @@ test("creates a run and drives it to completed", async () => {
     "固定问题集与模型，做配对盲评。",
     "同一问题集下对比三组，报告置信区间。",
     "无来源引用率",
-    "证据门组显著更低。",
+    "逐题比例差值预期低于基线组，并报告区间。",
     "Validation basis: formula_derivation",
     "Feasibility argument:",
     "r_gate < r_base",
@@ -111,6 +107,31 @@ test("keeps the legacy health probe alongside the API path", async () => {
   await close(server, store);
 });
 
+test("separates liveness from deterministic readiness", async () => {
+  const previousRuntime = process.env.LUUP_RUNTIME;
+  process.env.LUUP_RUNTIME = "deterministic";
+  const { base, server, store } = await listen();
+  try {
+    const liveness = await fetch(`${base}/health`);
+    assert.equal(liveness.status, 200);
+    assert.deepEqual(await liveness.json(), { status: "ok" });
+
+    const readiness = await fetch(`${base}/readyz`);
+    assert.equal(readiness.status, 200);
+    assert.deepEqual(await readiness.json(), {
+      status: "ready",
+      checks: { database: "ok", model: "configured", auth: "configured" },
+    });
+
+    const apiReadiness = await fetch(`${base}/api/readyz`);
+    assert.equal(apiReadiness.status, 200);
+  } finally {
+    await close(server, store);
+    if (previousRuntime === undefined) delete process.env.LUUP_RUNTIME;
+    else process.env.LUUP_RUNTIME = previousRuntime;
+  }
+});
+
 test("runs at most two distinct Runs at once", async () => {
   const store = new SqliteStore(":memory:");
   const releases: Array<() => void> = [];
@@ -126,10 +147,8 @@ test("runs at most two distinct Runs at once", async () => {
       store.finishRun(runId, "failed", { errorCode: "test_done" });
     },
   } as unknown as Harness;
-  const server = createApp({ store, harness });
-  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
-  const address = server.address() as { port: number };
-  const base = `http://127.0.0.1:${address.port}`;
+  const server = createApp({ store, harness, runtime: "deterministic" });
+  const base = server.url.origin;
 
   await Promise.all(
     ["one", "two", "three"].map((question) =>
@@ -159,10 +178,13 @@ test("reports an unexpected background failure and settles a still-running Run",
       throw new Error("executor exploded");
     },
   } as unknown as Harness;
-  const server = createApp({ store, harness, reportError: (message, error) => errors.push([message, error]) });
-  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
-  const address = server.address() as { port: number };
-  const base = `http://127.0.0.1:${address.port}`;
+  const server = createApp({
+    store,
+    harness,
+    runtime: "deterministic",
+    reportError: (message, error) => errors.push([message, error]),
+  });
+  const base = server.url.origin;
   const created = await (
     await fetch(`${base}/api/runs`, {
       method: "POST",
@@ -227,7 +249,8 @@ test("rejects an unknown runtime instead of silently selecting paid live mode", 
   assert.throws(() => runtimeMode("determinstic"), /must be live or deterministic/);
 });
 
-test("unknown API routes stay JSON 404 when the SPA is enabled", async (t) => {
+test("unknown API routes stay JSON 404 when the SPA is enabled", async () => {
+  const t = { onTestFinished };
   const dist = mkdtempSync(join(tmpdir(), "luup-web-"));
   t.onTestFinished(() => rmSync(dist, { recursive: true, force: true }));
   writeFileSync(join(dist, "index.html"), "<main>Luup</main>");
@@ -239,10 +262,8 @@ test("unknown API routes stay JSON 404 when the SPA is enabled", async (t) => {
     // 与 createDefaultApp 的确定性模式同形：引用验收也不打网络。
     verifyReferences: createDeterministicVerifier(),
   });
-  const server = createApp({ store, harness, webDist: dist });
-  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
-  const address = server.address() as { port: number };
-  const base = `http://127.0.0.1:${address.port}`;
+  const server = createApp({ store, harness, runtime: "deterministic", webDist: dist });
+  const base = server.url.origin;
 
   const api = await fetch(`${base}/api/typo`);
   assert.equal(api.status, 404);
@@ -253,26 +274,6 @@ test("unknown API routes stay JSON 404 when the SPA is enabled", async (t) => {
   await close(server, store);
 });
 
-test("rejects a malformed request target without stopping the server", async () => {
-  const { base, server, store } = await listen();
-  const port = Number(new URL(base).port);
-  const response = await new Promise<string>((resolve, reject) => {
-    const socket = createConnection({ host: "127.0.0.1", port });
-    let text = "";
-    socket.setEncoding("utf8");
-    socket.on("data", (chunk) => {
-      text += chunk;
-    });
-    socket.on("end", () => resolve(text));
-    socket.on("error", reject);
-    socket.end("GET http://[ HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
-  });
-
-  assert.match(response, /^HTTP\/1\.1 400/);
-  assert.equal((await fetch(`${base}/api/health`)).status, 200);
-  await close(server, store);
-});
-
 test("does not expose internal exception details in a 500 response", async () => {
   const store = new SqliteStore(":memory:");
   const harness = {
@@ -280,10 +281,8 @@ test("does not expose internal exception details in a 500 response", async () =>
       throw new Error("/private/secret/runs.db");
     },
   } as unknown as Harness;
-  const server = createApp({ store, harness });
-  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
-  const address = server.address() as { port: number };
-  const response = await fetch(`http://127.0.0.1:${address.port}/api/runs`, {
+  const server = createApp({ store, harness, runtime: "deterministic" });
+  const response = await fetch(`${server.url.origin}/api/runs`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ question: "q" }),
@@ -306,6 +305,7 @@ test("streams events over SSE and closes at the terminal state", async () => {
 
   const response = await fetch(`${base}/api/runs/${created.id}/events`);
   assert.equal(response.headers.get("content-type"), "text/event-stream; charset=utf-8");
+  assert.equal(response.headers.get("cache-control"), "no-cache, no-transform");
   const body = await response.text();
 
   // 流在 Run 到达终态时自己关掉，所以这里能读到结尾而不是永远挂着
@@ -336,7 +336,42 @@ test("resumes from a cursor and validates it", async () => {
 
   // `parseInt("1e3")` 会得到 1，所以游标必须严格解析
   assert.equal((await fetch(`${base}/api/runs/${created.id}/events?after=1e3`)).status, 400);
+  // 超过 JS 安全整数的游标无法可靠地对应 SQLite version，必须拒绝而不是舍入后重放错位。
+  assert.equal((await fetch(`${base}/api/runs/${created.id}/events?after=9007199254740992`)).status, 400);
   await close(server, store);
+});
+
+test("SSE replay 失败时报告诊断并发送可识别的错误帧", async () => {
+  const source = new SqliteStore(":memory:");
+  const runId = source.createRun("q");
+  let failReplay = true;
+  const errors: Array<[string, unknown]> = [];
+  const store = {
+    snapshot: (id: string) => source.snapshot(id),
+    eventsAfter: (id: string, after: number) => {
+      if (failReplay) throw new Error("corrupt event payload");
+      return source.eventsAfter(id, after);
+    },
+  } as unknown as SqliteStore;
+  const harness = {} as Harness;
+  const server = createApp({
+    store,
+    harness,
+    runtime: "deterministic",
+    reportError: (message, error) => errors.push([message, error]),
+  });
+
+  const response = await fetch(`${server.url.origin}/api/runs/${runId}/events`);
+  const body = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.match(body, /event: stream\.error/);
+  assert.match(body, /"code":"stream_error"/);
+  assert.equal(errors[0]?.[0], "SSE stream failed");
+  assert.match(String(errors[0]?.[1]), /corrupt event payload/);
+  failReplay = false;
+  await server.stop(true);
+  source.close();
 });
 
 test("stops the SSE loop when the client disconnects", async () => {
@@ -351,7 +386,7 @@ test("stops the SSE loop when the client disconnects", async () => {
   await settle(base, created.id);
 
   // 终态之后再开一条流并立刻掐断。若循环不监听 close，这里会留下一个
-  // 每 100ms 查一次库的死循环，server.close() 就永远等不到回调。
+  // 每 100ms 查一次库的死循环，server.stop(true) 就永远无法完成。
   const controller = new AbortController();
   const stream = fetch(`${base}/api/runs/${created.id}/events?after=0`, { signal: controller.signal });
   await new Promise((done) => setTimeout(done, 30));

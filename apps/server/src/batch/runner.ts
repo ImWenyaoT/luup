@@ -1,4 +1,4 @@
-/** 批跑：`pnpm batch --ids 1-125 --concurrency 3`。
+/** 批跑：`bun run batch --ids 1-125 --concurrency 3`。
  *
  * 交付要求是「整套 Science-125 且可断点续跑」。那是围着既有组合根转的一个循环，
  * 不是第二条流水线：每道题都走同一个 Harness，批跑产出的 Run 与单跑逐字段同构。
@@ -21,9 +21,10 @@ import { parseArgs } from "node:util";
 
 import { INFRASTRUCTURE_FAILURE_CODES, StageError, type FailureCode } from "../agent/failures.ts";
 import { CampaignMemory } from "../campaign/campaign.ts";
+import { BatchManifest, type BatchManifestSnapshot, type BatchTerminalStatus } from "./manifest.ts";
 import { createQwenExecutor } from "../executor.ts";
 import { Harness } from "../harness.ts";
-import { findQuestion, science125Text, type Science125Question } from "../domain/science125.ts";
+import { findQuestion, science125Integrity, science125Text, type Science125Question } from "../domain/science125.ts";
 import type { StageExecutor } from "../roles.ts";
 import { modelConfigStatus } from "../seams/index.ts";
 import type { MemoryArm, SourceIdentity } from "../store/contracts.ts";
@@ -77,17 +78,15 @@ const INFRA_TIMEOUT: FailureCode = "infra_timeout";
 const CLEAN: ReadonlySet<string> = new Set(["passed", "skipped", "planned"]);
 
 export type BatchRuntimePreflight = {
-  nodeVersion: string;
+  bunVersion: string;
   dryRun: boolean;
 };
 
-/** 正式 live batch 的运行时门；dry-run 是规划动作，不受 Node major 限制。 */
-export function validateBatchNodeRuntime({ nodeVersion, dryRun }: BatchRuntimePreflight): string | null {
+/** 正式 live batch 的运行时门；dry-run 是规划动作，不受 Bun 版本限制。 */
+export function validateBatchBunRuntime({ bunVersion, dryRun }: BatchRuntimePreflight): string | null {
   if (dryRun) return null;
-  const match = /^v?(\d+)(?:\.|$)/.exec(nodeVersion);
-  const major = match ? Number(match[1]) : Number.NaN;
-  if (major === 24) return null;
-  return `正式 live batch 要求 Node major 24；当前版本是 ${nodeVersion}，请切换到 Node 24（.nvmrc 为 24.18.0）。`;
+  if (bunVersion === "1.4.0") return null;
+  return `正式 live batch 要求 Bun 1.4.0；当前版本是 ${bunVersion}，请按 packageManager 固定版本运行。`;
 }
 
 export type QuestionStatus = "passed" | "failed" | "skipped" | "error" | "missing" | "planned";
@@ -134,11 +133,15 @@ export type BatchStop = {
 export type BatchReport = {
   outcomes: QuestionOutcome[];
   stopped: BatchStop | null;
+  manifestId: string;
+  manifest: BatchManifestSnapshot;
 };
 
 export type BatchOptions = {
   store: SqliteStore;
   runQuestion: RunQuestion;
+  /** Reopen an existing durable manifest instead of creating a new batch. */
+  manifestId?: string;
   repoRoot?: string;
   dryRun?: boolean;
   /** 同时在飞的题数。默认 1（串行）；超出 [1, MAX_CONCURRENCY] 的值就近夹住。 */
@@ -194,8 +197,25 @@ export function compactIds(ids: readonly number[]): string {
   return parts.join(",");
 }
 
+function sameIds(left: readonly number[], right: readonly number[]): boolean {
+  if (left.length !== right.length) return false;
+  return left.every((id, index) => id === right[index]);
+}
+
 /** 批次启动前一次性确认所有题号，避免滚动池已经为前面的题花钱后才发现尾部写错。 */
 export function preflightQuestionIds(questionIds: readonly number[]): void {
+  const integrity = science125Integrity();
+  if (!integrity.ok) {
+    throw new Error(
+      `Science-125 题库完整性失败：raw=${integrity.rawCount}, valid=${integrity.validCount}, ` +
+        `missing=${integrity.missingIds.join(",") || "无"}, duplicate=${integrity.duplicateIds.join(",") || "无"}, ` +
+        `unexpected=${integrity.unexpectedIds.join(",") || "无"}`,
+    );
+  }
+  const duplicateIds = questionIds.filter((id, index) => questionIds.indexOf(id) !== index);
+  if (duplicateIds.length > 0) {
+    throw new Error(`批次题号重复：${[...new Set(duplicateIds)].join(", ")}。重复题会造成重复付费。`);
+  }
   const invalid = [...new Set(questionIds.filter((id) => !Number.isSafeInteger(id) || findQuestion(id) === null))];
   if (invalid.length > 0) {
     throw new Error(`批次题号无效：${invalid.join(", ")}。有效题号范围为 1-125。`);
@@ -251,9 +271,9 @@ export function parseConcurrency(spec: string | undefined): number {
  *
  * ## 为什么并发是安全的
  *
- * 并发只在**一个 Node 进程、一条 JS 线程**内发生。三处共享状态各自成立：
+ * 并发只在**一个 Bun 进程、一条 JS 线程**内发生。三处共享状态各自成立：
  *
- * 1. **SQLite**：`store/store.ts` 用 `node:sqlite` 的 `DatabaseSync`，写路径是
+ * 1. **SQLite**：`store/store.ts` 用 `bun:sqlite` 的 `Database`，写路径是
  *    `BEGIN IMMEDIATE` → 同步回调 → `COMMIT`，中间没有 `await`。单线程 JS 下没有
  *    第二个执行流能挤进这段，事务因此天然原子；两道题不可能交错在同一次写里。
  * 2. **检索发号闸**：`agent/rate-limit.ts` 的限流器是**模块级**单例（arXiv 3s、
@@ -277,10 +297,31 @@ export function parseConcurrency(spec: string | undefined): number {
  */
 export async function runBatch(questionIds: readonly number[], options: BatchOptions): Promise<BatchReport> {
   preflightQuestionIds(questionIds);
+  const manifest = options.manifestId
+    ? BatchManifest.open(options.store, options.manifestId)
+    : BatchManifest.create(options.store, questionIds);
+  const opened = manifest.snapshot();
+  if (options.manifestId) {
+    if (opened.expectedDuplicateIds.length > 0 || opened.unexpectedIds.length > 0) {
+      throw new Error(`batch manifest ${opened.id} has an invalid expected set; refusing to resume`);
+    }
+    if (
+      !sameIds(
+        opened.expectedIds,
+        [...questionIds].sort((left, right) => left - right),
+      )
+    ) {
+      throw new Error(
+        `batch manifest ${opened.id} expects ${compactIds(opened.expectedIds)} but received ${compactIds(questionIds)}`,
+      );
+    }
+  }
+  const runnableIds = options.manifestId ? manifest.pendingIds() : [...questionIds];
   const log = options.log ?? ((line: string) => process.stdout.write(`${line}\n`));
+  if (!options.dryRun) log(`[batch] manifestId ${manifest.id}`);
   const repoRoot = resolve(options.repoRoot ?? process.cwd());
   const limit = boundConcurrency(options.concurrency ?? 1);
-  const total = questionIds.length;
+  const total = runnableIds.length;
   const outcomes: QuestionOutcome[] = [];
   let cause = "";
   let streak = 0;
@@ -295,7 +336,7 @@ export async function runBatch(questionIds: readonly number[], options: BatchOpt
 
   const fill = () => {
     while (!halted && inflight.size < limit && dispatched < total) {
-      const questionId = questionIds[dispatched]!;
+      const questionId = runnableIds[dispatched]!;
       dispatched += 1;
       const slot = idle.shift()!;
       const seat = ticket;
@@ -314,6 +355,15 @@ export async function runBatch(questionIds: readonly number[], options: BatchOpt
     idle.push(landed.slot);
     const outcome = landed.outcome;
     outcomes.push(outcome);
+    const terminalStatus = terminalStatusFor(outcome);
+    if (terminalStatus !== null) {
+      try {
+        manifest.record({ questionId: outcome.questionId, status: terminalStatus, runId: outcome.runId });
+      } catch (error) {
+        // Keep the question outcome visible even if manifest persistence fails; the final gate will remain incomplete.
+        log(`[batch] manifest record failed for q${outcome.questionId}: ${describe(error)}`);
+      }
+    }
     log(
       `[batch] ${outcomes.length}/${total} s${landed.slot} q${outcome.questionId} | ${outcome.status} | ` +
         `${outcome.seconds.toFixed(1)}s${outcome.detail ? ` | ${outcome.detail}` : ""}`,
@@ -346,7 +396,7 @@ export async function runBatch(questionIds: readonly number[], options: BatchOpt
 
   let stopped: BatchStop | null = null;
   if (halted) {
-    const remainingIds = questionIds.slice(dispatched);
+    const remainingIds = runnableIds.slice(dispatched);
     stopped = {
       ...halted,
       completed: outcomes.length,
@@ -373,7 +423,7 @@ export async function runBatch(questionIds: readonly number[], options: BatchOpt
     rmSync(ledgerPath, { force: true });
   }
   log(`[batch] 合计 ${outcomes.length} 题：${tally(outcomes)}`);
-  return { outcomes, stopped };
+  return { outcomes, stopped, manifestId: manifest.id, manifest: manifest.snapshot() };
 }
 
 export function remainingPath(repoRoot: string): string {
@@ -424,27 +474,102 @@ async function runOne(questionId: number, options: BatchOptions & { repoRoot: st
       `单题超过 ${(timeoutMs / 1000).toFixed(0)}s 未终态，已取消` +
       (unwound ? "" : `；取消未在宽限期内完成，该题可能仍在写这个 run`);
     // merge 不 rewrite：这道题自己赶在取消之后收了尾的话，那份终态是它的事实。
-    store.settleAbandonedRun(runId, INFRA_TIMEOUT);
-    return outcome(questionId, "failed", elapsed(), detail, INFRA_TIMEOUT, runId);
+    const settleError = settleRun(store, runId, INFRA_TIMEOUT, "BatchTimeout");
+    return outcomeFromDurableRun(store, questionId, runId, elapsed, detail, settleError, "failed");
   }
 
   const result = attempt.peek()!;
   if (result.state === "rejected") {
     // 一道题的故障不该让另外 124 题陪葬。
-    store.settleAbandonedRun(runId, INFRA_ERROR, "BatchError");
-    return outcome(questionId, "error", elapsed(), describe(result.reason), INFRA_ERROR, runId);
+    const settleError = settleRun(store, runId, INFRA_ERROR, "BatchError");
+    return outcomeFromDurableRun(store, questionId, runId, elapsed, describe(result.reason), settleError, "error");
   }
-  if (result.value.status === "completed") {
-    return outcome(questionId, "passed", elapsed(), "", null, runId);
-  }
-  return outcome(
+  const currentFacts = readBatchFacts(store, runId);
+  const settleError =
+    currentFacts.facts?.status === "running"
+      ? settleRun(
+          store,
+          runId,
+          result.value.status === "failed" ? (result.value.errorCode ?? INFRA_ERROR) : INFRA_ERROR,
+          "BatchIncomplete",
+        )
+      : currentFacts.error;
+  return outcomeFromDurableRun(
+    store,
     questionId,
-    "failed",
-    elapsed(),
-    `run ${result.value.status}`,
-    result.value.errorCode ?? result.value.status,
     runId,
+    elapsed,
+    result.value.status === "completed" ? "" : `run ${result.value.status}`,
+    settleError,
+    result.value.status === "failed" ? "failed" : "error",
   );
+}
+
+function settleRun(store: SqliteStore, runId: string, failureCode: string, errorType: string): string | null {
+  try {
+    store.settleAbandonedRun(runId, failureCode, errorType);
+    return null;
+  } catch (error) {
+    return describe(error);
+  }
+}
+
+/** Translate the durable Run state into the only batch verdict we can publish. */
+function outcomeFromDurableRun(
+  store: SqliteStore,
+  questionId: number,
+  runId: string,
+  elapsed: () => number,
+  detail: string,
+  settleError: string | null,
+  fallbackStatus: "failed" | "error",
+): QuestionOutcome {
+  const current = readBatchFacts(store, runId);
+  const facts = current.facts;
+  if (facts === null) {
+    return outcome(
+      questionId,
+      "error",
+      elapsed(),
+      `${detail}; ${current.error ? `无法读取 durable 状态：${current.error}` : `run ${runId} 不存在`}`,
+      INFRA_ERROR,
+      runId,
+    );
+  }
+  if (settleError !== null && facts.status === "running") {
+    return outcome(questionId, "error", elapsed(), `${detail}; 无法持久化终态：${settleError}`, INFRA_ERROR, runId);
+  }
+  switch (facts.status) {
+    case "completed":
+      return outcome(questionId, "passed", elapsed(), detail, null, runId);
+    case "review_rejected":
+      return outcome(questionId, "failed", elapsed(), detail || "run review_rejected", "review_rejected", runId);
+    case "failed":
+      return outcome(
+        questionId,
+        fallbackStatus,
+        elapsed(),
+        detail || `run failed${facts.errorCode ? `: ${facts.errorCode}` : ""}`,
+        facts.errorCode ?? INFRA_ERROR,
+        runId,
+      );
+    case "running":
+      return outcome(questionId, "error", elapsed(), `${detail}; run 仍处于 running`, INFRA_ERROR, runId);
+  }
+}
+
+function readBatchFacts(
+  store: SqliteStore,
+  runId: string,
+): {
+  facts: ReturnType<SqliteStore["batchRunFacts"]>;
+  error: string | null;
+} {
+  try {
+    return { facts: store.batchRunFacts(runId), error: null };
+  } catch (error) {
+    return { facts: null, error: describe(error) };
+  }
 }
 
 function outcome(
@@ -456,6 +581,25 @@ function outcome(
   runId: string | null = null,
 ): QuestionOutcome {
   return { questionId, status, seconds, detail, classification, runId };
+}
+
+/** The batch gate only accepts terminal facts; a dry-run plan remains omitted. */
+function terminalStatusFor(outcome: QuestionOutcome): BatchTerminalStatus | null {
+  // Reviewer 明确拒绝表示这道题有完整运行事实，但科学判断仍需人工处理；
+  // 它不是基础设施/执行失败，不能混进 failure 后丢掉这一边界。
+  if (outcome.classification === "review_rejected") return "human_review";
+  if (outcome.classification === "partial") return "partial";
+  switch (outcome.status) {
+    case "passed":
+    case "skipped":
+      return "success";
+    case "failed":
+    case "error":
+    case "missing":
+      return "failure";
+    case "planned":
+      return null;
+  }
 }
 
 function describe(error: unknown): string {
@@ -552,7 +696,7 @@ export function createHarnessRunner(store: SqliteStore, memory: CampaignMemory |
 
 export async function main(
   argv: string[] = process.argv.slice(2),
-  runtime: { nodeVersion?: string } = {},
+  runtime: { bunVersion?: string } = {},
 ): Promise<number> {
   let parsed;
   try {
@@ -560,6 +704,7 @@ export async function main(
       args: argv,
       options: {
         ids: { type: "string" },
+        "manifest-id": { type: "string" },
         // 同时在飞几道题。默认 3、上限 MAX_CONCURRENCY，安全性论证见 `runBatch`。
         concurrency: { type: "string" },
         "dry-run": { type: "boolean", default: false },
@@ -575,14 +720,15 @@ export async function main(
     process.stdout.write(`[batch] ${describe(error)}\n`);
     return 2;
   }
-  if (!parsed.values.ids) {
-    process.stdout.write("[batch] 缺少 --ids，例如 `--ids 1-125`。\n");
+  const manifestId = parsed.values["manifest-id"];
+  if (!parsed.values.ids && !manifestId) {
+    process.stdout.write("[batch] 缺少 --ids 或 --manifest-id，例如 `--ids 1-125`。\n");
     return 2;
   }
-  let questionIds: number[];
+  let questionIds: number[] | null = null;
   let concurrency: number;
   try {
-    questionIds = parseIds(parsed.values.ids);
+    questionIds = parsed.values.ids ? parseIds(parsed.values.ids) : null;
     concurrency = parseConcurrency(parsed.values.concurrency);
   } catch (error) {
     process.stdout.write(`[batch] ${error instanceof Error ? error.message : String(error)}\n`);
@@ -591,8 +737,11 @@ export async function main(
 
   const dryRun = parsed.values["dry-run"] === true;
   const noMemory = parsed.values["no-memory"] === true;
-  const runtimeError = validateBatchNodeRuntime({
-    nodeVersion: runtime.nodeVersion ?? process.version,
+  const runtimeError = validateBatchBunRuntime({
+    bunVersion:
+      runtime.bunVersion ??
+      (globalThis as typeof globalThis & { Bun?: { version: string } }).Bun?.version ??
+      "unavailable",
     dryRun,
   });
   if (runtimeError) {
@@ -603,10 +752,21 @@ export async function main(
     process.stdout.write("[batch] 缺少 QWEN_API_KEY，非 dry-run 批跑已拒绝启动。\n");
     return 2;
   }
-  const dbPath = parsed.values.db || process.env.LUUP_DATABASE || "outputs/runtime/typescript-runs.db";
+  const requestedDbPath = parsed.values.db || process.env.LUUP_DATABASE || "outputs/runtime/typescript-runs.db";
+  // Pure planning must not leave an empty manifest or SQLite files behind. Resuming by manifest ID is
+  // intentionally read-only planning against the durable batch that the operator named.
+  const dbPath = dryRun && !manifestId ? ":memory:" : requestedDbPath;
   const repoRoot = resolve(parsed.values["repo-root"] ?? process.cwd());
   const store = new SqliteStore(dbPath);
   try {
+    if (questionIds === null) {
+      try {
+        questionIds = BatchManifest.open(store, manifestId!).snapshot().expectedIds;
+      } catch (error) {
+        process.stdout.write(`[batch] ${describe(error)}\n`);
+        return 2;
+      }
+    }
     const report = await runBatch(questionIds, {
       store,
       // dry-run 一次运行都不发起，所以也不构造需要 QWEN_API_KEY 的执行器。
@@ -617,8 +777,12 @@ export async function main(
       dryRun,
       concurrency,
       memoryArm: noMemory ? "off" : "on",
+      manifestId,
     });
-    return report.outcomes.every((item) => CLEAN.has(item.status)) ? 0 : 1;
+    if (dryRun && !manifestId) process.stdout.write("[batch] dry-run 不创建 manifest。\n");
+    // A full-batch exit code requires both clean outcomes and exact manifest coverage.
+    // `--dry-run` is a planning command, so it may intentionally have omitted terminals.
+    return (dryRun || report.manifest.complete) && report.outcomes.every((item) => CLEAN.has(item.status)) ? 0 : 1;
   } finally {
     store.close();
   }

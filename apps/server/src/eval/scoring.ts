@@ -16,13 +16,13 @@
  * | 流程完整性 | 1 | 五阶段 artifact 齐全且 review accepted |
  * | **Grounding** | **veto** | 计划里出现任何不在冻结证据白名单内的 URL / evidence_id → 总分归零 |
  *
- *     node --experimental-strip-types src/eval/scoring.ts \
+ *     bun src/eval/scoring.ts \
  *       --db outputs/science-125-06-q96/attempt-5-passed.db --out outputs/scoring.md
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { Database } from "bun:sqlite";
 import { parseArgs } from "node:util";
 
 export const MAX_SCORE = 5;
@@ -160,7 +160,7 @@ function groundedItems(plan: JsonObject): { field: string; evidenceId: unknown }
 }
 
 /** 把一个 Run 的打分素材从 5 张表里捞出来，组装成一个 RunFacts。 */
-export function collectRunFacts(db: DatabaseSync, runId: string): RunFacts {
+export function collectRunFacts(db: Database, runId: string): RunFacts {
   const runRow = db.prepare("SELECT id, question, status FROM runs WHERE id = ?").get(runId) as Row | undefined;
   if (runRow === undefined) throw new Error(`run not found: ${runId}`);
 
@@ -358,7 +358,7 @@ export function scoreRun(facts: RunFacts): RunScore {
 
 /** 给库里每一个 Run 打分。只读打开，绝不会写到被评的库。 */
 export function loadRunScores(dbPath: string): RunScore[] {
-  const db = new DatabaseSync(dbPath, { readOnly: true });
+  const db = new Database(dbPath, { readonly: true });
   try {
     const runIds = (db.prepare("SELECT id FROM runs ORDER BY created_at, rowid").all() as Row[]).map((row) =>
       textColumn(row, "id"),
@@ -375,7 +375,7 @@ export function loadRunScores(dbPath: string): RunScore[] {
 export type ScoreSummary = {
   readonly label: string;
   readonly count: number;
-  readonly meanScore: number;
+  readonly meanScore: number | null;
   readonly vetoed: number;
   readonly toolSelection: number;
   readonly parameterQuality: number;
@@ -393,7 +393,7 @@ export function summarize(scores: readonly RunScore[], label: string): ScoreSumm
   return {
     label,
     count,
-    meanScore: count ? totalScore / count : 0,
+    meanScore: count ? totalScore / count : null,
     vetoed: scores.filter((item) => item.vetoed).length,
     toolSelection: sumBy(scores, (item) => item.toolSelection),
     parameterQuality: sumBy(scores, (item) => item.parameterQuality),
@@ -403,14 +403,14 @@ export function summarize(scores: readonly RunScore[], label: string): ScoreSumm
 }
 
 function summaryRows(summary: ScoreSummary): string[] {
-  const count = summary.count || 1; // 只用于算百分比，避免除零
-  const pct = (value: number, full: number) => ((value / full) * 100).toFixed(1);
+  const count = summary.count;
+  const pct = (value: number, full: number) => (full === 0 ? "N/A" : `${((value / full) * 100).toFixed(1)}%`);
   return [
-    `| 工具选择 | 1 | ${summary.toolSelection} | ${pct(summary.toolSelection, count)}% |`,
-    `| 参数质量 | 1 | ${summary.parameterQuality} | ${pct(summary.parameterQuality, count)}% |`,
-    `| 证据可追溯 | 2 | ${summary.evidenceTraceable} | ${pct(summary.evidenceTraceable, count * 2)}% |`,
-    `| 流程完整性 | 1 | ${summary.processComplete} | ${pct(summary.processComplete, count)}% |`,
-    `| Grounding 否决 | veto | ${summary.vetoed} | ${pct(summary.vetoed, count)}% |`,
+    `| 工具选择 | 1 | ${summary.toolSelection} | ${pct(summary.toolSelection, count)} |`,
+    `| 参数质量 | 1 | ${summary.parameterQuality} | ${pct(summary.parameterQuality, count)} |`,
+    `| 证据可追溯 | 2 | ${summary.evidenceTraceable} | ${pct(summary.evidenceTraceable, count * 2)} |`,
+    `| 流程完整性 | 1 | ${summary.processComplete} | ${pct(summary.processComplete, count)} |`,
+    `| Grounding 否决 | veto | ${summary.vetoed} | ${pct(summary.vetoed, count)} |`,
   ];
 }
 
@@ -441,7 +441,7 @@ export function renderMarkdown(scores: readonly RunScore[], dbPath: string): str
       `## ${group.label}`,
       "",
       `- 样本数：${group.count}`,
-      `- 平均分：${group.meanScore.toFixed(2)} / ${MAX_SCORE}`,
+      `- 平均分：${group.meanScore === null ? "N/A" : group.meanScore.toFixed(2)} / ${MAX_SCORE}`,
       `- 被一票否决：${group.vetoed}`,
       "",
       "| 项 | 满分 | 得分合计 | 通过率 |",

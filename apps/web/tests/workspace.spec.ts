@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("completes a deterministic research run through the Node server", async ({ page }) => {
+test("completes a deterministic research run through the Bun server", async ({ page }) => {
   await page.goto("/");
 
   await expect(page.getByRole("heading", { name: "Luup" })).toBeVisible();
@@ -17,12 +17,20 @@ test("completes a deterministic research run through the Node server", async ({ 
   await page.getByPlaceholder("提出一个可以设计实验去检验的研究问题").fill("冻结证据能降低科研 Agent 的无来源引用吗？");
   await page.getByRole("button", { name: "开始研究" }).click();
 
-  await expect(page.getByText("已完成")).toBeVisible();
+  const completedBadge = page.locator('[data-slot="badge"]').filter({ hasText: /^已完成$/ });
+  await expect(completedBadge).toBeVisible();
   await expect(page.getByText("执行轨迹 · 2 次检索")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Subagents · 5" })).toBeVisible();
+  await expect(page.getByText("控制面")).toBeVisible();
+  await expect(page.getByText("one-shot")).toHaveCount(5);
   await expect(page.getByText("counterevidence and methodological risks")).toBeVisible();
   await expect(page.getByText("arxiv:2309.15217v2")).toHaveCount(2);
 
-  const stages = page.getByRole("list").first().getByRole("listitem");
+  const stages = page
+    .getByRole("heading", { name: /执行轨迹/ })
+    .locator("..")
+    .locator("..")
+    .getByRole("listitem");
   await expect(stages).toHaveCount(5);
 
   // 折叠是降采样：摘要行保留计数；展开后引用完整回来。
@@ -52,7 +60,7 @@ test("completes a deterministic research run through the Node server", async ({ 
   );
   await page.reload();
   await expect(page.getByText("临时不可用")).toBeVisible();
-  await expect(page.getByText("已完成")).toBeVisible({ timeout: 8_000 });
+  await expect(completedBadge).toBeVisible({ timeout: 8_000 });
   await expect(page.getByText("临时不可用")).not.toBeVisible();
   await expect(page.getByText("执行轨迹 · 2 次检索")).toBeVisible();
   await expect(page.getByText(/^version:/)).not.toBeVisible();
@@ -63,7 +71,7 @@ test("completes a deterministic research run through the Node server", async ({ 
   await page.getByPlaceholder("提出一个可以设计实验去检验的研究问题").fill("问".repeat(4_001));
   await page.getByRole("button", { name: "开始研究" }).click();
   await expect(page.getByText("question 不能超过 4000 个字符。")).toBeVisible();
-  await expect(page.getByText("已完成")).toBeVisible();
+  await expect(completedBadge).toBeVisible();
   await expect(page.getByText("执行轨迹 · 2 次检索")).toBeVisible();
 
   // 旧 Artifact 先失败、新 Run 后成功时，旧错误不能挂到新 Run 下。
@@ -77,21 +85,21 @@ test("completes a deterministic research run through the Node server", async ({ 
   );
   await page.evaluate(() => {
     const originalFetch = window.fetch;
-    window.fetch = async (...args) => {
+    window.fetch = (async (...args: Parameters<typeof originalFetch>) => {
       const response = await originalFetch(...args);
       const url = typeof args[0] === "string" ? args[0] : args[0] instanceof URL ? args[0].href : args[0].url;
       if (url === "/api/runs" && args[1]?.method === "POST") {
         await new Promise((done) => setTimeout(done, 100));
       }
       return response;
-    };
+    }) as unknown as typeof window.fetch;
   });
   await page.getByRole("button", { name: "research-plan", exact: true }).click();
   await page.getByPlaceholder("提出一个可以设计实验去检验的研究问题").fill("第二个研究问题");
   await page.getByRole("button", { name: "开始研究" }).click();
   await expect(page.getByText("旧 Artifact 失败")).toBeVisible();
   await expect(page.getByText("旧 Artifact 失败")).not.toBeVisible();
-  await expect(page.getByText("已完成")).toBeVisible();
+  await expect(completedBadge).toBeVisible();
 
   await page.getByRole("button", { name: "research-plan", exact: true }).click();
   for (const value of [
@@ -107,7 +115,7 @@ test("completes a deterministic research run through the Node server", async ({ 
     "同一问题集下对比三组，报告置信区间。",
     "formula_derivation",
     "令证据门组与基线组的无来源引用率分别为 r_gate 与 r_base；若预期 r_gate < r_base，且任务完成率差异处于预设容许范围内，则可用同一验收规则判定设计可行。这里只是公式与逻辑推导，不代表实验已执行。",
-    "证据门组显著更低。",
+    "逐题比例差值预期低于基线组，并报告区间。",
   ]) {
     await expect(page.getByText(value)).toBeVisible();
   }
@@ -124,5 +132,5 @@ test("completes a deterministic research run through the Node server", async ({ 
   await page.getByPlaceholder("提出一个可以设计实验去检验的研究问题").fill("从无效深链重新开始");
   await page.getByRole("button", { name: "开始研究" }).click();
   await expect(page.getByText("Run 不存在。")).not.toBeVisible();
-  await expect(page.getByText("已完成")).toBeVisible();
+  await expect(completedBadge).toBeVisible();
 });

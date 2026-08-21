@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "vitest";
+import { test } from "bun:test";
 
 import { EvidenceLedger } from "../src/agent/evidence.ts";
 import { ContractError } from "../src/agent/failures.ts";
@@ -138,6 +138,13 @@ test("reviewer search evidence is persisted on its own Attempt scope", async () 
     },
   });
   assert.equal(result.artifact.artifact_type, "review");
+  store.failAttempt(
+    runId,
+    reviewerAttemptId,
+    { code: "semantic_error", reason: "review fixture complete" },
+    "FixtureComplete",
+    0,
+  );
 
   const researcherAttemptId = store.startAttempt(runId, "researcher");
   const researcherLedger = new EvidenceLedger({

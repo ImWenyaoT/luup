@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "vitest";
+import { onTestFinished, test } from "bun:test";
 
 import { ArxivLookupError } from "../src/agent/arxiv.ts";
+import type { ResearchPlan } from "../src/agent/contracts.ts";
 import { EvidenceLedger, type EvidenceCitation, type EvidenceRecord } from "../src/agent/evidence.ts";
 import { StageError } from "../src/agent/failures.ts";
 import { reportStructuredOutput } from "../src/agent/roles/structured-output.ts";
@@ -80,8 +81,10 @@ function fake(
     inventsAQuery?: boolean;
     inventsACitation?: boolean;
     stageFails?: boolean;
+    primitiveFailure?: boolean;
     usesProviderSourceAlias?: boolean;
     thinReferences?: boolean;
+    rewritesPlanCandidateId?: boolean;
   } = {},
 ) {
   let ledger = new EvidenceLedger();
@@ -97,6 +100,7 @@ function fake(
     const inputs = (payload.input_artifacts ?? []) as Array<{ id: string; type: string; content: any }>;
     const ofType = (type: string) => inputs.filter((item) => item.type === type);
 
+    if (options.primitiveFailure) return await Promise.reject(null);
     if (options.stageFails) throw new StageError("deadline_exceeded", `${role} exceeded the deadline`);
 
     if (role === "researcher") {
@@ -160,6 +164,19 @@ function fake(
       return await reportStructuredOutput(agent, {
         artifact_type: "research",
         question: options.rewritesResearchQuestion ? DRIFTED_QUESTION : payload.question,
+        research_framing: {
+          research_object: "科研 Agent 的证据归因机制",
+          scope: "固定模型和问题集下的引用可靠性",
+          variables: [
+            { name: "证据门条件", role: "independent", operationalization: "是否启用冻结 evidence_id 校验" },
+            { name: "无来源引用率", role: "dependent", operationalization: "未绑定冻结证据的引用数除以引用总数" },
+          ],
+          known: ["冻结证据 ID 可以被确定性验收。"],
+          controversies: ["提示词约束是否足以替代代码持有的证据归因仍有争议。"],
+          unknowns: ["证据门对跨问题任务完成率的影响未知。"],
+          knowledge_gap: "缺少在相同问题和模型条件下对证据归因机制的配对比较。",
+          constraints: ["不能把候选假设写成已证实结论。"],
+        },
         summary: "冻结证据支撑一条可审计的论断。",
         claims: [
           {
@@ -223,16 +240,68 @@ function fake(
 
     if (role === "hypothesis-generation") {
       const research = ofType("research");
+      const evidenceIds = [
+        ...new Set(research.flatMap((item) => item.content.citations.map((c: any) => c.evidence_id))),
+      ];
       return {
         artifact_type: "hypothesis",
         question: options.rewritesHypothesisQuestion ? DRIFTED_QUESTION : payload.question,
-        hypothesis: "证据门降低无来源引用。",
-        rationale: "冻结证据可审计。",
-        falsifiable_predictions: ["无来源引用率低于基线。"],
-        boundaries: ["仅限引用可靠性。"],
+        candidates: [
+          {
+            candidate_id: "evidence-gate",
+            claim_status: "candidate",
+            core_claim: "证据门降低无来源引用。",
+            basis: "冻结证据可审计；这是待验证的模型推断。",
+            supporting_evidence_ids: evidenceIds,
+            opposing_evidence_ids: [],
+            falsifiable_predictions: ["无来源引用率低于基线。"],
+            alternative_explanations: ["提示词服从度差异也可能造成引用率变化。"],
+            uncertainty: ["当前 fixture 未测量真实科学结论正确性。"],
+            boundaries: ["仅限引用可靠性。"],
+            validation_conditions: ["使用预注册的配对基准。"],
+          },
+          {
+            candidate_id: "prompt-only",
+            claim_status: "candidate",
+            core_claim: "仅提示词约束也可能降低无来源引用。",
+            basis: "提示词可能改变模型行为，但没有代码持有的证据归因。",
+            supporting_evidence_ids: evidenceIds,
+            opposing_evidence_ids: [],
+            falsifiable_predictions: ["提示词约束组的无来源引用率低于基线。"],
+            alternative_explanations: ["任务难度差异可能解释观察结果。"],
+            uncertainty: ["提示词不能阻止模型编造 evidence_id。"],
+            boundaries: ["不覆盖来源真实性。"],
+            validation_conditions: ["固定问题集、模型与预算后做配对比较。"],
+          },
+        ],
+        comparison: {
+          criteria: [
+            { criterion: "引用可核验性", rationale: "候选必须能绑定真实冻结证据。" },
+            { criterion: "可证伪性", rationale: "候选必须有可观测预测。" },
+          ],
+          evaluations: [
+            {
+              candidate_id: "evidence-gate",
+              rank: 1,
+              strengths: ["冻结证据可被确定性验收。"],
+              weaknesses: ["需要结构化证据门。"],
+              evidence_ids: evidenceIds,
+              rationale: "优先验证，但不是已证实结论。",
+            },
+            {
+              candidate_id: "prompt-only",
+              rank: 2,
+              strengths: ["实现成本低。"],
+              weaknesses: ["不能阻止捏造证据 ID。"],
+              evidence_ids: evidenceIds,
+              rationale: "保留作为替代候选和对照。",
+            },
+          ],
+          selected_candidate_id: "evidence-gate",
+          selection_rationale: "优先验证可由代码核验的候选；这只是研究优先级。",
+        },
+        selection_status: "candidate_selected",
         research_artifact_ids: research.map((item) => item.id),
-        evidence_ids: research.flatMap((item) => item.content.citations.map((c: any) => c.evidence_id)),
-        validation_conditions: ["使用预注册的配对基准。"],
       };
     }
 
@@ -273,6 +342,40 @@ function fake(
         datasets: ["preregistered questions"],
         source: "Frozen Artifacts",
         target: "降低无来源引用率。",
+        execution_plan: {
+          predictions: [
+            {
+              candidate_id: options.rewritesPlanCandidateId ? "H1_Structural_Foundation" : "evidence-gate",
+              prediction: "证据门组的无来源引用率低于基线组。",
+              falsification_criterion: "若无来源引用率没有下降，则否定该预测。",
+            },
+          ],
+          data_requirements: [
+            {
+              source: "预注册问题集",
+              variables: ["无来源引用率", "任务完成率"],
+              conditions: ["固定模型、问题集和总 token 预算。"],
+            },
+          ],
+          steps: [
+            { order: 1, action: "冻结问题集并分别运行证据门与对照条件。", expected_output: "每题一份结构化产物。" },
+            { order: 2, action: "按同一规则核验引用并汇总配对指标。", expected_output: "逐题结果表和失败记录。" },
+          ],
+          analysis: [
+            {
+              method: "配对比例比较",
+              inputs: ["两组逐题引用核验结果"],
+              decision_rule: "报告差值及置信区间，不把未执行结果写成假设已证实。",
+            },
+          ],
+          result_interpretations: [
+            { observed_result: "无来源引用率下降且完成率不下降。", meaning: "支持继续验证证据门候选。" },
+            { observed_result: "无来源引用率不下降或完成率下降。", meaning: "否定或回退证据门候选，并检查替代解释。" },
+          ],
+          stop_conditions: ["达到预注册样本量且所有题都有终态记录。"],
+          rollback_conditions: ["引用核验无法复现或数据完整性门失败。"],
+          supplement_evidence_conditions: ["关键变量缺少可用来源或出现无法解释的冲突证据。"],
+        },
         paper_title: "可审计证据门研究",
         paper_abstract: "开展证据门的配对对照研究。",
         methods: "使用配对盲评方法。",
@@ -365,7 +468,8 @@ function harness(options: Parameters<typeof fake>[0] & { lookupFails?: boolean }
   return { store, calls: f.calls, harness: runner };
 }
 
-test("marks a run interrupted when its database is reopened", (t) => {
+test("marks a run interrupted when its database is reopened", () => {
+  const t = { onTestFinished };
   const directory = mkdtempSync(join(tmpdir(), "luup-store-"));
   const database = join(directory, "runs.db");
   t.onTestFinished(() => rmSync(directory, { recursive: true, force: true }));
@@ -385,7 +489,8 @@ test("marks a run interrupted when its database is reopened", (t) => {
   store.close();
 });
 
-test("refuses a second writer without interrupting the active run", (t) => {
+test("refuses a second writer without interrupting the active run", () => {
+  const t = { onTestFinished };
   const directory = mkdtempSync(join(tmpdir(), "luup-lock-"));
   const database = join(directory, "runs.db");
   t.onTestFinished(() => rmSync(directory, { recursive: true, force: true }));
@@ -397,7 +502,8 @@ test("refuses a second writer without interrupting the active run", (t) => {
   store.close();
 });
 
-test("opens an empty SQLite writer-lock database", (t) => {
+test("opens an empty SQLite writer-lock database", () => {
+  const t = { onTestFinished };
   const directory = mkdtempSync(join(tmpdir(), "luup-stale-lock-"));
   const database = join(directory, "runs.db");
   t.onTestFinished(() => rmSync(directory, { recursive: true, force: true }));
@@ -427,6 +533,77 @@ test("drives a run to completed through the store task graph", async () => {
     snapshot.attempts.every((a: any) => a.status === "completed"),
     true,
   );
+  const lifecycle = snapshot.recent_events.filter((event: any) => event.kind.startsWith("subagent."));
+  assert.deepEqual(
+    lifecycle.map((event: any) => [event.kind, event.payload.role, event.payload.status ?? null]),
+    [
+      ["subagent.started", "researcher", null],
+      ["subagent.ended", "researcher", "completed"],
+      ["subagent.started", "hypothesis-generation", null],
+      ["subagent.ended", "hypothesis-generation", "completed"],
+      ["subagent.started", "evidence-review", null],
+      ["subagent.ended", "evidence-review", "completed"],
+      ["subagent.started", "research-plan", null],
+      ["subagent.ended", "research-plan", "completed"],
+      ["subagent.started", "reviewer", null],
+      ["subagent.ended", "reviewer", "completed"],
+    ],
+  );
+  h.store.close();
+});
+
+test("research plan candidate ids are frozen from the selected hypothesis instead of model transcription", async () => {
+  const h = harness({ rewritesPlanCandidateId: true });
+  const runId = h.harness.createRun("设计一个可证伪的实验");
+  await h.harness.execute(runId);
+
+  const snapshot = h.store.snapshot(runId)!;
+  assert.equal(snapshot.status, "completed");
+  const planRef = snapshot.artifacts.find((artifact: any) => artifact.type === "research-plan")!;
+  const plan = h.store.artifact(planRef.id)!.content as ResearchPlan;
+  assert.deepEqual(
+    plan.execution_plan.predictions.map((prediction) => prediction.candidate_id),
+    ["evidence-gate"],
+  );
+  assert.ok(
+    snapshot.recent_events.some(
+      (event: any) =>
+        event.kind === "artifact.field_overwritten" &&
+        event.payload.field === "execution_plan.predictions.candidate_id",
+    ),
+  );
+  h.store.close();
+});
+
+test("publishes multiple traceable candidate hypotheses and a comparison decision", async () => {
+  const h = harness();
+  const runId = h.harness.createRun("设计一个可证伪的实验");
+  await h.harness.execute(runId);
+
+  const hypothesis = h.store.snapshot(runId)!.artifacts.find((a: any) => a.type === "hypothesis")!.content;
+  assert.equal(hypothesis.selection_status, "candidate_selected");
+  assert.ok(hypothesis.candidates.length >= 2);
+  assert.equal(
+    new Set(hypothesis.candidates.map((candidate: any) => candidate.candidate_id)).size,
+    hypothesis.candidates.length,
+  );
+  for (const candidate of hypothesis.candidates) {
+    assert.equal(candidate.claim_status, "candidate");
+    assert.ok(candidate.core_claim);
+    assert.ok(candidate.supporting_evidence_ids.length + candidate.opposing_evidence_ids.length > 0);
+    assert.ok(candidate.falsifiable_predictions.length > 0);
+    assert.ok(candidate.alternative_explanations.length > 0);
+    assert.ok(candidate.uncertainty.length > 0);
+  }
+  assert.ok(hypothesis.comparison.criteria.length > 0);
+  assert.equal(hypothesis.comparison.evaluations.length, hypothesis.candidates.length);
+  assert.ok(hypothesis.comparison.selected_candidate_id);
+  assert.ok(
+    hypothesis.candidates.some(
+      (candidate: any) => candidate.candidate_id === hypothesis.comparison.selected_candidate_id,
+    ),
+  );
+  assert.ok(!hypothesis.candidates.some((candidate: any) => candidate.claim_status !== "candidate"));
   h.store.close();
 });
 
@@ -697,20 +874,69 @@ test("records the drift of the accepted round only", async () => {
   const research = {
     id: "art_research",
     type: "research",
-    content: { citations: [{ evidence_id: "ev_1", url: null }] },
+    content: {
+      queries: [{ evidence_id: "ev_1" }],
+      citations: [{ evidence_id: "ev_1", url: null }],
+    },
   };
   const execute: StageExecutor = () => {
     call += 1;
     return Promise.resolve({
       artifact_type: "hypothesis",
       question: DRIFTED_QUESTION,
-      hypothesis: "证据门降低无来源引用。",
-      rationale: "冻结证据可审计。",
-      falsifiable_predictions: ["无来源引用率低于基线。"],
-      boundaries: ["仅限引用可靠性。"],
+      candidates: [
+        {
+          candidate_id: "evidence-gate",
+          claim_status: "candidate",
+          core_claim: "证据门降低无来源引用。",
+          basis: "冻结证据可审计。",
+          supporting_evidence_ids: call === 1 ? ["ev_never_existed"] : ["ev_1"],
+          opposing_evidence_ids: [],
+          falsifiable_predictions: ["无来源引用率低于基线。"],
+          alternative_explanations: ["提示词服从度差异。"],
+          uncertainty: ["尚未完成配对验证。"],
+          boundaries: ["仅限引用可靠性。"],
+          validation_conditions: ["使用预注册的配对基准。"],
+        },
+        {
+          candidate_id: "prompt-only",
+          claim_status: "candidate",
+          core_claim: "提示词约束也可能降低无来源引用。",
+          basis: "提示词可能改变模型行为。",
+          supporting_evidence_ids: ["ev_1"],
+          opposing_evidence_ids: [],
+          falsifiable_predictions: ["提示词约束组低于基线。"],
+          alternative_explanations: ["任务难度差异。"],
+          uncertainty: ["无法保证 ID 真实存在。"],
+          boundaries: ["不覆盖来源真实性。"],
+          validation_conditions: ["固定问题集和模型。"],
+        },
+      ],
+      comparison: {
+        criteria: [{ criterion: "可核验性", rationale: "证据 ID 必须可回查。" }],
+        evaluations: [
+          {
+            candidate_id: "evidence-gate",
+            rank: 1,
+            strengths: ["代码可验收。"],
+            weaknesses: ["有额外结构成本。"],
+            evidence_ids: ["ev_1"],
+            rationale: "优先验证。",
+          },
+          {
+            candidate_id: "prompt-only",
+            rank: 2,
+            strengths: ["成本低。"],
+            weaknesses: ["可能捏造 ID。"],
+            evidence_ids: ["ev_1"],
+            rationale: "保留对照。",
+          },
+        ],
+        selected_candidate_id: "evidence-gate",
+        selection_rationale: "选择可核验候选进入计划。",
+      },
+      selection_status: "candidate_selected",
       research_artifact_ids: ["art_research"],
-      evidence_ids: call === 1 ? ["ev_never_existed"] : ["ev_1"],
-      validation_conditions: ["使用预注册的配对基准。"],
     });
   };
 
@@ -785,6 +1011,74 @@ test("terminates review_rejected after the bounded revision", async () => {
   assert.equal(snapshot.recent_events.at(-1)!.kind, "run.review_rejected");
   assert.equal(h.calls.filter((c) => c.role === "research-plan").length, 2);
   assert.equal(h.calls.filter((c) => c.role === "reviewer").length, 2);
+  const feedback = snapshot.recent_events.filter((event: any) => event.kind === "feedback.received");
+  assert.deepEqual(
+    feedback.map((event: any) => [event.payload.source, event.payload.round, event.payload.action]),
+    [
+      ["model_reviewer", 1, "revise"],
+      ["model_reviewer", 2, "stop"],
+    ],
+  );
+  const revision = snapshot.recent_events.find((event: any) => event.kind === "revision.applied");
+  assert.equal(revision.payload.round, 2);
+  assert.equal(typeof revision.payload.changed_fields, "string");
+  assert.ok(revision.payload.changed_fields.length > 0);
+  h.store.close();
+});
+
+test("records an auditable evaluation iteration without inventing human feedback", async () => {
+  const h = harness({ rejectReviews: 2 });
+  const runId = h.harness.createRun("q");
+  await h.harness.execute(runId);
+
+  const snapshot = h.store.snapshot(runId)!;
+  const evaluations = snapshot.recent_events.filter((event: any) => event.kind === "evaluation.round");
+  assert.equal(evaluations.length, 2);
+  assert.deepEqual(
+    evaluations.map((event: any) => [event.payload.round, event.payload.phase, event.payload.action]),
+    [
+      [1, "raw", "revise"],
+      [2, "revision", "stop"],
+    ],
+  );
+
+  const first = evaluations[0]!.payload;
+  const second = evaluations[1]!.payload;
+  assert.equal(first.evaluator, "model_reviewer");
+  assert.equal(first.target, "research-plan");
+  assert.equal(first.sample, "one run / one research plan");
+  assert.equal(first.sample_size, 1);
+  assert.equal(first.rubric_version, "review-v1");
+  assert.match(first.scientific_rationale, /科学/);
+  assert.equal(first.feedback_source, "auto");
+  assert.equal(first.raw_plan_artifact_id, first.plan_artifact_id);
+  assert.equal(first.raw_review_artifact_id, first.review_artifact_id);
+  assert.equal(first.score_before_total, null);
+  assert.equal(first.score_delta_total, null);
+  assert.equal(first.cost_delta_tokens, null);
+  assert.equal(first.rollback_reason, null);
+
+  assert.equal(second.feedback_source, "auto");
+  assert.equal(second.raw_plan_artifact_id, first.raw_plan_artifact_id);
+  assert.equal(second.raw_review_artifact_id, first.raw_review_artifact_id);
+  assert.notEqual(second.plan_artifact_id, first.plan_artifact_id);
+  assert.notEqual(second.review_artifact_id, first.review_artifact_id);
+  assert.equal(second.score_before_total, 12);
+  assert.equal(second.score_after_total, 12);
+  assert.equal(second.score_delta_total, 0);
+  assert.equal(second.limitation_delta_count, 0);
+  assert.equal(second.stop_reason, "revision_budget_exhausted");
+  assert.equal(second.retry_reason, null);
+  assert.equal(second.rollback_reason, null);
+  assert.equal(typeof second.changed_fields, "string");
+  assert.notEqual(second.changed_fields, "");
+  assert.equal(first.feedback_artifact_id, first.review_artifact_id);
+  assert.equal(first.raw_review_artifact_id, first.review_artifact_id);
+  assert.equal(first.feedback_source, "auto");
+  assert.equal(
+    snapshot.recent_events.some((event: any) => event.kind === "feedback.received" && event.payload.source === "human"),
+    false,
+  );
   h.store.close();
 });
 
@@ -830,6 +1124,19 @@ test("records an execution-layer failure without spending the correction", async
   assert.equal(snapshot.error_code, "deadline_exceeded");
   // 超时换个提示词重发也不会消失，所以只调用一次
   assert.equal(h.calls.length, 1);
+  h.store.close();
+});
+
+test("a null executor failure still lands a durable Attempt failure", async () => {
+  const h = harness({ primitiveFailure: true });
+  const runId = h.harness.createRun("q");
+  await h.harness.execute(runId);
+
+  const snapshot = h.store.snapshot(runId)!;
+  assert.equal(snapshot.status, "failed");
+  assert.equal(snapshot.attempts.length, 1);
+  assert.equal(snapshot.attempts[0]!.status, "failed");
+  assert.equal(snapshot.attempts[0]!.corrections, 0);
   h.store.close();
 });
 
@@ -960,7 +1267,7 @@ test("does not verify references when the Reviewer rejects the plan", async () =
   h.store.close();
 });
 
-test("drops evidence that arrives after its Attempt has failed", () => {
+test("rejects late evidence without mutating the ledger and records the drop", () => {
   const store = new SqliteStore(":memory:");
   const runId = store.createRun("q");
   const attemptId = store.startAttempt(runId, "researcher");
@@ -979,6 +1286,17 @@ test("drops evidence that arrives after its Attempt has failed", () => {
 
   const snapshot = store.snapshot(runId)!;
   assert.deepEqual(snapshot.tool_evidence, []);
-  assert.equal(snapshot.recent_events.length, before);
+  assert.equal(snapshot.recent_events.length, before + 1);
+  assert.deepEqual(snapshot.recent_events.at(-1), {
+    id: snapshot.recent_events.at(-1)!.id,
+    version: snapshot.recent_events.at(-1)!.version,
+    kind: "tool.evidence_dropped",
+    payload: {
+      tool_name: "arxiv_search",
+      status: "succeeded",
+      reason: "attempt_not_running",
+    },
+    created_at: snapshot.recent_events.at(-1)!.created_at,
+  });
   store.close();
 });

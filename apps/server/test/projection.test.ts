@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "vitest";
+import { test } from "bun:test";
 
 import { projectArtifact, projectRunEvent, projectRunSnapshot, projectSseFrame } from "../src/api/projection.ts";
 import { SqliteStore } from "../src/store/store.ts";
@@ -103,7 +103,6 @@ const INTERNAL_FIELD_NAMES = [
   "error_type",
   "budget_json",
   "updated_at",
-  "run_id",
   "output_artifact_id",
   "successor_of",
   "documents",
@@ -115,6 +114,7 @@ test("公共投影不含任何内部字段", () => {
   for (const field of INTERNAL_FIELD_NAMES) {
     assert.ok(!serialized.includes(field), `internal field leaked: ${field}`);
   }
+  assert.ok(!serialized.includes('"run_id":'), "internal run_id leaked");
   assert.ok(!serialized.includes("内部内容"), "artifact content leaked");
 });
 
@@ -156,20 +156,115 @@ test("Evidence Review 详情不泄露内部 evidence_ids 与 rationale", () => {
   });
 });
 
-test("Hypothesis 详情不把 rationale 发给浏览器", () => {
+test("Research framing 详情公开问题边界而不泄露检索台账", () => {
+  const projected = projectArtifact({
+    id: "artifact_research",
+    type: "research",
+    content: {
+      artifact_type: "research",
+      research_framing: {
+        research_object: "证据归因机制",
+        scope: "固定问题集",
+        variables: [{ name: "引用率", role: "dependent", operationalization: "无来源引用数除以总数" }],
+        known: ["冻结证据可被核验"],
+        controversies: ["提示词是否足够"],
+        unknowns: ["跨问题效果"],
+        knowledge_gap: "缺少配对比较",
+        constraints: ["不宣称已证实"],
+      },
+      summary: "冻结证据支撑一条可审计的论断。",
+      claims: [{ statement: "证据门可核验。", evidence_ids: ["ev_internal"] }],
+      limitations: ["fixture"],
+      queries: [{ evidence_id: "ev_internal" }],
+      citations: [{ evidence_id: "ev_internal", locator: "private", title: "private", url: null }],
+    },
+  });
+
+  assert.deepEqual(projected.content, {
+    artifact_type: "research",
+    research_framing: {
+      research_object: "证据归因机制",
+      scope: "固定问题集",
+      variables: [{ name: "引用率", role: "dependent", operationalization: "无来源引用数除以总数" }],
+      known: ["冻结证据可被核验"],
+      controversies: ["提示词是否足够"],
+      unknowns: ["跨问题效果"],
+      knowledge_gap: "缺少配对比较",
+      constraints: ["不宣称已证实"],
+    },
+    summary: "冻结证据支撑一条可审计的论断。",
+    claims: [{ statement: "证据门可核验。", evidence_ids: ["ev_internal"] }],
+    limitations: ["fixture"],
+  });
+  assert.ok(!JSON.stringify(projected).includes("private"));
+});
+
+test("Hypothesis 详情公开候选证据与比较筛选记录，但不泄露上游 Artifact ID", () => {
   const projected = projectArtifact({
     id: "artifact_hypothesis",
     type: "hypothesis",
     content: {
       artifact_type: "hypothesis",
       question: "q",
-      hypothesis: "h",
-      rationale: "内部推理",
-      falsifiable_predictions: ["p"],
-      boundaries: ["b"],
+      candidates: [
+        {
+          candidate_id: "c1",
+          claim_status: "candidate",
+          core_claim: "候选一",
+          basis: "依据一",
+          supporting_evidence_ids: ["ev_1"],
+          opposing_evidence_ids: [],
+          falsifiable_predictions: ["预测一"],
+          alternative_explanations: ["替代一"],
+          uncertainty: ["不确定一"],
+          boundaries: ["边界一"],
+          validation_conditions: ["条件一"],
+        },
+        {
+          candidate_id: "c2",
+          claim_status: "candidate",
+          core_claim: "候选二",
+          basis: "依据二",
+          supporting_evidence_ids: [],
+          opposing_evidence_ids: ["ev_2"],
+          falsifiable_predictions: ["预测二"],
+          alternative_explanations: ["替代二"],
+          uncertainty: ["不确定二"],
+          boundaries: ["边界二"],
+          validation_conditions: ["条件二"],
+        },
+      ],
+      comparison: {
+        criteria: [{ criterion: "可证伪性", rationale: "可被实验推翻。" }],
+        evaluations: [
+          {
+            candidate_id: "c1",
+            rank: 1,
+            strengths: ["预测明确。"],
+            weaknesses: ["证据有限。"],
+            evidence_ids: ["ev_1"],
+            rationale: "优先验证。",
+          },
+          {
+            candidate_id: "c2",
+            rank: 2,
+            strengths: ["保留反证。"],
+            weaknesses: ["支持不足。"],
+            evidence_ids: ["ev_2"],
+            rationale: "作为替代。",
+          },
+        ],
+        selected_candidate_id: "c1",
+        selection_rationale: "候选一更可检验。",
+      },
+      selection_status: "candidate_selected",
+      research_artifact_ids: ["research_internal"],
     },
   });
-  assert.ok(!JSON.stringify(projected).includes("rationale"));
+  assert.equal(projected.content.artifact_type, "hypothesis");
+  assert.equal((projected.content as any).candidates.length, 2);
+  assert.equal((projected.content as any).comparison.selected_candidate_id, "c1");
+  assert.ok(!JSON.stringify(projected).includes("research_internal"));
 });
 
 test("ResearchPlan 详情投影完整覆盖产品 A1-A10 字段但不泄露追溯 ID", () => {
@@ -184,6 +279,28 @@ test("ResearchPlan 详情投影完整覆盖产品 A1-A10 字段但不泄露追�
       datasets: ["数据集"],
       source: "来源",
       target: "研究目标",
+      execution_plan: {
+        predictions: [
+          {
+            candidate_id: "candidate-1",
+            prediction: "证据门组更低",
+            falsification_criterion: "若不下降则否定",
+          },
+        ],
+        data_requirements: [{ source: "问题集", variables: ["引用率"], conditions: ["固定模型"] }],
+        steps: [
+          { order: 1, action: "冻结问题集", expected_output: "结构化产物" },
+          { order: 2, action: "核验引用", expected_output: "指标表" },
+        ],
+        analysis: [{ method: "配对比较", inputs: ["逐题结果"], decision_rule: "报告区间" }],
+        result_interpretations: [
+          { observed_result: "引用率下降", meaning: "支持继续验证" },
+          { observed_result: "引用率不降", meaning: "回退候选" },
+        ],
+        stop_conditions: ["样本完成"],
+        rollback_conditions: ["数据损坏"],
+        supplement_evidence_conditions: ["关键变量缺来源"],
+      },
       paper_title: "论文标题",
       paper_abstract: "论文摘要",
       methods: "研究方法",
@@ -218,6 +335,28 @@ test("ResearchPlan 详情投影完整覆盖产品 A1-A10 字段但不泄露追�
     datasets: ["数据集"],
     source: "来源",
     target: "研究目标",
+    execution_plan: {
+      predictions: [
+        {
+          candidate_id: "candidate-1",
+          prediction: "证据门组更低",
+          falsification_criterion: "若不下降则否定",
+        },
+      ],
+      data_requirements: [{ source: "问题集", variables: ["引用率"], conditions: ["固定模型"] }],
+      steps: [
+        { order: 1, action: "冻结问题集", expected_output: "结构化产物" },
+        { order: 2, action: "核验引用", expected_output: "指标表" },
+      ],
+      analysis: [{ method: "配对比较", inputs: ["逐题结果"], decision_rule: "报告区间" }],
+      result_interpretations: [
+        { observed_result: "引用率下降", meaning: "支持继续验证" },
+        { observed_result: "引用率不降", meaning: "回退候选" },
+      ],
+      stop_conditions: ["样本完成"],
+      rollback_conditions: ["数据损坏"],
+      supplement_evidence_conditions: ["关键变量缺来源"],
+    },
     paper_title: "论文标题",
     paper_abstract: "论文摘要",
     methods: "研究方法",
@@ -287,12 +426,78 @@ test("Attempt 只投影声明过的字段", () => {
   ]);
 });
 
+test("evaluation round projection keeps rubric, raw artifacts, deltas and explicit reasons", () => {
+  const projected = projectRunEvent({
+    id: 8,
+    version: 8,
+    kind: "evaluation.round",
+    payload: {
+      evaluator: "model_reviewer",
+      target: "research-plan",
+      sample: "one run / one research plan",
+      sample_size: 1,
+      rubric_version: "review-v1",
+      scientific_rationale: "三项分数用于记录迭代诊断，不替代人工科学审查。",
+      round: 2,
+      phase: "revision",
+      action: "stop",
+      feedback_source: "auto",
+      feedback_artifact_id: "review-2",
+      feedback_count: 1,
+      raw_plan_artifact_id: "plan-1",
+      raw_review_artifact_id: "review-1",
+      plan_artifact_id: "plan-2",
+      review_artifact_id: "review-2",
+      changed_fields: "methods",
+      score_before_total: 10,
+      score_after_total: 12,
+      score_delta_total: 2,
+      round_cost_tokens: null,
+      cost_delta_tokens: null,
+      limitations_before_count: 2,
+      limitations_after_count: 1,
+      limitation_delta_count: -1,
+      stop_reason: "revision_budget_exhausted",
+      retry_reason: null,
+      rollback_reason: null,
+      internal_raw_review: "must not leak",
+    },
+    created_at: "t",
+  });
+
+  assert.equal(projected.kind, "evaluation.round");
+  assert.equal(projected.payload.raw_review_artifact_id, "review-1");
+  assert.equal(projected.payload.score_delta_total, 2);
+  assert.equal(projected.payload.cost_delta_tokens, null);
+  assert.equal(projected.payload.stop_reason, "revision_budget_exhausted");
+  assert.ok(!JSON.stringify(projected).includes("internal_raw_review"));
+});
+
+test("Run 快照把每次角色执行投影成可核验的 one-shot subagent", () => {
+  const projected = projectRunSnapshot(internalSnapshot());
+  assert.deepEqual(projected.subagents, [
+    {
+      id: "attempt_1",
+      parent_run_id: "run_1",
+      role: "researcher",
+      ordinal: 1,
+      mode: "one-shot",
+      status: "running",
+      stop_reason: null,
+      started_at: "2026-08-06T00:00:00.000Z",
+      finished_at: null,
+    },
+  ]);
+});
+
 test("Crossref 证据公开，内部工具证据被过滤", () => {
   const projected = projectRunSnapshot(internalSnapshot());
   assert.deepEqual(
     projected.tool_evidence.map((row) => row.id),
     ["ev_1"],
   );
+  assert.equal(projected.omitted_evidence_count, 1);
+  assert.deepEqual(projected.omitted_evidence_tools, ["internal_debug_dump"]);
 });
 
 test("证据行携带 attempt_id，且指向公开的 attempt", () => {
@@ -348,6 +553,36 @@ test("payload 只保留该 kind 白名单里的字段", () => {
   assert.deepEqual(event.payload, { tool_name: "arxiv_search", status: "succeeded", result_count: 2 });
 });
 
+test("subagent 生命周期事件公开身份、父 Run 与明确终态", () => {
+  const started = projectRunEvent({
+    id: 4,
+    version: 4,
+    kind: "subagent.started",
+    created_at: "t",
+    payload: { subagent_id: "attempt_1", parent_run_id: "run_1", role: "researcher", ordinal: 1 },
+  });
+  assert.deepEqual(started.payload, {
+    subagent_id: "attempt_1",
+    parent_run_id: "run_1",
+    role: "researcher",
+    ordinal: 1,
+  });
+
+  const ended = projectRunEvent({
+    id: 5,
+    version: 5,
+    kind: "subagent.ended",
+    created_at: "t",
+    payload: { subagent_id: "attempt_1", role: "researcher", status: "failed", failure_code: "infra_timeout" },
+  });
+  assert.deepEqual(ended.payload, {
+    subagent_id: "attempt_1",
+    role: "researcher",
+    status: "failed",
+    failure_code: "infra_timeout",
+  });
+});
+
 test("verification.references 公共投影放行 doi_checked 这个标量", () => {
   const event = projectRunEvent({
     id: 12,
@@ -359,15 +594,21 @@ test("verification.references 公共投影放行 doi_checked 这个标量", () =
   assert.deepEqual(event.payload, { doi_checked: 5 });
 });
 
-test("白名单外的 kind 得到空 payload，事件本身仍然出去", () => {
+test("未知 kind 不再得到空 payload，而是显式标记为不支持", () => {
   const event = projectRunEvent({
     id: 4,
     version: 4,
-    kind: "sdk.output_rejected",
-    payload: { reason: "内部原因" },
+    kind: "future.event",
+    payload: { internal_reason: "内部原因" },
     created_at: "t",
   });
-  assert.deepEqual(event, { id: 4, version: 4, kind: "sdk.output_rejected", payload: {}, created_at: "t" });
+  assert.deepEqual(event, {
+    id: 4,
+    version: 4,
+    kind: "future.event",
+    payload: { diagnostic: "unsupported_event", unsupported: true },
+    created_at: "t",
+  });
 });
 
 test("漂移事件放行字段名，模型写的原文留在库内", () => {
@@ -390,7 +631,7 @@ test("嵌套对象与数组即使字段名在白名单里也被丢弃", () => {
   const nested = projectRunEvent({
     id: 5,
     version: 5,
-    kind: "task.created",
+    kind: "attempt.started",
     payload: { role: { name: "researcher" } },
     created_at: "t",
   });
@@ -398,7 +639,7 @@ test("嵌套对象与数组即使字段名在白名单里也被丢弃", () => {
   const array = projectRunEvent({
     id: 6,
     version: 6,
-    kind: "task.created",
+    kind: "attempt.started",
     payload: { role: ["researcher"] },
     created_at: "t",
   });
@@ -407,7 +648,7 @@ test("嵌套对象与数组即使字段名在白名单里也被丢弃", () => {
   const listPayload = projectRunEvent({
     id: 7,
     version: 7,
-    kind: "task.created",
+    kind: "attempt.started",
     payload: ["researcher"],
     created_at: "t",
   });
@@ -464,7 +705,10 @@ test("真实 store 的快照能原样进投影，且内部字段不出网", () =
     "error_code",
     "final_artifact_id",
     "attempts",
+    "subagents",
     "tool_evidence",
+    "omitted_evidence_count",
+    "omitted_evidence_tools",
     "artifacts",
     "recent_events",
   ]);
@@ -474,5 +718,6 @@ test("真实 store 的快照能原样进投影，且内部字段不出网", () =
   for (const field of INTERNAL_FIELD_NAMES) {
     assert.ok(!serialized.includes(field), `internal field leaked: ${field}`);
   }
+  assert.ok(!serialized.includes('"run_id":'), "internal run_id leaked");
   store.close();
 });

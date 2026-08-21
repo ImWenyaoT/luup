@@ -77,9 +77,11 @@ export class EvidenceLedger {
       // 序号只在一本台账内递增；持久库用完整 Attempt ID 作为 namespace，避免跨 Run 碰撞。
       evidenceId: `ev_${this.#namespace}${String(this.#sequence).padStart(2, "0")}_${input.sourceType}`,
     };
+    // 持久化是权威提交点：sink 失败时不能让内存台账独自拥有一条下游可引用的“幽灵证据”。
+    // sequence 保留缺口，明确表示一次提交尝试发生过；records/scope 只在 sink 成功后更新。
+    this.#onRecord?.(record);
     this.#records.set(record.evidenceId, record);
     this.#scope().add(record.evidenceId);
-    this.#onRecord?.(record);
     return record;
   }
 

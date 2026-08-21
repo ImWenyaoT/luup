@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "vitest";
+import { test } from "bun:test";
 
 import { ContractError, StageError } from "../src/agent/failures.ts";
 import { EvidenceLedger } from "../src/agent/evidence.ts";

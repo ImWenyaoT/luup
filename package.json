@@ -1,26 +1,37 @@
 {
   "name": "luup",
   "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
   "scripts": {
-    "dev": "pnpm run \"/^dev:(api|web)$/\"",
-    "dev:api": "LUUP_RUNTIME=deterministic node --env-file-if-exists=.env --experimental-strip-types --watch apps/server/src/main.ts",
-    "dev:api:live": "node --env-file-if-exists=.env --experimental-strip-types --watch apps/server/src/main.ts",
-    "dev:web": "pnpm --filter @luup/frontend dev",
-    "build": "pnpm --filter @luup/frontend build",
-    "start": "pnpm build && node --env-file-if-exists=.env --experimental-strip-types apps/server/src/main.ts",
-    "canary": "node --env-file-if-exists=.env --experimental-strip-types apps/server/src/canary.ts",
-    "batch": "node --env-file-if-exists=.env --experimental-strip-types apps/server/src/batch/runner.ts",
-    "eval": "node --experimental-strip-types apps/server/src/eval/metrics.ts",
-    "typecheck": "pnpm --filter @luup/server typecheck && pnpm --filter @luup/frontend typecheck",
-    "test": "pnpm -r run test",
-    "test:coverage": "pnpm --filter @luup/server test:coverage",
-    "test:e2e": "pnpm --filter @luup/frontend test:e2e",
-    "lint": "oxlint",
-    "lint:fix": "oxlint --fix",
-    "format": "oxfmt --write 'apps/**/*.{ts,tsx,json,css,html}' package.json knip.json .oxlintrc.json .oxfmtrc.json",
-    "format:check": "oxfmt --check 'apps/**/*.{ts,tsx,json,css,html}' package.json knip.json .oxlintrc.json .oxfmtrc.json",
+    "dev": "bun run --parallel dev:api dev:web",
+    "dev:api": "LUUP_RUNTIME=deterministic bun --watch apps/server/src/main.ts",
+    "dev:api:live": "bun --watch apps/server/src/main.ts",
+    "dev:web": "bun run --filter @luup/frontend dev",
+    "build": "bun run --filter @luup/frontend build",
+    "start": "bun run build && bun apps/server/src/main.ts",
+    "canary": "bun apps/server/src/canary.ts",
+    "batch": "bun apps/server/src/batch/runner.ts",
+    "batch:export": "bun apps/server/src/batch/submission-export.ts",
+    "db:backup": "bun apps/server/src/store/backup.ts backup",
+    "db:verify": "bun apps/server/src/store/backup.ts verify",
+    "db:restore": "bun apps/server/src/store/backup.ts restore",
+    "eval": "bun apps/server/src/eval/metrics.ts",
+    "score": "bun apps/server/src/eval/scoring.ts",
+    "usage:export": "bun apps/server/src/submission/usage-export.ts",
+    "submission:check": "bun apps/server/src/submission/checker.ts",
+    "submission:case": "bun apps/server/src/submission/representative-case.ts",
+    "typecheck": "bun run --filter @luup/server typecheck && bun run --filter @luup/frontend typecheck",
+    "test": "bun run --filter '*' test",
+    "test:coverage": "bun run --filter @luup/server test:coverage",
+    "test:e2e": "bun run --filter @luup/frontend test:e2e",
+    "lint": "oxlint --type-aware --deny-warnings --report-unused-disable-directives -D typescript/await-thenable -D typescript/no-floating-promises -D typescript/no-misused-promises -D typescript/only-throw-error -D typescript/switch-exhaustiveness-check .",
+    "lint:fix": "oxlint --type-aware --deny-warnings --report-unused-disable-directives -D typescript/await-thenable -D typescript/no-floating-promises -D typescript/no-misused-promises -D typescript/only-throw-error -D typescript/switch-exhaustiveness-check --fix .",
+    "format": "oxfmt --write 'apps/**/*.{ts,tsx,json,css,html}' package.json knip.json .oxfmtrc.json",
+    "format:check": "oxfmt --check 'apps/**/*.{ts,tsx,json,css,html}' package.json knip.json .oxfmtrc.json",
     "knip": "knip --treat-config-hints-as-errors",
-    "ci": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run knip && pnpm build && pnpm test:coverage && pnpm --filter @luup/frontend test"
+    "ci": "bun run typecheck && bun run lint && bun run format:check && bun run knip && bun run build && bun run test:coverage && bun run --filter @luup/frontend test"
   },
   "devDependencies": {
     "knip": "6.32.2",
@@ -30,8 +41,7 @@
     "oxlint-tsgolint": "7.0.2001"
   },
   "engines": {
-    "node": ">=24",
-    "pnpm": ">=11.15.1"
+    "bun": "1.4.0"
   },
-  "packageManager": "pnpm@11.15.1"
+  "packageManager": "bun@1.4.0"
 }

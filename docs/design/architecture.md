@@ -19,7 +19,7 @@ apps/server/src/server.ts ── apps/server/src/harness.ts ── researcher
                       │            └─ reviewer
                       ├─ apps/server/src/agent/tools/  arXiv + Crossref 检索
                       ├─ apps/server/src/verify/       B1–B4 确定性引用验收（零 LLM）
-                      └─ apps/server/src/store/        node:sqlite 单文件事实存储
+                      └─ apps/server/src/store/        bun:sqlite 单文件事实存储
 ```
 
 ## 模块与 seam
@@ -53,7 +53,7 @@ store 只记账，不参与决定顺序。
 
 ### HTTP adapter
 
-`apps/server/src/server.ts` 是一个 `node:http` 服务器，同时做四件事：输入防护、两槽并发闸、
+`apps/server/src/server.ts` 使用 `Bun.serve`，同时做四件事：输入防护、两槽并发闸、
 只读投影、静态产物托管。它不拥有第二套业务状态——SQLite 才是事实源。
 
 - `POST /api/runs` 只建 run 并返回 202，执行在后台队列推进；
@@ -72,7 +72,7 @@ wire type 手写在 `apps/web/src/types.ts`，**不从服务端模块导入类�
 ## Agent 流程
 
 1. **researcher** 检索 arXiv/Crossref，把命中写进证据台账并冻结成 Artifact。
-2. **hypothesis-generation** 在冻结证据上提出可证伪假说。
+2. **hypothesis-generation** 在冻结证据上提出至少两个可区分、可证伪的候选假说，逐条保留支持/反对证据、替代解释与不确定性，再留下比较筛选记录；选中只表示进入计划，不表示已证实。
 3. **evidence-review** 找缺口；有 gaps 就回到检索，最多两轮。
 4. **research-plan** 产出研究计划，引用必须能追溯到冻结 Artifact 的 citations
    （`apps/server/src/agent/plan-quality.ts` 的两道门）。
@@ -97,10 +97,10 @@ wire type 手写在 `apps/web/src/types.ts`，**不从服务端模块导入类�
 
 单进程内两个并发槽（`apps/server/src/server.ts` 的 `maxConcurrentRuns`）：够演示并发，
 又不会让一批请求同时放大成无上限的付费调用。批跑走另一条路——`apps/server/src/batch/runner.ts`
-按题号**串行**调用同一个 Harness，因为百炼有速率限制且顺序要固定。
+通过有界并发池调用同一个 Harness；并发数由 CLI 显式给定，熔断按完成顺序计算，已派发题目会落到终态后再收束。
 
 批跑的四条性质：续跑（已交付的题不再花第二次钱）、隔离（一题故障记下来、批次继续）、
-串行、限时（`RUN_TIMEOUT_MS` 40 分钟，与单跑同一个数）。连续同类失败触发熔断停批——
+有界并发、限时（`RUN_TIMEOUT_MS` 40 分钟，与单跑同一个数）。连续同类失败触发熔断停批——
 批跑成立的前提是题与题独立，连续同类失败恰好证伪了这个前提。
 
 ## 评估

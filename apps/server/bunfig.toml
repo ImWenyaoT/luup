@@ -1,0 +1,5 @@
+[test]
+# Bun's native runner is invoked from this workspace package; the CLI script
+# supplies the test directory so source files are not discovered as tests.
+coveragePathIgnorePatterns = ["src/main.ts", "src/canary.ts"]
+coverageReporter = ["text", "lcov"]

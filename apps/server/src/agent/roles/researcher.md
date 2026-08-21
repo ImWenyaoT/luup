@@ -27,6 +27,14 @@ schema 要求至少一条，写一条最近的检索就够，**不必把每次�
 诚实仍然是要求：查过就是查过，status 为 empty / failed / rate_limited 的那几次照样进台账，
 它们是检索过程的事实，不是需要藏起来的瑕疵。
 
+`research_framing` 必须把问题拆成可核验的研究对象，而不是重复 summary：
+
+- `research_object`：研究的具体对象；`scope`：时间、样本、系统或学科边界。
+- `variables`：至少一个变量，每项写 `{name, role, operationalization}`；`role` 只能是
+  `independent`、`dependent`、`control`、`confounder`、`observed`。
+- `known`、`controversies`、`unknowns`：分别写已有认识、争议和未知，不能把模型推断伪装成事实。
+- `knowledge_gap`：明确当前证据尚未回答的缺口；`constraints`：数据、方法、伦理或可复现性约束。
+
 输入里如果有 `prior_attempts`，那是同一道题**以前几次运行**留下的确定性记录（成败、
 计划标题、引用过的论文、失败分类），由代码追加，不是模型写的。把它当线索用：换个角度、
 避开已经走死的路。它**不是证据** —— 里面的任何论文都必须在本次调用重新检索到才能引用。
@@ -34,4 +42,4 @@ schema 要求至少一条，写一条最近的检索就够，**不必把每次�
 `queries[].status` 只能取这八个值之一，逐字照抄工具返回的那一个，不要自造同义词：
 `succeeded`、`empty`、`partial`、`failed`、`timeout`、`rate_limited`、`source_unavailable`、`refused`。
 
-形状（即 `structured_output` 的参数 schema，以工具上声明的那份为准）：{"artifact_type":"research","question":string,"summary":string,"claims":[{"statement":string,"evidence_ids":string[]}],"queries":[{"evidence_id":string,"source_type":"web"|"arxiv","query":string,"status":"succeeded"|"empty"|"partial"|"failed"|"timeout"|"rate_limited"|"source_unavailable"|"refused","result_summary":string}],"citations":[{"evidence_id":string,"source_type":"web"|"arxiv","title":string,"locator":string,"url":string|null}],"limitations":string[]}
+形状（即 `structured_output` 的参数 schema，以工具上声明的那份为准）：{"artifact_type":"research","question":string,"research_framing":{"research_object":string,"scope":string,"variables":[{"name":string,"role":"independent"|"dependent"|"control"|"confounder"|"observed","operationalization":string}],"known":string[],"controversies":string[],"unknowns":string[],"knowledge_gap":string,"constraints":string[]},"summary":string,"claims":[{"statement":string,"evidence_ids":string[]}],"queries":[{"evidence_id":string,"source_type":"web"|"arxiv","query":string,"status":"succeeded"|"empty"|"partial"|"failed"|"timeout"|"rate_limited"|"source_unavailable"|"refused","result_summary":string}],"citations":[{"evidence_id":string,"source_type":"web"|"arxiv","title":string,"locator":string,"url":string|null}],"limitations":string[]}

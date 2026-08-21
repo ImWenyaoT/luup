@@ -22,6 +22,19 @@ function renderBody(content: ArtifactContent) {
     case "research":
       return (
         <div className="space-y-3">
+          <Field label="研究对象">{content.research_framing.research_object}</Field>
+          <Field label="研究范围">{content.research_framing.scope}</Field>
+          <List
+            label="变量"
+            items={content.research_framing.variables.map(
+              (variable) => `${variable.name}（${variable.role}）：${variable.operationalization}`,
+            )}
+          />
+          <List label="已有认识" items={content.research_framing.known} />
+          <List label="争议" items={content.research_framing.controversies} />
+          <List label="未知" items={content.research_framing.unknowns} />
+          <Field label="知识缺口">{content.research_framing.knowledge_gap}</Field>
+          <List label="约束" items={content.research_framing.constraints} />
           <Field label="摘要">{content.summary}</Field>
           <List
             label="论断"
@@ -33,9 +46,38 @@ function renderBody(content: ArtifactContent) {
     case "hypothesis":
       return (
         <div className="space-y-3">
-          <Field label="假设">{content.hypothesis}</Field>
-          <List label="可证伪预测" items={content.falsifiable_predictions} />
-          <List label="边界" items={content.boundaries} />
+          <Field label="问题">{content.question}</Field>
+          <Field label="筛选状态">
+            {content.selection_status === "candidate_selected"
+              ? "已选择候选进入研究计划（非已证实）"
+              : content.selection_status}
+          </Field>
+          {content.candidates.map((candidate) => (
+            <div key={candidate.candidate_id} className="space-y-2 rounded border p-3">
+              <Field label={`候选 ${candidate.candidate_id} · ${candidate.claim_status}`}>{candidate.core_claim}</Field>
+              <Field label="依据">{candidate.basis}</Field>
+              <List label="支持证据" items={candidate.supporting_evidence_ids} />
+              <List label="反对证据" items={candidate.opposing_evidence_ids} />
+              <List label="可证伪预测" items={candidate.falsifiable_predictions} />
+              <List label="替代解释" items={candidate.alternative_explanations} />
+              <List label="不确定性" items={candidate.uncertainty} />
+              <List label="边界" items={candidate.boundaries} />
+              <List label="验证条件" items={candidate.validation_conditions} />
+            </div>
+          ))}
+          <Field label="选中候选">{content.comparison.selected_candidate_id}</Field>
+          <Field label="筛选理由">{content.comparison.selection_rationale}</Field>
+          <List
+            label="比较标准"
+            items={content.comparison.criteria.map((criterion) => `${criterion.criterion}：${criterion.rationale}`)}
+          />
+          <List
+            label="比较记录"
+            items={content.comparison.evaluations.map(
+              (evaluation) =>
+                `${evaluation.candidate_id}（第 ${evaluation.rank}）：${evaluation.rationale}；优点：${evaluation.strengths.join("、")}；弱点：${evaluation.weaknesses.join("、")}`,
+            )}
+          />
         </div>
       );
     case "evidence-review":
@@ -54,6 +96,39 @@ function renderBody(content: ArtifactContent) {
           <List label="数据集" items={content.datasets} />
           <Field label="来源">{content.source}</Field>
           <Field label="目标">{content.target}</Field>
+          <List
+            label="可检验预测"
+            items={content.execution_plan.predictions.map(
+              (item) => `[${item.candidate_id}] ${item.prediction}（证伪：${item.falsification_criterion}）`,
+            )}
+          />
+          <List
+            label="数据与条件"
+            items={content.execution_plan.data_requirements.map(
+              (item) => `${item.source}；变量：${item.variables.join("、")}；条件：${item.conditions.join("；")}`,
+            )}
+          />
+          <List
+            label="执行步骤"
+            items={content.execution_plan.steps.map(
+              (item) => `${item.order}. ${item.action} → ${item.expected_output}`,
+            )}
+          />
+          <List
+            label="分析与决策"
+            items={content.execution_plan.analysis.map(
+              (item) => `${item.method}；输入：${item.inputs.join("、")}；规则：${item.decision_rule}`,
+            )}
+          />
+          <List
+            label="不同结果含义"
+            items={content.execution_plan.result_interpretations.map(
+              (item) => `${item.observed_result} → ${item.meaning}`,
+            )}
+          />
+          <List label="停止条件" items={content.execution_plan.stop_conditions} />
+          <List label="回退条件" items={content.execution_plan.rollback_conditions} />
+          <List label="补证条件" items={content.execution_plan.supplement_evidence_conditions} />
           <Field label="论文标题">{content.paper_title}</Field>
           <Field label="论文摘要">{content.paper_abstract}</Field>
           <Field label="方法">{content.methods}</Field>

@@ -110,6 +110,19 @@ export function createDeterministicRuntime(store: SqliteStore): {
       return await reportStructuredOutput(agent, {
         artifact_type: "research",
         question: payload.question,
+        research_framing: {
+          research_object: "科研 Agent 的证据归因机制",
+          scope: "固定模型和问题集下的引用可靠性",
+          variables: [
+            { name: "证据门条件", role: "independent", operationalization: "是否启用冻结 evidence_id 校验" },
+            { name: "无来源引用率", role: "dependent", operationalization: "未绑定冻结证据的引用数除以引用总数" },
+          ],
+          known: ["冻结证据 ID 可以被确定性验收。"],
+          controversies: ["提示词约束是否足以替代代码持有的证据归因仍有争议。"],
+          unknowns: ["证据门对跨问题任务完成率的影响未知。"],
+          knowledge_gap: "缺少在相同问题和模型条件下对证据归因机制的配对比较。",
+          constraints: ["不能把候选假设写成已证实结论。"],
+        },
         summary: "已冻结一条可核验的来源，支撑后续假设与实验设计。",
         claims: [
           {
@@ -132,17 +145,78 @@ export function createDeterministicRuntime(store: SqliteStore): {
     }
 
     if (role === "hypothesis-generation") {
-      const research = ofType("research").at(-1)!;
+      const research = ofType("research");
+      const evidenceIds = [
+        ...new Set(
+          research.flatMap((item) => {
+            const content = item.content as Research;
+            return [
+              ...content.queries.map((query) => query.evidence_id),
+              ...content.citations.map((citation) => citation.evidence_id),
+            ];
+          }),
+        ),
+      ];
       return {
         artifact_type: "hypothesis",
         question: payload.question,
-        hypothesis: "强制引用冻结证据 ID 能降低科研 Agent 的无来源引用率。",
-        rationale: "证据 ID 由代码写定，模型无法在事后改写归因。",
-        falsifiable_predictions: ["证据门组的无来源引用率显著低于自由生成组。"],
-        boundaries: ["只覆盖引用可靠性，不涉及结论正确性。"],
-        research_artifact_ids: [research.id],
-        evidence_ids: (research.content as Research).citations.map((item) => item.evidence_id),
-        validation_conditions: ["使用预注册的配对问题集与同一模型。"],
+        candidates: [
+          {
+            candidate_id: "evidence-gate",
+            claim_status: "candidate",
+            core_claim: "强制引用冻结证据 ID 能降低科研 Agent 的无来源引用率。",
+            basis: "冻结证据 ID 使归因关系可核验；这是基于工具记录的模型推断，不是已证实结论。",
+            supporting_evidence_ids: evidenceIds.slice(0, 1),
+            opposing_evidence_ids: [],
+            falsifiable_predictions: ["证据门组的无来源引用率低于自由生成组。"],
+            alternative_explanations: ["提示词约束或问题难度差异也可能导致引用率变化。"],
+            uncertainty: ["固定来源只说明可审计性，尚未测量跨问题泛化。"],
+            boundaries: ["只覆盖引用可靠性，不涉及结论正确性。"],
+            validation_conditions: ["使用预注册的配对问题集与同一模型。"],
+          },
+          {
+            candidate_id: "prompt-only",
+            claim_status: "candidate",
+            core_claim: "仅通过提示词要求引用证据也足以降低科研 Agent 的无来源引用率。",
+            basis: "语言约束可能改变模型的引用选择，但没有代码持有的证据归因保障。",
+            supporting_evidence_ids: evidenceIds.slice(0, 1),
+            opposing_evidence_ids: [],
+            falsifiable_predictions: ["提示词约束组的无来源引用率低于无约束基线。"],
+            alternative_explanations: ["模型对提示词的服从度或任务熟悉度可能解释观察到的差异。"],
+            uncertainty: ["提示词不能阻止模型生成不存在的 evidence_id。"],
+            boundaries: ["只覆盖结构化引用行为，不涉及来源真实性。"],
+            validation_conditions: ["固定模型、问题集、总 token 预算后做配对对照。"],
+          },
+        ],
+        comparison: {
+          criteria: [
+            { criterion: "引用可核验性", rationale: "候选必须能把论断绑定到真实冻结证据，而不是只改变措辞。" },
+            { criterion: "可证伪性", rationale: "候选必须给出可观测预测，允许后续结果否定它。" },
+          ],
+          evaluations: [
+            {
+              candidate_id: "evidence-gate",
+              rank: 1,
+              strengths: ["代码持有 evidence_id 与来源台账，归因可由确定性验收复核。"],
+              weaknesses: ["需要额外的证据冻结和结构化输出约束。"],
+              evidence_ids: evidenceIds.slice(0, 1),
+              rationale: "在当前证据下，它比纯提示词方案更容易被直接核验，但仍需配对实验验证效果。",
+            },
+            {
+              candidate_id: "prompt-only",
+              rank: 2,
+              strengths: ["实现成本较低，可能改善模型的引用意识。"],
+              weaknesses: ["无法阻止捏造 ID，也无法由代码确认来源是否真实发生。"],
+              evidence_ids: evidenceIds.slice(0, 1),
+              rationale: "保留作为替代候选与对照条件，不因暂未选中而删除。",
+            },
+          ],
+          selected_candidate_id: "evidence-gate",
+          selection_rationale:
+            "选择证据门候选进入研究计划，因为它的关键机制可被确定性验收；这只是研究优先级，不是实验结论。",
+        },
+        selection_status: "candidate_selected",
+        research_artifact_ids: research.map((item) => item.id),
       };
     }
 
@@ -176,6 +250,40 @@ export function createDeterministicRuntime(store: SqliteStore): {
         datasets: ["preregistered question set"],
         source: "Frozen Research Artifacts",
         target: "降低无来源引用率并保持任务完成率。",
+        execution_plan: {
+          predictions: [
+            {
+              candidate_id: "evidence-gate",
+              prediction: "证据门组的无来源引用率低于自由生成组。",
+              falsification_criterion: "若无来源引用率没有下降，则否定该预测。",
+            },
+          ],
+          data_requirements: [
+            {
+              source: "预注册问题集",
+              variables: ["无来源引用率", "任务完成率"],
+              conditions: ["固定模型、问题集和总 token 预算。"],
+            },
+          ],
+          steps: [
+            { order: 1, action: "冻结问题集并分别运行证据门与对照条件。", expected_output: "每题一份结构化产物。" },
+            { order: 2, action: "按同一规则核验引用并汇总配对指标。", expected_output: "逐题结果表和失败记录。" },
+          ],
+          analysis: [
+            {
+              method: "配对比例比较",
+              inputs: ["两组逐题引用核验结果"],
+              decision_rule: "报告差值及置信区间，不把未执行结果写成假设已证实。",
+            },
+          ],
+          result_interpretations: [
+            { observed_result: "无来源引用率下降且完成率不下降。", meaning: "支持继续验证证据门候选。" },
+            { observed_result: "无来源引用率不下降或完成率下降。", meaning: "否定或回退证据门候选，并检查替代解释。" },
+          ],
+          stop_conditions: ["达到预注册样本量且所有题都有终态记录。"],
+          rollback_conditions: ["引用核验无法复现或数据完整性门失败。"],
+          supplement_evidence_conditions: ["关键变量缺少可用来源或出现无法解释的冲突证据。"],
+        },
         paper_title: "可审计证据门对科研 Agent 引用可靠性的影响",
         paper_abstract: "本研究通过配对对照实验检验冻结证据 ID 对无来源引用率的影响。",
         methods: "固定问题集与模型，做配对盲评。",
@@ -196,8 +304,8 @@ export function createDeterministicRuntime(store: SqliteStore): {
           feasibility_argument:
             "令证据门组与基线组的无来源引用率分别为 r_gate 与 r_base；若预期 r_gate < r_base，且任务完成率差异处于预设容许范围内，则可用同一验收规则判定设计可行。这里只是公式与逻辑推导，不代表实验已执行。",
           expected_outcomes: [
-            { metric: "无来源引用率", statement: "证据门组显著更低。" },
-            { metric: "任务完成率", statement: "证据门组不显著劣于基线。" },
+            { metric: "无来源引用率", statement: "证据门组的逐题比例差值预期低于基线组，并报告区间。" },
+            { metric: "任务完成率", statement: "证据门组与基线组的逐题完成率差值及区间均需如实报告。" },
           ],
         },
         // 去重：补证轮会把同一批来源再冻结一次，重复 URL 不该冒充更多参考文献。

@@ -31,7 +31,7 @@ export type Verifier = ReferenceVerifier;
 
 /** Run 记账面。Harness 用到的全部方法就是下面这些，接缝宽度即此。
  *
- * 现有 provider：`SqliteStore`（node:sqlite，单写者锁，重开即判 interrupted）。
+ * 现有 provider：`SqliteStore`（bun:sqlite，单写者锁，重开即判 interrupted）。
  * 换实现要满足：运行中 append-only、终态后不可变；事件序号单调递增；
  * 失败的 Attempt 也要留下它查过的证据与烧掉的用量。
  */
@@ -46,6 +46,7 @@ export type RunStore = Pick<
   | "finishRun"
   | "emit"
   | "latestArtifact"
+  | "eventsAfter"
   | "recordEvidence"
 >;
 
@@ -53,6 +54,7 @@ export type RunStore = Pick<
  *
  * 现有 provider：`CampaignMemory`（`memory/` 下的 Markdown 文件制，原子改名写入）。
  * 换实现要满足：读是确定性的（同一目录同一输入必得同一结果）、写是幂等追加；
- * 目录不存在就整条通道停用，绝不因此打死 run。传 `null` 即消融臂：不注入也不写回。
+ * 目录不存在是显式 disabled，I/O 故障必须返回 unavailable 并进入 Run 诊断，绝不因此打死 run。
+ * 传 `null` 即消融臂：不注入也不写回。
  */
 export type CampaignMemoryPort = Pick<CampaignMemory, "readPriorAttempts" | "recordRun">;

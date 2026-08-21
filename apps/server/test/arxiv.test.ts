@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "vitest";
+import { test } from "bun:test";
 
 import { searchArxiv } from "../src/agent/arxiv.ts";
 
@@ -128,5 +128,5 @@ test("serialises calls at least 3 seconds apart", async () => {
   // 官方要求同源间隔 ≥3 秒。留 100ms 容差给定时器抖动。
   assert.ok(stamps[1]! - stamps[0]! >= 2_900, `gap was ${stamps[1]! - stamps[0]!}ms`);
   // 唯一一条真实等待墙钟的用例：限流闸是模块级的，本文件前面的调用已占用一个
-  // 3 秒窗口，这两次串行下来要 ~6 秒，超过 vitest 默认的 5 秒（node:test 无默认超时）。
+  // 3 秒窗口，这两次串行下来要 ~6 秒，超过 Bun 默认的 5 秒。
 }, 20_000);

@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import path from "node:path";
 import { defineConfig } from "vite";
 
-// dev server 之外的 API 进程：`pnpm dev:api`（src/main.ts）默认监听 8000。
+// dev server 之外的 API 进程：`bun run dev:api`（src/main.ts）默认监听 8000。
 const api = "http://127.0.0.1:8000";
 
 export default defineConfig({

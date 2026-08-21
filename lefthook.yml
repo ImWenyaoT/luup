@@ -1,5 +1,5 @@
-# Git hooks (lefthook)。本地检查点保持快；全量门矩阵归 CI 与 `pnpm run ci`。
-# 安装：`pnpm install` 时由 lefthook 的 postinstall 自动 sync hooks。
+# Git hooks (lefthook)。本地检查点保持快；全量门矩阵归 CI 与 `bun run ci`。
+# 安装：`bun install` 时由 lefthook 的 postinstall 自动 sync hooks。
 
 pre-commit:
   jobs:
@@ -7,22 +7,16 @@ pre-commit:
     # 切片更快也更诚实——tsc 的错误常常出现在没改的那个文件里。
     - name: typecheck
       glob: '*.{ts,tsx}'
-      run: pnpm run typecheck
+      run: bun run typecheck
 
     - name: lint (staged)
       glob: '*.{ts,tsx}'
-      run: node_modules/.bin/oxlint --fix --no-error-on-unmatched-pattern {staged_files}
+      run: bunx oxlint --fix --no-error-on-unmatched-pattern {staged_files}
       stage_fixed: true
 
-    # 只跑与改动相关的用例：vitest 顺着 import 图找出谁受影响。
-    # `--passWithNoTests` 是因为改一个没有被任何测试覆盖到的文件不该阻止提交，
-    # 那属于覆盖率地板的事，pre-push 的全量跑与 CI 会说话。
-    # root 让 glob 与 {staged_files} 都以 apps/server/ 为基准，vitest 的 bin 与配置
-    # 也在该包内解析——后端下沉为 workspace 成员后，根 node_modules 不再有 vitest。
-    - name: vitest (related)
-      root: "apps/server/"
+    - name: bun:test (server)
       glob: '{src,test}/**/*.ts'
-      run: node_modules/.bin/vitest related --run --passWithNoTests {staged_files}
+      run: bun run --filter @luup/server test
 
     - name: whitespace (staged)
       run: git diff --cached --check
@@ -30,4 +24,4 @@ pre-commit:
 pre-push:
   jobs:
     - name: test (full)
-      run: pnpm test
+      run: bun run test

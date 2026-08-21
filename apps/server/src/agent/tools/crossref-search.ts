@@ -11,7 +11,11 @@ import type { EvidenceLedger } from "../evidence.ts";
  *
  * locator 用 `doi:<DOI>`：DOI 是这类来源唯一稳定的标识，canonicalize 按它认回真身。
  */
-export function createCrossrefSearchTool(ledger: EvidenceLedger, beforeSearch?: () => void) {
+export function createCrossrefSearchTool(
+  ledger: EvidenceLedger,
+  beforeSearch?: () => void,
+  search: typeof searchCrossref = searchCrossref,
+) {
   return tool({
     name: "crossref_search",
     description: [
@@ -24,7 +28,7 @@ export function createCrossrefSearchTool(ledger: EvidenceLedger, beforeSearch?: 
     }),
     async execute(input, _context, details) {
       beforeSearch?.();
-      const result = await searchCrossref(input.query, { rows: 5, signal: details?.signal });
+      const result = await search(input.query, { rows: 5, signal: details?.signal });
       const record = ledger.record({
         tool: "crossref_search",
         sourceType: "web",
@@ -36,6 +40,10 @@ export function createCrossrefSearchTool(ledger: EvidenceLedger, beforeSearch?: 
           title: item.title,
           locator: `doi:${item.doi}`,
           url: item.url,
+          // DOI 的 B4 也必须使用检索当时冻结的元数据；只把它放在 details 里会让
+          // canonical Research citation 永久缺作者，最终反查必然误拒。
+          authors: item.authors,
+          year: /^\d{4}/.test(item.published) ? Number(item.published.slice(0, 4)) : null,
         })),
       });
       return {

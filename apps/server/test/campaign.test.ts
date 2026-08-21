@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test, type TestContext } from "vitest";
+import { onTestFinished, test } from "bun:test";
+
+type TestContext = { onTestFinished: typeof onTestFinished };
 
 import {
   CampaignMemory,
@@ -13,6 +15,7 @@ import {
   type CampaignFacts,
 } from "../src/campaign/campaign.ts";
 import { StageError } from "../src/agent/failures.ts";
+import { createDeterministicRuntime, createDeterministicVerifier } from "../src/executor-deterministic.ts";
 import { Harness } from "../src/harness.ts";
 import type { StageExecutor } from "../src/roles.ts";
 import { SqliteStore } from "../src/store/store.ts";
@@ -74,7 +77,8 @@ test("references shrink to arXiv ids and anything else stays verbatim", () => {
   assert.equal(referenceLabel("https://doi.org/10.1000/xyz"), "https://doi.org/10.1000/xyz");
 });
 
-test("recording a run appends to both the log and the question page", (t) => {
+test("recording a run appends to both the log and the question page", () => {
+  const t = { onTestFinished };
   const dir = memoryDir(t);
   const memory = open(t, dir);
 
@@ -88,7 +92,8 @@ test("recording a run appends to both the log and the question page", (t) => {
   assert.equal(readFileSync(join(dir, "log.md"), "utf8").split("## [").length - 1, 2);
 });
 
-test("existing campaign history is appended to, never rewritten", (t) => {
+test("existing campaign history is appended to, never rewritten", () => {
+  const t = { onTestFinished };
   const history = "# q7\n\n- [2026-08-13T00:00:00Z] FAILED | run older | 旧结论\n";
   const dir = memoryDir(t, history);
 
@@ -99,7 +104,8 @@ test("existing campaign history is appended to, never rewritten", (t) => {
   assert.match(page, /run run7a/);
 });
 
-test("a run without a question id writes the log but no question page", (t) => {
+test("a run without a question id writes the log but no question page", () => {
+  const t = { onTestFinished };
   const dir = memoryDir(t);
   open(t, dir).recordRun(facts({ questionId: null }), NOW);
 
@@ -107,7 +113,8 @@ test("a run without a question id writes the log but no question page", (t) => {
   assert.throws(() => readFileSync(join(dir, "questions", "q7.md"), "utf8"));
 });
 
-test("prior attempts are the last three deterministic lines of the question page", (t) => {
+test("prior attempts are the last three deterministic lines of the question page", () => {
+  const t = { onTestFinished };
   const dir = memoryDir(
     t,
     [
@@ -124,25 +131,28 @@ test("prior attempts are the last three deterministic lines of the question page
   const memory = open(t, dir);
 
   const prior = memory.readPriorAttempts(7);
-  assert.equal(prior.length, 3);
-  assert.match(prior[0]!, /run b/);
-  assert.match(prior[2]!, /run d/);
+  assert.equal(prior.status, "available");
+  assert.equal(prior.entries.length, 3);
+  assert.match(prior.entries[0]!, /run b/);
+  assert.match(prior.entries[2]!, /run d/);
   // 没跑过的题、没有题号的 run：空数组，不是异常。
-  assert.deepEqual(memory.readPriorAttempts(99), []);
-  assert.deepEqual(memory.readPriorAttempts(null), []);
+  assert.deepEqual(memory.readPriorAttempts(99), { status: "empty", entries: [], reason: null });
+  assert.deepEqual(memory.readPriorAttempts(null), { status: "not_applicable", entries: [], reason: null });
 });
 
-test("deleting the memory directory disables the channel instead of breaking the run", (t) => {
+test("deleting the memory directory disables the channel instead of breaking the run", () => {
+  const t = { onTestFinished };
   const dir = memoryDir(t);
   const memory = open(t, dir);
   rmSync(dir, { recursive: true, force: true });
 
-  assert.deepEqual(memory.readPriorAttempts(7), []);
-  memory.recordRun(facts(), NOW);
+  assert.deepEqual(memory.readPriorAttempts(7), { status: "disabled", entries: [], reason: null });
+  assert.deepEqual(memory.recordRun(facts(), NOW), { status: "disabled", reason: null });
   assert.throws(() => readFileSync(join(dir, "log.md"), "utf8"), "目录没了就一个字都不写");
 });
 
-test("a campaign read failure is reported and never overwrites unreadable history", (t) => {
+test("a campaign read failure is reported and never overwrites unreadable history", () => {
+  const t = { onTestFinished };
   const dir = memoryDir(t);
   mkdirSync(join(dir, "log.md"));
   mkdirSync(join(dir, "questions"), { recursive: true });
@@ -154,12 +164,44 @@ test("a campaign read failure is reported and never overwrites unreadable histor
     reportError: (error) => errors.push(error),
   });
 
-  assert.deepEqual(memory.readPriorAttempts(7), []);
-  memory.recordRun(facts(), NOW);
+  assert.deepEqual(memory.readPriorAttempts(7), { status: "unavailable", entries: [], reason: "Error:EISDIR" });
+  assert.deepEqual(memory.recordRun(facts(), NOW), {
+    status: "unavailable",
+    reason: "Error:EISDIR,Error:EISDIR",
+  });
 
   assert.equal(errors.length, 3);
   assert.equal(statSync(join(dir, "log.md")).isDirectory(), true);
   assert.equal(statSync(join(dir, "questions", "q7.md")).isDirectory(), true);
+});
+
+test("campaign I/O degradation is explicit and never rewrites a successful run terminal", async () => {
+  const t = { onTestFinished };
+  const dir = memoryDir(t);
+  mkdirSync(join(dir, "log.md"));
+  mkdirSync(join(dir, "questions"), { recursive: true });
+  const store = new SqliteStore(":memory:");
+  t.onTestFinished(() => store.close());
+  const runtime = createDeterministicRuntime(store);
+  const runId = store.createRun("问题", { science125Id: 7 });
+
+  const outcome = await new Harness(store, runtime.execute, {
+    createLedger: runtime.createLedger,
+    verifyReferences: createDeterministicVerifier(),
+    memory: open(t, dir),
+  }).execute(runId);
+
+  assert.equal(outcome.status, "completed");
+  assert.equal(store.snapshot(runId)!.status, "completed");
+  const events = store.eventsAfter(runId, 0);
+  assert.deepEqual(
+    events.filter((event) => event.kind === "campaign.memory_degraded").map((event) => event.payload),
+    [{ phase: "write", status: "unavailable", reason: "Error:EISDIR" }],
+  );
+  assert.deepEqual(events.find((event) => event.kind === "campaign.prior_attempts")?.payload, {
+    question_id: 7,
+    count: 0,
+  });
 });
 
 // --- Harness 接线 -------------------------------------------------------
@@ -176,7 +218,8 @@ function capturing(): { execute: StageExecutor; inputs: Array<Record<string, unk
   };
 }
 
-test("the researcher input carries prior attempts after the stable prefix", async (t) => {
+test("the researcher input carries prior attempts after the stable prefix", async () => {
+  const t = { onTestFinished };
   const dir = memoryDir(t, "# q7\n\n- [2026-08-01T00:00:00Z] FAILED | run a | 走死过的路\n");
   const store = new SqliteStore(":memory:");
   t.onTestFinished(() => store.close());
@@ -190,7 +233,8 @@ test("the researcher input carries prior attempts after the stable prefix", asyn
   assert.deepEqual(Object.keys(inputs[0]!), ["question", "goal", "input_artifacts", "prior_attempts"]);
 });
 
-test("the ablation arm injects nothing and the fact is on the record", async (t) => {
+test("the ablation arm injects nothing and the fact is on the record", async () => {
+  const t = { onTestFinished };
   const dir = memoryDir(t, "# q7\n\n- [2026-08-01T00:00:00Z] FAILED | run a | 走死过的路\n");
   const store = new SqliteStore(":memory:");
   t.onTestFinished(() => store.close());
@@ -207,7 +251,8 @@ test("the ablation arm injects nothing and the fact is on the record", async (t)
   assert.throws(() => readFileSync(join(dir, "log.md"), "utf8"));
 });
 
-test("a run records what it injected even when it fails", async (t) => {
+test("a run records what it injected even when it fails", async () => {
+  const t = { onTestFinished };
   const dir = memoryDir(
     t,
     "# q7\n\n- [2026-08-01T00:00:00Z] FAILED | run a | 一\n- [2026-08-02T00:00:00Z] FAILED | run b | 二\n",

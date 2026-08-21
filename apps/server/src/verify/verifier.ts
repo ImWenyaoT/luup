@@ -74,17 +74,48 @@ const toDoiResolved = (record: CrossrefRecord): DoiResolvedRecord => ({
   year: /^\d{4}/.test(record.published) ? Number(record.published.slice(0, 4)) : null,
 });
 
-const doiLookup: DoiLookup = async (dois) => {
-  const records = await Promise.all(dois.map((doi) => resolveCrossrefDoi(doi)));
-  return records.filter((record): record is CrossrefRecord => record !== null).map(toDoiResolved);
-};
+class PartialDoiLookupError extends Error {
+  constructor(
+    readonly records: DoiResolvedRecord[],
+    readonly failures: readonly { doi: string; reason: string }[],
+  ) {
+    super(`Crossref DOI lookup failed for ${failures.length} record(s)`);
+  }
+}
+
+function doiLookupWith(resolve: typeof resolveCrossrefDoi): DoiLookup {
+  return async (dois) => {
+    const settled = await Promise.allSettled(dois.map((doi) => resolve(doi)));
+    const records: DoiResolvedRecord[] = [];
+    const failures: { doi: string; reason: string }[] = [];
+    for (const [index, result] of settled.entries()) {
+      if (result.status === "fulfilled") {
+        if (result.value !== null) records.push(toDoiResolved(result.value));
+      } else {
+        failures.push({
+          doi: dois[index]!,
+          reason: result.reason instanceof Error ? result.reason.message : String(result.reason),
+        });
+      }
+    }
+    if (failures.length > 0) throw new PartialDoiLookupError(records, failures);
+    return records;
+  };
+}
+
+const doiLookup = doiLookupWith(resolveCrossrefDoi);
 
 /** 组装一个验收器。`lookup` 可注入，测试因此零网络零 LLM。 */
 export function createReferenceVerifier(
-  options: { lookup?: ArxivLookup; doiLookup?: DoiLookup } = {},
+  options: {
+    lookup?: ArxivLookup;
+    doiLookup?: DoiLookup;
+    resolveSingleDoi?: typeof resolveCrossrefDoi;
+  } = {},
 ): ReferenceVerifier {
   const lookup = options.lookup ?? arxivLookup;
-  const resolveDoi = options.doiLookup ?? doiLookup;
+  const resolveDoi =
+    options.doiLookup ?? (options.resolveSingleDoi ? doiLookupWith(options.resolveSingleDoi) : doiLookup);
 
   return async ({ plan, research }) => {
     const cards = collectFrozenCards(research.flatMap((artifact) => artifact.citations));
@@ -99,7 +130,7 @@ export function createReferenceVerifier(
     const doiResolvable = targets.filter((target) => target.doi !== null && target.card !== null);
     let infraError = false;
     let arxivInfraError = false;
-    let doiInfraError = false;
+    let doiChecked = 0;
     if (resolvable.length > 0) {
       try {
         const records = await lookup(resolvable.map((target) => target.rawArxivId!));
@@ -131,14 +162,28 @@ export function createReferenceVerifier(
           ...checkResolvedDoiTitles(doiResolvable, resolved),
           ...checkResolvedDoiMetadata(doiResolvable, resolved),
         );
+        doiChecked = doiResolvable.length;
       } catch (error) {
         infraError = true;
-        doiInfraError = true;
-        checks.push({
-          id: "B2.doi.resolve",
-          pass: false,
-          detail: `Crossref DOI 独立反查失败：${error instanceof Error ? error.message : String(error)}`,
-        });
+        if (error instanceof PartialDoiLookupError) {
+          const resolved = new Map(error.records.map((record) => [normalizeDoi(record.doi)!, record]));
+          const succeeded = doiResolvable.filter((target) => resolved.has(target.doi!));
+          checks.push(...checkResolvedDoiTitles(succeeded, resolved), ...checkResolvedDoiMetadata(succeeded, resolved));
+          doiChecked = succeeded.length;
+          for (const failure of error.failures) {
+            checks.push({
+              id: "B2.doi.resolve",
+              pass: false,
+              detail: `Crossref DOI ${failure.doi} 独立反查失败：${failure.reason}`,
+            });
+          }
+        } else {
+          checks.push({
+            id: "B2.doi.resolve",
+            pass: false,
+            detail: `Crossref DOI 独立反查失败：${error instanceof Error ? error.message : String(error)}`,
+          });
+        }
       }
     }
 
@@ -148,7 +193,7 @@ export function createReferenceVerifier(
       referenceCount: plan.references.length,
       frozenSources: cards.size,
       arxivChecked: arxivInfraError ? 0 : resolvable.length,
-      doiChecked: doiInfraError ? 0 : doiResolvable.length,
+      doiChecked,
       membershipOnly: targets.filter((target) => target.arxivId === null && target.doi === null).length,
       checks,
       failed,

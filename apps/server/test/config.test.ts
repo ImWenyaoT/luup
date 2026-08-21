@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { afterEach, beforeEach, test } from "vitest";
+import { afterEach, beforeEach, onTestFinished, test } from "bun:test";
 
 import { Harness } from "../src/harness.ts";
 import {
@@ -60,22 +60,21 @@ test("配置版本随每次写入递增——executor 靠它决定重建 Runner"
   assert.equal(modelConfigVersion(), before + 2);
 });
 
-function app(t: { onTestFinished: (fn: () => void) => void }) {
+function app(t: { onTestFinished: (fn: () => void | Promise<unknown>) => void }) {
   const store = new SqliteStore(":memory:");
   const harness = new Harness(store, async () => {
     throw new Error("unused");
   });
-  const server = createApp({ store, harness });
-  t.onTestFinished(() => {
-    server.close();
+  const server = createApp({ store, harness, runtime: "deterministic" });
+  t.onTestFinished(async () => {
+    await server.stop(true);
     store.close();
   });
-  server.listen(0);
-  const { port } = server.address() as { port: number };
-  return `http://127.0.0.1:${port}`;
+  return server.url.origin;
 }
 
-test("GET /api/config 报状态不报密钥", async (t) => {
+test("GET /api/config 报状态不报密钥", async () => {
+  const t = { onTestFinished };
   process.env.QWEN_API_KEY = "sk-secret-value";
   const base = app(t);
   const res = await fetch(`${base}/api/config`);
@@ -89,7 +88,8 @@ test("GET /api/config 报状态不报密钥", async (t) => {
   assert.ok(["live", "deterministic"].includes(body.runtime));
 });
 
-test("PUT /api/config 设置进程内覆盖，响应与后续 GET 都不含 key", async (t) => {
+test("PUT /api/config 设置进程内覆盖，响应与后续 GET 都不含 key", async () => {
+  const t = { onTestFinished };
   const base = app(t);
   const res = await fetch(`${base}/api/config`, {
     method: "PUT",
@@ -106,7 +106,8 @@ test("PUT /api/config 设置进程内覆盖，响应与后续 GET 都不含 key"
   assert.equal(status.credential, "override");
 });
 
-test("PUT /api/config 拒绝坏输入：非 JSON 类型、坏 base_url、空 key", async (t) => {
+test("PUT /api/config 拒绝坏输入：非 JSON 类型、坏 base_url、空 key", async () => {
+  const t = { onTestFinished };
   const base = app(t);
   const plain = await fetch(`${base}/api/config`, { method: "PUT", body: "x" });
   assert.equal(plain.status, 415);
@@ -124,7 +125,8 @@ test("PUT /api/config 拒绝坏输入：非 JSON 类型、坏 base_url、空 key
   assert.equal(emptyKey.status, 422);
 });
 
-test("PUT /api/config 识别整行环境变量误粘贴与非法字符", async (t) => {
+test("PUT /api/config 识别整行环境变量误粘贴与非法字符", async () => {
+  const t = { onTestFinished };
   const base = app(t);
   const envLine = await fetch(`${base}/api/config`, {
     method: "PUT",

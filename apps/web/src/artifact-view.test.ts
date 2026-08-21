@@ -1,6 +1,6 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { expect, test } from "vitest";
+import { expect, test } from "bun:test";
 
 import { ArtifactView } from "./artifact-view";
 import type { Artifact } from "./types";
@@ -17,6 +17,28 @@ test("research-plan view displays every product field", () => {
       datasets: ["数据集"],
       source: "来源",
       target: "研究目标",
+      execution_plan: {
+        predictions: [
+          {
+            candidate_id: "candidate-1",
+            prediction: "证据门组更低",
+            falsification_criterion: "若不下降则否定",
+          },
+        ],
+        data_requirements: [{ source: "问题集", variables: ["引用率"], conditions: ["固定模型"] }],
+        steps: [
+          { order: 1, action: "冻结问题集", expected_output: "结构化产物" },
+          { order: 2, action: "核验引用", expected_output: "指标表" },
+        ],
+        analysis: [{ method: "配对比较", inputs: ["逐题结果"], decision_rule: "报告区间" }],
+        result_interpretations: [
+          { observed_result: "引用率下降", meaning: "支持继续验证" },
+          { observed_result: "引用率不降", meaning: "回退候选" },
+        ],
+        stop_conditions: ["样本完成"],
+        rollback_conditions: ["数据损坏"],
+        supplement_evidence_conditions: ["关键变量缺来源"],
+      },
       paper_title: "论文标题",
       paper_abstract: "论文摘要",
       methods: "研究方法",
@@ -49,6 +71,10 @@ test("research-plan view displays every product field", () => {
     "数据集",
     "来源",
     "研究目标",
+    "证据门组更低",
+    "冻结问题集",
+    "配对比较",
+    "回退候选",
     "论文标题",
     "论文摘要",
     "研究方法",

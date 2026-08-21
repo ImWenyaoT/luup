@@ -65,3 +65,39 @@ export function researchPlanQualityIssues(plan: ResearchPlan): string[] {
 
   return issues;
 }
+
+/** 研究计划的预测必须落在上游候选假设上，步骤序号也必须能形成可执行顺序。
+ *
+ * schema 负责字段存在和类型；这里负责跨 Artifact 的语义连接，避免模型提交一套看似
+ * 完整、实际没有对应候选或无法按顺序执行的计划。
+ */
+export function researchPlanExecutionIssues(
+  plan: ResearchPlan,
+  candidateIds: ReadonlySet<string>,
+  selectedCandidateId: string | undefined,
+): string[] {
+  const issues: string[] = [];
+  const predictionCandidateIds = new Set(plan.execution_plan.predictions.map((item) => item.candidate_id));
+  const unknown = [...predictionCandidateIds].filter((id) => !candidateIds.has(id));
+  if (unknown.length > 0) {
+    issues.push(`execution_plan.predictions 引用了不存在的候选：${unknown.join(", ")}`);
+  }
+  if (selectedCandidateId && !predictionCandidateIds.has(selectedCandidateId)) {
+    issues.push(`execution_plan.predictions 必须覆盖选中的候选：${selectedCandidateId}`);
+  }
+
+  const orders = plan.execution_plan.steps.map((step) => step.order);
+  if (new Set(orders).size !== orders.length) {
+    issues.push("execution_plan.steps 的 order 不能重复");
+  }
+  const expected = orders.map((_, index) => index + 1);
+  if (
+    orders
+      .slice()
+      .sort((left, right) => left - right)
+      .some((order, index) => order !== expected[index])
+  ) {
+    issues.push("execution_plan.steps 的 order 必须从 1 连续编号");
+  }
+  return issues;
+}

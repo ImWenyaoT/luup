@@ -1,7 +1,6 @@
 // signal.reason 在 lib.dom 里是 any，类型层证不出它是 Error，但它正是取消语义要
 // 传播的那个值（默认是 AbortError DOMException）。换成自造 Error 会把上游的取消
 // 原因抹掉，取消和真错误就分不开了 —— 这里要的就是原样透传。
-/* oxlint-disable typescript/prefer-promise-reject-errors */
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(signal.reason);
@@ -17,7 +16,6 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
     signal?.addEventListener("abort", abort, { once: true });
   });
 }
-/* oxlint-enable typescript/prefer-promise-reject-errors */
 
 /** 进程级的同源发号闸。
  *

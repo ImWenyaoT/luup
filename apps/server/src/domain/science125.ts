@@ -49,11 +49,49 @@ function readRaw(path: string): Record<string, unknown> | null {
 function toQuestion(item: unknown): Science125Question | null {
   if (typeof item !== "object" || item === null || Array.isArray(item)) return null;
   const { id, question, domain } = item as Record<string, unknown>;
-  if (!Number.isInteger(id) || typeof question !== "string") return null;
+  if (!Number.isSafeInteger(id) || (id as number) < 1 || typeof question !== "string" || question.trim().length === 0)
+    return null;
   return {
     id: id as number,
     domain: typeof domain === "string" && domain ? domain : UNCLASSIFIED,
     question,
+  };
+}
+
+export type Science125Integrity = {
+  ok: boolean;
+  rawCount: number;
+  validCount: number;
+  duplicateIds: number[];
+  missingIds: number[];
+  unexpectedIds: number[];
+};
+
+/** 正式批跑的冻结题库门：恰好 125 条、题号 1..125 各一次、每条均可解析。 */
+export function science125Integrity(path: string = defaultScience125Path()): Science125Integrity {
+  const raw = readRaw(path);
+  const items = questionList(raw);
+  const questions = items.map(toQuestion).filter((item): item is Science125Question => item !== null);
+  const counts = new Map<number, number>();
+  for (const question of questions) counts.set(question.id, (counts.get(question.id) ?? 0) + 1);
+  const duplicateIds = [...counts]
+    .filter(([, count]) => count > 1)
+    .map(([id]) => id)
+    .sort((left, right) => left - right);
+  const missingIds = Array.from({ length: 125 }, (_, index) => index + 1).filter((id) => !counts.has(id));
+  const unexpectedIds = [...counts.keys()].filter((id) => id > 125).sort((left, right) => left - right);
+  return {
+    ok:
+      items.length === 125 &&
+      questions.length === 125 &&
+      duplicateIds.length === 0 &&
+      missingIds.length === 0 &&
+      unexpectedIds.length === 0,
+    rawCount: items.length,
+    validCount: questions.length,
+    duplicateIds,
+    missingIds,
+    unexpectedIds,
   };
 }
 

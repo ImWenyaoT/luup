@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "vitest";
+import { test } from "bun:test";
 
 import { RunContext } from "@openai/agents";
 
@@ -15,6 +15,19 @@ import type { TaskContext } from "../src/store/contracts.ts";
 const artifact = {
   artifact_type: "research",
   question: "问题",
+  research_framing: {
+    research_object: "科研 Agent 的证据归因机制",
+    scope: "固定模型和问题集下的引用可靠性",
+    variables: [
+      { name: "证据门条件", role: "independent", operationalization: "是否启用冻结 evidence_id 校验" },
+      { name: "无来源引用率", role: "dependent", operationalization: "未绑定冻结证据的引用数除以引用总数" },
+    ],
+    known: ["冻结证据 ID 可以被确定性验收。"],
+    controversies: ["提示词约束是否足以替代代码持有的证据归因仍有争议。"],
+    unknowns: ["证据门对跨问题任务完成率的影响未知。"],
+    knowledge_gap: "缺少在相同问题和模型条件下对证据归因机制的配对比较。",
+    constraints: ["不能把候选假设写成已证实结论。"],
+  },
   summary: "冻结证据支撑一条可审计的论断。",
   claims: [{ statement: "证据门提升可审计性。", evidence_ids: ["ev_01_arxiv"] }],
   queries: [
@@ -61,6 +74,28 @@ test("bad arguments come back as a tool error and the same turn can still fix th
   assert.equal((capture.captured()!.value as { summary: string }).summary, artifact.summary);
   // 捕获成功才收束本轮 —— 这是 dsh concludeTurn() 的等价物
   assert.equal(capture.toolUseBehavior().isFinalOutput, true);
+});
+
+test("Research Artifact 必须明确研究对象、范围、变量与知识缺口", () => {
+  const parsed = researchProposalSchema.safeParse({
+    ...artifact,
+    research_framing: {
+      research_object: "科研 Agent 的证据归因机制",
+      scope: "固定模型和问题集下的引用可靠性",
+      variables: [
+        { name: "证据门条件", role: "independent", operationalization: "是否启用冻结 evidence_id 校验" },
+        { name: "无来源引用率", role: "dependent", operationalization: "未绑定冻结证据的引用数除以引用总数" },
+      ],
+      known: ["冻结证据 ID 可以被确定性验收。"],
+      controversies: ["提示词约束是否足以替代代码持有的证据归因仍有争议。"],
+      unknowns: ["证据门对跨问题任务完成率的影响未知。"],
+      knowledge_gap: "缺少在相同问题和模型条件下对证据归因机制的配对比较。",
+      constraints: ["不能把候选假设写成已证实结论。"],
+    },
+  });
+
+  assert.equal(parsed.success, true);
+  if (parsed.success) assert.equal(parsed.data.research_framing.variables.length, 2);
 });
 
 test("a second report after capture is refused instead of overwriting", async () => {
@@ -131,6 +166,29 @@ test("a research planner must submit through its structured output tool", async 
   assert.equal(calls, 1);
   assert.equal(classifyFailure(failure).code, "invalid_output");
   assert.match((failure as Error).message, new RegExp(STRUCTURED_OUTPUT_TOOL));
+});
+
+test("a primitive executor failure is normalized without hiding the original failure", async () => {
+  const context: TaskContext = {
+    runId: "run",
+    taskId: "attempt",
+    role: "reviewer",
+    goal: "review",
+    question: "问题",
+    inputArtifactIds: [],
+    inputArtifacts: [],
+  };
+
+  const failure = await runTask(context, {
+    execute: () => Promise.reject("provider disconnected"),
+  }).then(
+    () => null,
+    (error: unknown) => error,
+  );
+
+  assert.ok(failure instanceof Error);
+  assert.equal(failure.message, "provider disconnected");
+  assert.equal((failure as { corrections?: number }).corrections, 0);
 });
 
 /** Phase A 只读诊断（n=46）里 researcher 撞死的那条序列：两次 arxiv、三次 crossref、

@@ -7,16 +7,16 @@ The frontend is a Vite, React, and TypeScript application styled with Tailwind C
 - `src/types.ts` defines the narrow HTTP wire types consumed by this UI.
 - `src/api.ts` preserves Luup's SSE and public-projection boundaries without a
   generated SDK.
-- Playwright tests exercise the real Node HTTP/SSE and browser boundary without Docker.
+- Playwright tests exercise the real Bun HTTP/SSE and browser boundary without Docker.
 
 ## Development
 
 Run commands from the repository root:
 
 ```bash
-pnpm dev
-pnpm --filter @luup/frontend test
-pnpm test:e2e
+bun run dev
+bun run --filter @luup/frontend test
+bun run test:e2e
 ```
 
 Read [`CONTEXT.md`](CONTEXT.md) before changing frontend behavior.

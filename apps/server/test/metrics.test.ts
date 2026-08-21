@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
-import { test, type TestContext } from "vitest";
+import { Database } from "bun:sqlite";
+import { onTestFinished, test } from "bun:test";
+
+type TestContext = { onTestFinished: typeof onTestFinished };
 
 import type { DomainArtifact } from "../src/agent/contracts.ts";
 import { FAILURE_CODES } from "../src/agent/failures.ts";
@@ -69,10 +71,10 @@ function fixture(t: TestContext, seeds: Seed[]): string {
         citations: [],
       });
     }
-    store.publishArtifact(
+    const finalArtifact = store.publishArtifact(
       runId,
       researcher,
-      { artifact_type: "research" } as unknown as DomainArtifact,
+      { artifact_type: "research-plan" } as unknown as DomainArtifact,
       [],
       seed.corrections ?? 0,
     );
@@ -80,7 +82,10 @@ function fixture(t: TestContext, seeds: Seed[]): string {
       const reviewer = store.startAttempt(runId, "reviewer");
       store.publishArtifact(runId, reviewer, { artifact_type: "review" } as unknown as DomainArtifact, [], 0);
     }
-    store.finishRun(runId, seed.status, { errorCode: seed.errorCode ?? undefined });
+    store.finishRun(runId, seed.status, {
+      finalArtifactId: seed.status === "completed" ? finalArtifact.id : undefined,
+      errorCode: seed.errorCode ?? undefined,
+    });
   }
   store.close();
   return path;
@@ -113,7 +118,8 @@ test("a proportion with an empty denominator is null, never zero", () => {
   assert.equal(half.se, Math.sqrt(0.25 / 4));
 });
 
-test("delivery is reported over both denominators, infrastructure excluded from quality", (t) => {
+test("delivery is reported over both denominators, infrastructure excluded from quality", () => {
+  const t = { onTestFinished };
   const report = evaluateDatabase(
     fixture(t, [
       { questionId: 1, status: "completed" },
@@ -146,7 +152,8 @@ test("the two reading buckets partition the nine failure codes, with none left o
   assert.equal(bucketed.includes("review_rejected"), false);
 });
 
-test("every failure code lands in exactly one bucket, by who can fix it", (t) => {
+test("every failure code lands in exactly one bucket, by who can fix it", () => {
+  const t = { onTestFinished };
   const report = evaluateDatabase(
     fixture(t, [
       // 环境类五个码：环境/供应商/凭据/超时，换个模型重跑也修不掉。
@@ -187,7 +194,8 @@ test("every failure code lands in exactly one bucket, by who can fix it", (t) =>
   assert.equal(delivery.excludingInfrastructure.rate, 0.2);
 });
 
-test("review_rejected is counted apart from the failure codes and stays in both denominators", (t) => {
+test("review_rejected is counted apart from the failure codes and stays in both denominators", () => {
+  const t = { onTestFinished };
   const report = evaluateDatabase(
     fixture(t, [
       { questionId: 1, status: "completed" },
@@ -208,7 +216,8 @@ test("review_rejected is counted apart from the failure codes and stays in both 
   assert.equal(delivery.excludingInfrastructure.rate, 0.5);
 });
 
-test("a code nobody ruled on reads as unclassified instead of borrowing a bucket", (t) => {
+test("a code nobody ruled on reads as unclassified instead of borrowing a bucket", () => {
+  const t = { onTestFinished };
   const report = evaluateDatabase(
     fixture(t, [
       // Python 期的分类名，或者将来新加的码：没被裁决过就不该自动获得质量类身份。
@@ -224,7 +233,8 @@ test("a code nobody ruled on reads as unclassified instead of borrowing a bucket
   assert.equal(delivery.excludingInfrastructure.runs, 2);
 });
 
-test("a dirty tree is its own cohort and a missing identity is unknown", (t) => {
+test("a dirty tree is its own cohort and a missing identity is unknown", () => {
+  const t = { onTestFinished };
   const clean = { gitCommit: "a".repeat(40), treeDirty: false };
   const report = evaluateDatabase(
     fixture(t, [
@@ -261,7 +271,8 @@ test("Pass^2 pairs time-adjacent runs of the same question and nothing else", ()
   assert.deepEqual(passSquared([run(1, true, "a")]), { pairs: 0, both: 0, rate: null, se: null });
 });
 
-test("corrections and reviewer rejections are counted over the right denominators", (t) => {
+test("corrections and reviewer rejections are counted over the right denominators", () => {
+  const t = { onTestFinished };
   const report = evaluateDatabase(
     fixture(t, [
       { questionId: 1, status: "completed", reviewed: true, corrections: 1 },
@@ -281,7 +292,8 @@ test("corrections and reviewer rejections are counted over the right denominator
   );
 });
 
-test("search health counts arXiv calls and how many of them were the same query again", (t) => {
+test("search health counts arXiv calls and how many of them were the same query again", () => {
+  const t = { onTestFinished };
   const report = evaluateDatabase(
     fixture(t, [
       { questionId: 1, status: "completed", queries: ["dark  matter", "DARK MATTER", "神经网络"] },
@@ -297,7 +309,8 @@ test("search health counts arXiv calls and how many of them were the same query 
   assert.equal(searchHealth.repeatedRate, 1 / 3);
 });
 
-test("memory injection is counted per arm and a missing event is unknown, not zero", (t) => {
+test("memory injection is counted per arm and a missing event is unknown, not zero", () => {
+  const t = { onTestFinished };
   const report = evaluateDatabase(
     fixture(t, [
       { questionId: 1, status: "completed", memoryArm: "on", injected: 3 },
@@ -313,9 +326,11 @@ test("memory injection is counted per arm and a missing event is unknown, not ze
   assert.equal(memoryInjection.entries, 4);
   assert.deepEqual(memoryInjection.byArm, { on: 3, off: 0, unlabelled: 1 });
   assert.deepEqual(memoryInjection.ablationIneffectiveRuns, []);
+  assert.deepEqual(memoryInjection.ablationUnknownRuns, []);
 });
 
-test("an off-arm run that was injected anything fails the ablation gate", (t) => {
+test("an off-arm run that was injected anything fails the ablation gate", () => {
+  const t = { onTestFinished };
   const path = fixture(t, [
     { questionId: 1, status: "completed", memoryArm: "off", injected: 2 },
     { questionId: 1, status: "completed", memoryArm: "on", injected: 2 },
@@ -330,8 +345,20 @@ test("an off-arm run that was injected anything fails the ablation gate", (t) =>
   assert.match(paired.excludedRuns[0]!.reason, /消融失效/);
 
   assert.equal(ablationEffective(facts({ memoryArm: "off", injected: 0 })), true);
-  assert.equal(ablationEffective(facts({ memoryArm: "off", injected: null })), true, "缺事件不算泄漏");
+  assert.equal(ablationEffective(facts({ memoryArm: "off", injected: null })), null, "缺事件必须保持未知");
   assert.equal(ablationEffective(facts({ memoryArm: "on", injected: 5 })), true);
+});
+
+test("an off-arm run with no valid injection fact is excluded as unknown", () => {
+  const result = memoryArmComparison([
+    facts({ runId: "off-unknown", questionId: 1, memoryArm: "off", injected: null }),
+    facts({ runId: "on-known", questionId: 1, memoryArm: "on", injected: 2 }),
+  ])!;
+
+  assert.deepEqual(result.questions, []);
+  assert.deepEqual(result.excludedRuns, [
+    { questionId: 1, runId: "off-unknown", reason: "消融状态未知：缺少有效注入事件" },
+  ]);
 });
 
 test("McNemar counts the discordant pairs and reports the regression rate", () => {
@@ -369,12 +396,14 @@ test("a baseline that never delivered leaves the regression rate undefined", () 
   assert.equal(result.p, 1, "一个不一致对都没有，双侧 p 是 1");
 });
 
-test("a database with no paired arms reports no comparison instead of an empty table", (t) => {
+test("a database with no paired arms reports no comparison instead of an empty table", () => {
+  const t = { onTestFinished };
   const report = evaluateDatabase(fixture(t, [{ questionId: 1, status: "completed", memoryArm: "on" }]));
   assert.equal(report.pairedComparison.memoryArms, null);
 });
 
-test("an empty database yields null rates rather than a division by zero", (t) => {
+test("an empty database yields null rates rather than a division by zero", () => {
+  const t = { onTestFinished };
   const report = evaluateDatabase(fixture(t, []));
 
   assert.equal(report.runs, 0);
@@ -387,10 +416,11 @@ test("an empty database yields null rates rather than a division by zero", (t) =
   assert.match(renderMarkdown(report), /没有可配对/);
 });
 
-test("a database written before the memory column existed still reads back", (t) => {
+test("a database written before the memory column existed still reads back", () => {
+  const t = { onTestFinished };
   const path = fixture(t, [{ questionId: 1, status: "completed" }]);
   // 只读打开的库补不了列。把列去掉，模拟 Wave 1 建的库。
-  const db = new DatabaseSync(path);
+  const db = new Database(path);
   db.exec("ALTER TABLE runs DROP COLUMN memory_arm");
   db.close();
 
@@ -399,7 +429,8 @@ test("a database written before the memory column existed still reads back", (t)
   assert.equal(only!.deliverable, true);
 });
 
-test("the markdown report states both denominators and the ablation verdict", (t) => {
+test("the markdown report states both denominators and the ablation verdict", () => {
+  const t = { onTestFinished };
   const report = evaluateDatabase(
     fixture(t, [
       { questionId: 1, status: "completed", memoryArm: "on", injected: 1, reviewed: true },

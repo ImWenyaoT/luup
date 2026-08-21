@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test, type TestContext } from "vitest";
+import { onTestFinished, test } from "bun:test";
+import type { DomainArtifact } from "../src/agent/contracts.ts";
+
+type TestContext = { onTestFinished: typeof onTestFinished };
 
 import {
   compactIds,
@@ -10,7 +13,7 @@ import {
   MAX_CONCURRENCY,
   parseConcurrency,
   parseIds,
-  validateBatchNodeRuntime,
+  validateBatchBunRuntime,
   readSourceIdentity,
   remainingPath,
   runBatch,
@@ -20,7 +23,7 @@ import {
   type QuestionOutcome,
   type RunQuestion,
 } from "../src/batch/runner.ts";
-import { findQuestion, readScience125, science125Text } from "../src/domain/science125.ts";
+import { findQuestion, readScience125, science125Integrity, science125Text } from "../src/domain/science125.ts";
 import { clearModelOverride, modelConfigStatus } from "../src/seams/model.ts";
 import { SqliteStore } from "../src/store/store.ts";
 
@@ -49,13 +52,42 @@ function batch(
       log: () => {},
       ...overrides,
       store,
-      runQuestion,
+      runQuestion: durableRunQuestion(store, runQuestion),
       repoRoot,
     }),
   };
 }
 
 const passes: RunQuestion = () => Promise.resolve({ status: "completed" as const, errorCode: null });
+
+function completeStoredRun(store: SqliteStore, runId: string): string {
+  const attemptId = store.startAttempt(runId, "research-plan");
+  const final = store.publishArtifact(
+    runId,
+    attemptId,
+    { artifact_type: "research-plan" } as unknown as DomainArtifact,
+    [],
+    0,
+  );
+  store.finishRun(runId, "completed", { finalArtifactId: final.id });
+  return final.id;
+}
+
+/** The production RunQuestion contract settles its Run; test executors do the same here. */
+function durableRunQuestion(store: SqliteStore, runQuestion: RunQuestion): RunQuestion {
+  return async (job) => {
+    const result = await runQuestion(job);
+    if (store.batchRunFacts(job.runId)?.status !== "running") return result;
+    if (result.status === "completed") {
+      completeStoredRun(store, job.runId);
+    } else if (result.status === "review_rejected") {
+      store.finishRun(job.runId, "review_rejected", { errorCode: result.errorCode ?? "review_rejected" });
+    } else {
+      store.finishRun(job.runId, "failed", { errorCode: result.errorCode ?? "batch_error" });
+    }
+    return result;
+  };
+}
 
 const sleep = (ms: number) =>
   new Promise<void>((resolve) => {
@@ -112,7 +144,8 @@ test("the question bank reads back as 125 questions across 12 domains", () => {
   assert.ok(text.includes(findQuestion(1)!.question));
 });
 
-test("an unreadable question bank is null rather than an exception", (t) => {
+test("an unreadable question bank is null rather than an exception", () => {
+  const t = { onTestFinished };
   const dir = workspace(t);
   assert.equal(readScience125(join(dir, "absent.json")), null);
   assert.equal(findQuestion(1, join(dir, "absent.json")), null);
@@ -121,10 +154,48 @@ test("an unreadable question bank is null rather than an exception", (t) => {
   assert.equal(readScience125(broken), null);
 });
 
-test("a question that already has a completed run is never paid for twice", async (t) => {
+test("the formal bank integrity gate rejects malformed and duplicate rows", () => {
+  const t = { onTestFinished };
+  const dir = workspace(t);
+  const path = join(dir, "corrupt-science125.json");
+  const questions = Array.from({ length: 125 }, (_, index) => ({
+    id: index === 124 ? 1 : index + 1,
+    domain: "test",
+    question: index === 20 ? "" : `q${index + 1}`,
+  }));
+  writeFileSync(path, JSON.stringify({ questions }));
+
+  const integrity = science125Integrity(path);
+  assert.equal(integrity.ok, false);
+  assert.equal(integrity.rawCount, 125);
+  assert.equal(integrity.validCount, 124);
+  assert.deepEqual(integrity.duplicateIds, [1]);
+  assert.deepEqual(integrity.missingIds, [21, 125]);
+});
+
+test("runBatch rejects duplicate ids before creating a manifest or spending", async () => {
+  const store = new SqliteStore(":memory:");
+  let calls = 0;
+  await assert.rejects(
+    runBatch([1, 1], {
+      store,
+      runQuestion: async () => {
+        calls += 1;
+        return { status: "completed", errorCode: null };
+      },
+      log: () => {},
+    }),
+    /题号重复.*重复付费/,
+  );
+  assert.equal(calls, 0);
+  store.close();
+});
+
+test("a question that already has a completed run is never paid for twice", async () => {
+  const t = { onTestFinished };
   const store = new SqliteStore(":memory:");
   const settled = store.createRun("旧的一次交付", { science125Id: 7 });
-  store.finishRun(settled, "completed");
+  completeStoredRun(store, settled);
 
   const asked: number[] = [];
   const { report } = batch(
@@ -143,7 +214,8 @@ test("a question that already has a completed run is never paid for twice", asyn
   assert.match(outcomes[0]!.detail, new RegExp(settled));
 });
 
-test("a rejected review is owed, not skipped", async (t) => {
+test("a rejected review is owed, not skipped", async () => {
+  const t = { onTestFinished };
   const store = new SqliteStore(":memory:");
   const rejected = store.createRun("上次被拒", { science125Id: 7 });
   store.finishRun(rejected, "review_rejected", { errorCode: "review_rejected" });
@@ -152,7 +224,8 @@ test("a rejected review is owed, not skipped", async (t) => {
   assert.deepEqual(classes((await report).outcomes), ["passed/-"]);
 });
 
-test("every run records its question id and its source identity", async (t) => {
+test("every run records its question id and its source identity", async () => {
+  const t = { onTestFinished };
   const { store, report } = batch(t, [3], passes);
   const runId = (await report).outcomes[0]!.runId!;
 
@@ -162,7 +235,8 @@ test("every run records its question id and its source identity", async (t) => {
   assert.match(store.question(runId), /第 3 题/);
 });
 
-test("a batch stamps its ablation arm and nothing else does", async (t) => {
+test("a batch stamps its ablation arm and nothing else does", async () => {
+  const t = { onTestFinished };
   const store = new SqliteStore(":memory:");
   const single = store.createRun("HTTP 单跑", { science125Id: 9 });
 
@@ -174,7 +248,8 @@ test("a batch stamps its ablation arm and nothing else does", async (t) => {
   assert.equal(store.snapshot(single)!.memory_arm, null);
 });
 
-test("the campaign locator is repo-relative so it outlives this checkout", (t) => {
+test("the campaign locator is repo-relative so it outlives this checkout", () => {
+  const t = { onTestFinished };
   const repoRoot = workspace(t);
   const memory = createCampaignMemory(repoRoot, join(repoRoot, "outputs/runtime/runs.db"));
   mkdirSync(join(repoRoot, "memory"), { recursive: true });
@@ -193,7 +268,8 @@ test("the campaign locator is repo-relative so it outlives this checkout", (t) =
   assert.equal(log.includes(repoRoot), false, "绝对路径活不过一次 clone");
 });
 
-test("source identity is this repo's commit, and null where git cannot answer", (t) => {
+test("source identity is this repo's commit, and null where git cannot answer", () => {
+  const t = { onTestFinished };
   assert.equal(readSourceIdentity(workspace(t)), null);
   const identity = readSourceIdentity(process.cwd());
   assert.ok(identity, "仓库自身应当能采到出身");
@@ -201,7 +277,8 @@ test("source identity is this repo's commit, and null where git cannot answer", 
   assert.equal(typeof identity.treeDirty, "boolean");
 });
 
-test("one question's outage does not stop the batch", async (t) => {
+test("one question's outage does not stop the batch", async () => {
+  const t = { onTestFinished };
   const { report } = batch(t, [1, 2, 3], (job) => {
     if (job.questionId === 2) throw new Error("provider exploded");
     return passes(job);
@@ -213,7 +290,8 @@ test("one question's outage does not stop the batch", async (t) => {
   assert.match(outcomes[1]!.detail, /provider exploded/);
 });
 
-test("five failures of the same class stop the batch and write what is owed", async (t) => {
+test("five failures of the same class stop the batch and write what is owed", async () => {
+  const t = { onTestFinished };
   const { repoRoot, report } = batch(t, [1, 2, 3, 4, 5, 6, 7], () =>
     Promise.resolve({ status: "failed" as const, errorCode: "invalid_output" }),
   );
@@ -230,7 +308,8 @@ test("five failures of the same class stop the batch and write what is owed", as
   assert.deepEqual(owed, JSON.parse(JSON.stringify(stopped)));
 });
 
-test("a same-class streak is broken by a passing question", async (t) => {
+test("a same-class streak is broken by a passing question", async () => {
+  const t = { onTestFinished };
   const { report } = batch(t, [1, 2, 3, 4, 5, 6, 7, 8], ({ questionId }) =>
     Promise.resolve(
       questionId === 3
@@ -247,7 +326,8 @@ test("a same-class streak is broken by a passing question", async (t) => {
   assert.deepEqual(stopped.failedByClass, { invalid_output: 7 });
 });
 
-test("two outages in a row stop the batch immediately", async (t) => {
+test("two outages in a row stop the batch immediately", async () => {
+  const t = { onTestFinished };
   const { report } = batch(t, [1, 2, 3, 4, 5], () => {
     throw new Error("ECONNREFUSED");
   });
@@ -260,7 +340,8 @@ test("two outages in a row stop the batch immediately", async (t) => {
   assert.deepEqual(stopped.failedByClass, { infra_error: 2 });
 });
 
-test("a finished batch owes nothing and clears a stale remaining file", async (t) => {
+test("a finished batch owes nothing and clears a stale remaining file", async () => {
+  const t = { onTestFinished };
   const repoRoot = workspace(t);
   mkdirSync(join(repoRoot, "outputs"), { recursive: true });
   writeFileSync(remainingPath(repoRoot), '{"remaining":"1-125"}\n');
@@ -274,7 +355,8 @@ test("a finished batch owes nothing and clears a stale remaining file", async (t
   assert.equal(existsSync(remainingPath(repoRoot)), false);
 });
 
-test("a hung question is cancelled, recorded as infra_timeout, and left with a terminal run", async (t) => {
+test("a hung question is cancelled, recorded as infra_timeout, and left with a terminal run", async () => {
+  const t = { onTestFinished };
   let aborted = false;
   const { store, report } = batch(
     t,
@@ -307,7 +389,8 @@ test("a hung question is cancelled, recorded as infra_timeout, and left with a t
   );
 });
 
-test("a late completion cannot overwrite a timeout terminal or emit run.completed", async (t) => {
+test("a late completion cannot overwrite a timeout terminal or emit run.completed", async () => {
+  const t = { onTestFinished };
   let releaseLateCompletion!: () => void;
   const { store, report } = batch(
     t,
@@ -344,7 +427,8 @@ test("a late completion cannot overwrite a timeout terminal or emit run.complete
   );
 });
 
-test("a timed-out question that settled itself keeps its own verdict", async (t) => {
+test("a timed-out question that settled itself keeps its own verdict", async () => {
+  const t = { onTestFinished };
   const store = new SqliteStore(":memory:");
   const { report } = batch(
     t,
@@ -352,18 +436,19 @@ test("a timed-out question that settled itself keeps its own verdict", async (t)
     ({ runId }) =>
       new Promise(() => {
         // 取消赶上了它自己收尾：那份终态是它的事实，批跑不得改写（merge 不 rewrite）。
-        store.finishRun(runId, "completed");
+        completeStoredRun(store, runId);
       }),
     { store, timeoutMs: 30, graceMs: 20 },
   );
   const { outcomes } = await report;
 
-  assert.equal(outcomes[0]!.status, "failed", "批跑仍然认为这题没在期限内交付");
+  assert.equal(outcomes[0]!.status, "passed", "durable completed 是唯一可发布的成功事实");
   assert.equal(store.snapshot(outcomes[0]!.runId!)!.status, "completed");
   assert.equal(store.completedRunForQuestion(1), outcomes[0]!.runId);
 });
 
-test("any unknown question id rejects the whole batch before creating or running a question", async (t) => {
+test("any unknown question id rejects the whole batch before creating or running a question", async () => {
+  const t = { onTestFinished };
   const store = new SqliteStore(":memory:");
   t.onTestFinished(() => store.close());
   let createRunCalls = 0;
@@ -387,7 +472,8 @@ test("any unknown question id rejects the whole batch before creating or running
   assert.deepEqual(executed, []);
 });
 
-test("live CLI rejects absent credentials before creating its SQLite database", async (t) => {
+test("live CLI rejects absent credentials before creating its SQLite database", async () => {
+  const t = { onTestFinished };
   const savedKey = process.env.QWEN_API_KEY;
   delete process.env.QWEN_API_KEY;
   clearModelOverride();
@@ -410,13 +496,14 @@ test("live CLI rejects absent credentials before creating its SQLite database", 
     process.stdout.write = originalWrite;
   });
 
-  const code = await main(["--ids", "1", "--db", dbPath], { nodeVersion: "v24.18.0" });
+  const code = await main(["--ids", "1", "--db", dbPath], { bunVersion: "1.4.0" });
   assert.equal(code, 2);
   assert.match(output, /缺少.*QWEN_API_KEY/);
   assert.equal(existsSync(dbPath), false);
 });
 
-test("dry-run CLI does not require a model credential", async (t) => {
+test("dry-run CLI does not require a model credential", async () => {
+  const t = { onTestFinished };
   const savedKey = process.env.QWEN_API_KEY;
   delete process.env.QWEN_API_KEY;
   clearModelOverride();
@@ -431,14 +518,15 @@ test("dry-run CLI does not require a model credential", async (t) => {
   assert.equal(code, 0);
 });
 
-test("formal live batch requires Node major 24, while dry-run is portable", () => {
-  assert.equal(validateBatchNodeRuntime({ nodeVersion: "v24.18.0", dryRun: false }), null);
-  assert.match(validateBatchNodeRuntime({ nodeVersion: "v26.0.0", dryRun: false }) ?? "", /v26\.0\.0/);
-  assert.match(validateBatchNodeRuntime({ nodeVersion: "v26.0.0", dryRun: false }) ?? "", /Node 24/);
-  assert.equal(validateBatchNodeRuntime({ nodeVersion: "v26.0.0", dryRun: true }), null);
+test("formal live batch requires the pinned Bun runtime, while dry-run is portable", () => {
+  assert.equal(validateBatchBunRuntime({ bunVersion: "1.4.0", dryRun: false }), null);
+  assert.match(validateBatchBunRuntime({ bunVersion: "1.3.9", dryRun: false }) ?? "", /1\.3\.9/);
+  assert.match(validateBatchBunRuntime({ bunVersion: "1.3.9", dryRun: false }) ?? "", /Bun 1\.4\.0/);
+  assert.equal(validateBatchBunRuntime({ bunVersion: "1.3.9", dryRun: true }), null);
 });
 
-test("live batch rejects an unsupported Node runtime before opening SQLite", async (t) => {
+test("live batch rejects an unsupported Bun runtime before opening SQLite", async () => {
+  const t = { onTestFinished };
   const dir = workspace(t);
   const dbPath = join(dir, "runtime", "runs.db");
   let output = "";
@@ -451,14 +539,15 @@ test("live batch rejects an unsupported Node runtime before opening SQLite", asy
     process.stdout.write = originalWrite;
   });
 
-  const code = await main(["--ids", "1", "--db", dbPath], { nodeVersion: "v26.0.0" });
+  const code = await main(["--ids", "1", "--db", dbPath], { bunVersion: "1.3.9" });
   assert.equal(code, 2);
-  assert.match(output, /v26\.0\.0/);
-  assert.match(output, /Node 24/);
+  assert.match(output, /1\.3\.9/);
+  assert.match(output, /Bun 1\.4\.0/);
   assert.equal(existsSync(dbPath), false);
 });
 
-test("--dry-run plans without creating a single run", async (t) => {
+test("--dry-run plans without creating a single run", async () => {
+  const t = { onTestFinished };
   const { report } = batch(
     t,
     [1, 2],
@@ -477,15 +566,33 @@ test("--dry-run plans without creating a single run", async (t) => {
   assert.ok(outcomes[0]!.detail.length > 0);
 });
 
-test("progress is one line per question, tagged with its pool slot, plus a tally", async (t) => {
+test("--dry-run with ids leaves no persistent manifest behind", async () => {
+  const t = { onTestFinished };
+  const dir = workspace(t);
+  const path = join(dir, "runtime", "runs.db");
+
+  assert.equal(await main(["--ids", "1", "--dry-run", "--db", path], { bunVersion: "1.4.0" }), 0);
+  assert.equal(existsSync(path), false);
+});
+
+test("a live batch logs its durable manifest id", async () => {
+  const lines: string[] = [];
+  const h = batch({ onTestFinished }, [1], passes, { log: (line) => lines.push(line) });
+  const report = await h.report;
+  assert.ok(lines.includes(`[batch] manifestId ${report.manifestId}`));
+});
+
+test("progress is one line per question, tagged with its pool slot, plus a tally", async () => {
+  const t = { onTestFinished };
   const lines: string[] = [];
   const { report } = batch(t, [1, 2], passes, { log: (line) => lines.push(line) });
   await report;
 
-  assert.equal(lines.length, 3);
+  assert.equal(lines.length, 4);
+  assert.match(lines[0]!, /^\[batch] manifestId [a-f0-9]+$/);
   // 槽位标识 `s1`：并发跑时没有它，交错的进度行分不清哪几行属于同一条流水。
-  assert.match(lines[0]!, /^\[batch] 1\/2 s1 q1 \| passed \| \d+\.\ds$/);
-  assert.match(lines[2]!, /^\[batch] 合计 2 题：passed 2$/);
+  assert.match(lines[1]!, /^\[batch] 1\/2 s1 q1 \| passed \| \d+\.\ds$/);
+  assert.match(lines[3]!, /^\[batch] 合计 2 题：passed 2$/);
 });
 
 test("--concurrency is bounded before any money is spent", () => {
@@ -497,7 +604,8 @@ test("--concurrency is bounded before any money is spent", () => {
   }
 });
 
-test("the pool never runs more questions than its bound, and settles them as they finish", async (t) => {
+test("the pool never runs more questions than its bound, and settles them as they finish", async () => {
+  const t = { onTestFinished };
   let live = 0;
   let peak = 0;
   let completedFast = 0;
@@ -540,7 +648,8 @@ test("the pool never runs more questions than its bound, and settles them as the
   );
 });
 
-test("--concurrency 1 is exactly the serial batch", async (t) => {
+test("--concurrency 1 is exactly the serial batch", async () => {
+  const t = { onTestFinished };
   let live = 0;
   let peak = 0;
   const { report } = batch(
@@ -565,7 +674,8 @@ test("--concurrency 1 is exactly the serial batch", async (t) => {
   );
 });
 
-test("a tripped breaker stops dispatching but lets the in-flight questions finish", async (t) => {
+test("a tripped breaker stops dispatching but lets the in-flight questions finish", async () => {
+  const t = { onTestFinished };
   const started: number[] = [];
   const cancelled: number[] = [];
   const settled: string[] = [];
@@ -617,7 +727,8 @@ test("a tripped breaker stops dispatching but lets the in-flight questions finis
   assert.deepEqual(JSON.parse(readFileSync(remainingPath(repoRoot), "utf8")), JSON.parse(JSON.stringify(stopped)));
 });
 
-test("the breaker counts a same-class streak in settlement order, not dispatch order", async (t) => {
+test("the breaker counts a same-class streak in settlement order, not dispatch order", async () => {
+  const t = { onTestFinished };
   const settled: string[] = [];
   const gates = new Map<number, () => void>();
   const open = (questionId: number) => new Promise<void>((resolve) => gates.set(questionId, resolve));

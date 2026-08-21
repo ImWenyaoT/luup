@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "vitest";
+import { test } from "bun:test";
 
 import { ArxivLookupError, fetchArxivByIds, publishedYear } from "../src/agent/arxiv.ts";
 import type { Research, ResearchPlan } from "../src/agent/contracts.ts";
@@ -361,6 +361,30 @@ test("Crossref DOI infrastructure failure is not fabrication", async () => {
   assert.equal(verification.membershipOnly, 0);
   assert.equal(verificationFailureCode(verification), "infra_error");
   assert.deepEqual(verification.failed, ["B2.doi.resolve"]);
+});
+
+test("one DOI outage preserves checks for the other successful DOI lookups", async () => {
+  const verify = createReferenceVerifier({
+    resolveSingleDoi: async (doi) => {
+      if (doi === doiRecords[2]!.doi) throw new Error("single DOI timeout");
+      const record = doiRecords.find((candidate) => candidate.doi === doi);
+      if (!record) return null;
+      return {
+        doi: record.doi,
+        title: record.title,
+        url: `https://doi.org/${record.doi}`,
+        authors: record.authors,
+        published: String(record.year),
+        container: "fixture",
+      };
+    },
+  });
+  const verification = await verify({ plan: doiPlan(), research: research(doiCards) });
+
+  assert.equal(verification.infraError, true);
+  assert.equal(verification.doiChecked, 4);
+  assert.deepEqual(verification.failed, ["B2.doi.resolve"]);
+  assert.equal(verification.checks.filter((check) => check.id.startsWith("B2.doi.") && check.pass).length, 4);
 });
 
 test("never looks up a reference that is not in the frozen evidence", async () => {

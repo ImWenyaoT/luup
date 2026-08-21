@@ -1,11 +1,8 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "exclude": ["duplicates"],
-  "ignoreBinaries": ["vitest"],
-  "ignoreDependencies": ["lefthook"],
   "workspaces": {
     "apps/server": {
-      "entry": ["src/eval/scoring.ts", "test/**/*.test.ts"],
+      "entry": ["test/**/*.test.ts"],
       "project": ["src/**/*.ts", "test/**/*.ts"]
     },
     "apps/web": {

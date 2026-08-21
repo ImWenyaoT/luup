@@ -7,7 +7,8 @@ import { z } from "zod";
 
 import {
   evidenceReviewSchema,
-  hypothesisSchema,
+  hypothesisCandidateSchema,
+  hypothesisComparisonSchema,
   researchPlanSchema,
   researchSchema,
   reviewSchema,
@@ -20,12 +21,60 @@ type DisplayScalar = string | number | boolean | null;
 const EVENT_PAYLOAD_FIELDS: Record<string, readonly string[]> = {
   "run.created": [],
   "tool.evidence_recorded": ["tool_name", "status", "result_count"],
+  "tool.evidence_dropped": ["tool_name", "status", "reason"],
   "artifact.published": ["artifact_type"],
   "attempt.failed": ["failure_code"],
   "run.failed": ["failure_code"],
   "run.review_rejected": ["failure_code"],
   "run.completed": ["final_artifact_id"],
   "attempt.started": ["role", "ordinal"],
+  "attempt.transition_rejected": ["action", "attempt_status", "run_status"],
+  "run.transition_rejected": ["action", "requested_status", "run_status", "reason"],
+  "subagent.started": ["subagent_id", "parent_run_id", "role", "ordinal"],
+  "subagent.ended": ["subagent_id", "role", "status", "failure_code"],
+  "feedback.received": [
+    "source",
+    "feedback_source",
+    "target",
+    "round",
+    "action",
+    "feedback_count",
+    "feedback_artifact_id",
+    "retry_reason",
+    "stop_reason",
+    "rollback_reason",
+  ],
+  "revision.applied": ["round", "source", "feedback_source", "from_artifact_id", "to_artifact_id", "changed_fields"],
+  "evaluation.round": [
+    "evaluator",
+    "target",
+    "sample",
+    "sample_size",
+    "rubric_version",
+    "scientific_rationale",
+    "round",
+    "phase",
+    "action",
+    "feedback_source",
+    "feedback_artifact_id",
+    "feedback_count",
+    "raw_plan_artifact_id",
+    "raw_review_artifact_id",
+    "plan_artifact_id",
+    "review_artifact_id",
+    "changed_fields",
+    "score_before_total",
+    "score_after_total",
+    "score_delta_total",
+    "round_cost_tokens",
+    "cost_delta_tokens",
+    "limitations_before_count",
+    "limitations_after_count",
+    "limitation_delta_count",
+    "stop_reason",
+    "retry_reason",
+    "rollback_reason",
+  ],
   // 终局引用验收的计分板。逐条 checks 是数组，即使写进白名单也过不了类型闸，
   // 明细留在库内供报告引用，界面只拿到「查了几条、过没过」。
   "verification.references": [
@@ -41,6 +90,7 @@ const EVENT_PAYLOAD_FIELDS: Record<string, readonly string[]> = {
   // 开局注入了几条战役记录。它是消融生效门的事实来源，也是界面上「这个 run 带着
   // 多少历史开跑」的唯一说明；注入内容本身不出网，只放行条数。
   "campaign.prior_attempts": ["question_id", "count"],
+  "campaign.memory_degraded": ["phase", "status", "reason"],
   // 代码用冻结事实覆写了模型转述的某个字段。放行「哪份产物的哪个字段被覆写」，
   // 转录类字段再加两向计数 —— 它们是纯标量，也是 queries 权威改由台账持有之后
   // 新增的机制指标。before/after 与 missing/invented 的 ID 列表是模型写的原文，
@@ -49,10 +99,45 @@ const EVENT_PAYLOAD_FIELDS: Record<string, readonly string[]> = {
   // reason 不进公共投影：它是校验器的内部错误信息，只用于排障和调门槛。
   "sdk.structured_correction": ["corrections"],
   "sdk.usage": ["agent", "input_tokens", "output_tokens", "total_tokens"],
+  // RunTrace 是脱敏的 Runner 生命周期事实：输入只出长度/hash/字段名，工具只出名字和状态，
+  // usage 缺失保持 null，绝不把 unknown 伪造成 0。
+  "sdk.trace.started": [
+    "trace_id",
+    "role",
+    "agent",
+    "model",
+    "task",
+    "input_encoding",
+    "input_chars",
+    "input_sha256",
+    "input_fields",
+    "structured_constraint",
+    "available_tools",
+  ],
+  "sdk.trace.agent_started": ["trace_id", "agent", "turn", "input_items"],
+  "sdk.trace.agent_ended": ["trace_id", "agent", "turn"],
+  "sdk.trace.tool_started": ["trace_id", "agent", "tool", "ordinal"],
+  "sdk.trace.tool_ended": ["trace_id", "agent", "tool", "ordinal", "status", "duration_ms"],
+  "sdk.trace.ended": [
+    "trace_id",
+    "role",
+    "outcome",
+    "stop_reason",
+    "usage_requests",
+    "usage_input_tokens",
+    "usage_output_tokens",
+    "usage_total_tokens",
+    "usage_tool_calls",
+    "trace_events",
+    "truncated",
+  ],
+  "sdk.trace.callback_error": ["trace_id", "role", "callback", "error_type"],
 };
 
 // sdk.output_rejected 带的是校验器内部错误信息，只用于排障，不该出网。
 const HIDDEN_EVENT_KINDS: ReadonlySet<string> = new Set(["sdk.output_rejected"]);
+
+const KNOWN_EVENT_KINDS: ReadonlySet<string> = new Set([...Object.keys(EVENT_PAYLOAD_FIELDS), ...HIDDEN_EVENT_KINDS]);
 
 // 这里写当前真正会落库的工具名。名字漏掉时后端不会报错，只会让 UI 静默少一条证据。
 const PUBLIC_EVIDENCE_TOOLS: ReadonlySet<string> = new Set(["crossref_search", "arxiv_search"]);
@@ -64,6 +149,11 @@ function isDisplayScalar(value: unknown): value is DisplayScalar {
 }
 
 function projectPayload(kind: string, value: unknown): Record<string, DisplayScalar> {
+  // 事件名本身仍然公开，但未知事实不能伪装成「没有可展示字段」。否则 SDK 或 Harness
+  // 新增事件后，浏览器会收到一条看似正常却无法解释的空 payload。
+  if (!KNOWN_EVENT_KINDS.has(kind)) {
+    return { diagnostic: "unsupported_event", unsupported: true };
+  }
   // 数组的 typeof 也是 "object"，漏掉这道判断会让 payload 变成按下标取字段。
   if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
   const source = value as Record<string, unknown>;
@@ -94,6 +184,18 @@ const publicAttemptSchema = z.object({
   status: z.enum(ATTEMPT_STATUSES),
   corrections: z.number(),
   failure_code: z.string().nullable(),
+  started_at: z.string(),
+  finished_at: z.string().nullable(),
+});
+
+const publicSubagentSchema = z.object({
+  id: z.string(),
+  parent_run_id: z.string(),
+  role: roleSchema,
+  ordinal: z.number(),
+  mode: z.literal("one-shot"),
+  status: z.enum(ATTEMPT_STATUSES),
+  stop_reason: z.string().nullable(),
   started_at: z.string(),
   finished_at: z.string().nullable(),
 });
@@ -134,15 +236,39 @@ const publicAssessmentSchema = z.object({
   verdict: z.string(),
 });
 
-// Artifact 详情也跨浏览器边界。每个角色只放 UI 真正展示的正文，证据 ID、上游 Artifact ID、
-// 原始 queries/citations 等审计字段继续留在 store 内部。
+/** 候选假设的可核验字段对外公开：证据支持/反对、替代解释和不确定性不是内部思维，
+ * 而是评审判断候选是否可检验所需的交付内容。研究 Artifact ID 仍留在内部 handoff。 */
+const publicHypothesisCandidateSchema = hypothesisCandidateSchema.pick({
+  candidate_id: true,
+  claim_status: true,
+  core_claim: true,
+  basis: true,
+  supporting_evidence_ids: true,
+  opposing_evidence_ids: true,
+  falsifiable_predictions: true,
+  alternative_explanations: true,
+  uncertainty: true,
+  boundaries: true,
+  validation_conditions: true,
+});
+
+const publicHypothesisComparisonSchema = hypothesisComparisonSchema.pick({
+  criteria: true,
+  evaluations: true,
+  selected_candidate_id: true,
+  selection_rationale: true,
+});
+
+// Artifact 详情也跨浏览器边界。每个角色只放 UI 真正展示的正文；Research 的原始
+// queries/citations 与上游 Artifact ID 继续留在 store 内部，候选的证据关联则作为评审必需字段公开。
 const publicArtifactContentSchema = z.discriminatedUnion("artifact_type", [
-  researchSchema.pick({ artifact_type: true, summary: true, claims: true, limitations: true }),
-  hypothesisSchema.pick({
-    artifact_type: true,
-    hypothesis: true,
-    falsifiable_predictions: true,
-    boundaries: true,
+  researchSchema.pick({ artifact_type: true, research_framing: true, summary: true, claims: true, limitations: true }),
+  z.object({
+    artifact_type: z.literal("hypothesis"),
+    question: z.string(),
+    candidates: z.array(publicHypothesisCandidateSchema),
+    comparison: publicHypothesisComparisonSchema,
+    selection_status: z.literal("candidate_selected"),
   }),
   evidenceReviewSchema.pick({ artifact_type: true, gaps: true }).extend({
     // evidence_ids 和 rationale 都留在 Harness，UI 只展示判定本身。
@@ -156,6 +282,7 @@ const publicArtifactContentSchema = z.discriminatedUnion("artifact_type", [
     datasets: true,
     source: true,
     target: true,
+    execution_plan: true,
     paper_title: true,
     paper_abstract: true,
     methods: true,
@@ -196,7 +323,10 @@ const publicRunSnapshotSchema = z.object({
   error_code: z.string().nullable(),
   final_artifact_id: z.string().nullable(),
   attempts: z.array(publicAttemptSchema),
+  subagents: z.array(publicSubagentSchema),
   tool_evidence: z.array(publicEvidenceSchema),
+  omitted_evidence_count: z.number().int().nonnegative(),
+  omitted_evidence_tools: z.array(z.string()),
   artifacts: z.array(publicArtifactReferenceSchema),
   recent_events: z.array(publicRunEventSchema),
 });
@@ -221,15 +351,37 @@ export function projectRunEvent(event: Record<string, unknown>): PublicRunEvent 
  * 非公开工具的证据、Harness 内部事件，都要在进 schema 之前就筛掉。
  */
 export function projectRunSnapshot(snapshot: Record<string, unknown>): PublicRunSnapshot {
-  const evidence = (snapshot.tool_evidence as Record<string, unknown>[]).filter((row) =>
-    PUBLIC_EVIDENCE_TOOLS.has(String(row.tool_name)),
-  );
+  const runId = String(snapshot.id);
+  const attempts = snapshot.attempts as Record<string, unknown>[];
+  const subagents = attempts.map((attempt) => ({
+    id: attempt.id,
+    parent_run_id: runId,
+    role: attempt.role,
+    ordinal: attempt.ordinal,
+    mode: "one-shot",
+    status: attempt.status,
+    stop_reason:
+      attempt.status === "completed" ? "completed" : attempt.status === "failed" ? attempt.failure_code : null,
+    started_at: attempt.started_at,
+    finished_at: attempt.finished_at,
+  }));
+  const allEvidence = snapshot.tool_evidence as Record<string, unknown>[];
+  const omittedEvidence = allEvidence.filter((row) => !PUBLIC_EVIDENCE_TOOLS.has(String(row.tool_name)));
+  const evidence = allEvidence.filter((row) => PUBLIC_EVIDENCE_TOOLS.has(String(row.tool_name)));
+  const omittedEvidenceTools = [...new Set(omittedEvidence.map((row) => String(row.tool_name)))];
   // 事件载荷按 kind 白名单，比字段声明更细：同一个 payload 字段在这个事件里
   // 能出去、在那个事件里不能。projectRunEvent 负责这一层。
   const events = (snapshot.recent_events as Record<string, unknown>[])
     .filter((event) => !HIDDEN_EVENT_KINDS.has(String(event.kind)))
     .map((event) => projectRunEvent(event));
-  return publicRunSnapshotSchema.parse({ ...snapshot, tool_evidence: evidence, recent_events: events });
+  return publicRunSnapshotSchema.parse({
+    ...snapshot,
+    subagents,
+    tool_evidence: evidence,
+    omitted_evidence_count: omittedEvidence.length,
+    omitted_evidence_tools: omittedEvidenceTools,
+    recent_events: events,
+  });
 }
 
 export function projectArtifact(artifact: Record<string, unknown>): PublicArtifact {

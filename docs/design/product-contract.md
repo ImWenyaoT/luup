@@ -16,20 +16,20 @@
 |---|---|---|
 | 方向 A：完成“问题理解—知识整合—候选假设—证据梳理—研究计划—反馈修正”；提交 125 题结果 | 生成一份符合标准字段的研究计划；失败时补证据或修改方案；批量断点续跑 | `proposal.json/md`、真实引用核验、至少一个同题改进案例、125 题索引 |
 | 基座使用 Qwen，并通过百炼或官网认可工具调用，保留凭证 | 所有模型调用走同一个 Qwen provider adapter | 模型配置、请求与 usage 凭证 |
-| 提交技术方案、代表案例、源码、工作流、上下文工程、数据来源和迭代过程 | 运行过程可复算，关键判断有明确证据 | ≤20 页技术文档素材、源码、可重放案例与验收报告 |
+| 提交技术方案、代表案例、源码、工作流、上下文工程、数据来源和迭代过程 | 运行过程可复算，关键判断有明确证据 | ≤30 页技术文档素材、源码、可重放案例与验收报告 |
 
 可交互前端、测试 API 和演示视频是官网“鼓励/推荐”或“附加提交（可选）”，不是官方硬性要求。Luup 主动选择交付基本桌面前端与测试 API，用于运行和展示核心闭环；明确不制作演示视频，也不扩张部署、移动端或无障碍专项。
 
 ## 三项系统能力
 
-1. **Scientist**：检索证据，提出假设并写成可验证的研究计划。
+1. **Scientific roles**：Researcher 检索并冻结证据；Hypothesis Scientist 生成多个候选并比较筛选；Evidence Reviewer 保留反对证据与知识缺口；Research Planner 形成可执行计划。
 2. **Reviewer**：通过独立检索或确定性工具引入新信息，指出证据、推导和验证设计的缺口。
-3. **Harness**：由普通 TypeScript 控制流与 OpenAI Agents SDK 共同负责调度、预算、持久化和最终验收；Agent 的自我宣称不能决定通过。〔2026-08-16：切栈（ADR-0004）漏改补正，原文「普通 Python 控制流」。〕
+3. **Harness**：Bun/TypeScript 控制流拥有顺序、预算、持久化与最终验收；OpenAI Agents SDK 执行 Qwen 角色与工具循环。Agent 的自我宣称不能决定通过。
 
-Harness 是确定性薄管理者，不是第三个 LLM Agent。Scientist 是否需要再拆出 Literature Agent，必须由同预算消融实验证明；在此之前默认不拆。
+Harness 是确定性控制面，不是另一个 LLM Agent。角色边界必须以独立证据、受限工具面或确定性职责为理由，而不是为了增加 Agent 数量。
 
 ```text
-question → Scientist → verify → Reviewer → 最多一次返修 → final verify
+question → evidence → candidate hypotheses → comparison → evidence review → research plan → reviewer feedback → bounded revision → deterministic verify
 ```
 
 上下文默认不共享完整轨迹。只传问题、证据、方案和具体失败项；Harness 只落可复算的 handoff trace、usage 和工件，不引入通用 workflow runtime。
@@ -43,7 +43,7 @@ question → Scientist → verify → Reviewer → 最多一次返修 → final 
 - Qwen/Bailian 单一模型接线与调用凭证；
 - Science-125 题库、批量运行与断点续跑；
 - Proposal Schema、真实引用 B1–B4 和离线交付验证；
-- OpenAI Agents SDK 两 specialist、独立上下文及文件工件恢复；
+- OpenAI Agents SDK 五角色、独立结构化上下文及 SQLite 工件恢复；
 - 基本桌面前端与测试 API，维护“选题/触发运行/查看结果”的核心路径。
 
 ### 先实验再决定
@@ -56,11 +56,11 @@ question → Scientist → verify → Reviewer → 最多一次返修 → final 
 ### 删除或合并候选
 
 - 删除“至少三个 subagent”的人为门槛；
-- 合并 Hypothesis 与 Writer：二者属于同一次科学论证，不因输出字段拆成两个 Agent；
+- 不新增只改写文字、却不引入独立信息或确定性职责的角色；
 - 删除每条 DAG 边都由 LLM master 重复认证的要求，能由 Schema 或 verifier 判断的交给代码；
 - 将多节点、每节点三轮返工收敛为一次 Reviewer 返修；
 - 前端/API 保留为团队主动选择的交付面，但不得反向增加 Agent 复杂度；不做移动端、无障碍、部署和实时通信专项；
-- 不新增消息总线、通用 tracing 平台、向量库、仿真环境或更多生命周期状态；只保留 E3 要求的最小 JSONL handoff trace。
+- 不新增消息总线、通用 tracing 平台、向量库或仿真环境；运行轨迹作为有界、脱敏的 SQLite 事实保存并通过公开投影展示。
 
 ## 下一项实验
 

@@ -1,10 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { Database } from "bun:sqlite";
 
 import type { DomainArtifact, Role } from "../agent/contracts.ts";
 import type { EvidenceRecord } from "../agent/evidence.ts";
+import {
+  BATCH_TERMINAL_STATUSES,
+  type BatchTerminalRecord,
+  type BatchTerminalStatus,
+  type StoredBatchManifest,
+} from "../batch/manifest.ts";
 import type { MemoryArm, SourceIdentity, StoredInput, UsageFacts } from "./contracts.ts";
 import { createSchema, nowIso, type RunStatus } from "./schema.ts";
 
@@ -16,30 +22,42 @@ export type StoredArtifact = {
   content: DomainArtifact;
 };
 
+/** The durable facts a batch manifest needs in order to validate one record. */
+export type BatchRunFacts = {
+  runId: string;
+  science125Id: number | null;
+  status: RunStatus;
+  errorCode: string | null;
+};
+
 const shortId = () => randomUUID().replaceAll("-", "");
 export const MAX_QUESTION_LENGTH = 4_000;
+const batchTerminalStatuses = new Set<string>(BATCH_TERMINAL_STATUSES);
+
+/** 只提交已经写入的拒绝诊断，再把状态转换错误抛还调用方。 */
+class RejectedTransition extends Error {}
 
 /** API 和直接调用 Harness 都用同一套问题规范化，避免两条入口的上限不一致。 */
 export const normalizeQuestion = (question: string) => question.split(/\s+/).filter(Boolean).join(" ");
 
 /** SQLite 持久化。
  *
- * `node:sqlite` 的 `DatabaseSync` 是同步的，和 Python 的 `sqlite3` 一样 —— 读路径可以
+ * `bun:sqlite` 的 `Database` 是同步的，和 Python 的 `sqlite3` 一样 —— 读路径可以
  * 一比一翻译，不用退化成 await 瀑布。零依赖。
  *
  * 这一层只管**记账**：谁在什么时候、基于哪些冻结输入、产出了什么、查过什么。
  * 「下一个角色是谁」不在这里，在 harness 的控制流里。
  */
 export class SqliteStore {
-  readonly #db: DatabaseSync;
-  readonly #lockDb: DatabaseSync | null;
+  readonly #db: Database;
+  readonly #lockDb: Database | null;
 
   constructor(path: string) {
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
     // 文件名带上协议含义，避免把迁移分支早期的纯文本 `.lock` 当成 SQLite 打开。
     this.#lockDb = path === ":memory:" ? null : acquireLock(`${path}.writer-lock.db`);
     try {
-      this.#db = new DatabaseSync(path);
+      this.#db = new Database(path);
       createSchema(this.#db);
       this.#failInterruptedRuns();
     } catch (error) {
@@ -59,13 +77,33 @@ export class SqliteStore {
     }
   }
 
-  #write<T>(fn: (db: DatabaseSync) => T): T {
+  /**
+   * Read-only process readiness probe.
+   *
+   * Liveness only proves that Bun is answering HTTP. Deployment health checks
+   * also need to distinguish a closed/corrupt SQLite handle from a live
+   * process, without creating a Run or mutating the fact store.
+   */
+  isReady(): boolean {
+    try {
+      this.#db.prepare("SELECT 1").get();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  #write<T>(fn: (db: Database) => T): T {
     this.#db.exec("BEGIN IMMEDIATE");
     try {
       const result = fn(this.#db);
       this.#db.exec("COMMIT");
       return result;
     } catch (error) {
+      if (error instanceof RejectedTransition) {
+        this.#db.exec("COMMIT");
+        throw error;
+      }
       this.#db.exec("ROLLBACK");
       throw error;
     }
@@ -149,6 +187,85 @@ export class SqliteStore {
     });
   }
 
+  /** Create the durable expected set for one batch execution. */
+  createBatchManifest(expectedIds: readonly number[]): string {
+    if (expectedIds.length === 0) throw new Error("batch manifest requires at least one expected ID");
+    if (expectedIds.some((id) => !Number.isSafeInteger(id) || id < 1)) {
+      throw new Error("batch manifest expected IDs must be positive safe integers");
+    }
+    return this.#write((db) => {
+      const id = shortId();
+      db.prepare("INSERT INTO batch_manifests(id, expected_ids_json, created_at) VALUES(?, ?, ?)").run(
+        id,
+        JSON.stringify(expectedIds),
+        nowIso(),
+      );
+      return id;
+    });
+  }
+
+  /** Append a terminal fact. Duplicates are intentionally retained for the gate to expose. */
+  recordBatchManifest(
+    manifestId: string,
+    record: { questionId: number; status: BatchTerminalStatus; runId?: string | null },
+  ): void {
+    if (!Number.isSafeInteger(record.questionId) || record.questionId < 1) {
+      throw new Error("batch manifest question ID must be a positive safe integer");
+    }
+    if (!batchTerminalStatuses.has(record.status)) {
+      throw new Error(`invalid batch terminal status: ${record.status}`);
+    }
+    this.#write((db) => {
+      const manifest = db.prepare("SELECT id FROM batch_manifests WHERE id = ?").get(manifestId) as Row | undefined;
+      if (!manifest) throw new Error(`unknown batch manifest: ${manifestId}`);
+      db.prepare(
+        "INSERT INTO batch_manifest_records(manifest_id, question_id, status, run_id, created_at) VALUES(?, ?, ?, ?, ?)",
+      ).run(manifestId, record.questionId, record.status, record.runId ?? null, nowIso());
+    });
+  }
+
+  /** Repair one invalid record while reopening a manifest; valid duplicates remain append-only evidence. */
+  replaceBatchManifestRecord(
+    manifestId: string,
+    record: { questionId: number; status: BatchTerminalStatus; runId?: string | null },
+  ): void {
+    if (!Number.isSafeInteger(record.questionId) || record.questionId < 1) {
+      throw new Error("batch manifest question ID must be a positive safe integer");
+    }
+    if (!batchTerminalStatuses.has(record.status)) {
+      throw new Error(`invalid batch terminal status: ${record.status}`);
+    }
+    this.#write((db) => {
+      const updated = db
+        .prepare(
+          "UPDATE batch_manifest_records SET status = ?, run_id = ?, created_at = ? " +
+            "WHERE id = (SELECT id FROM batch_manifest_records WHERE manifest_id = ? AND question_id = ? ORDER BY id LIMIT 1)",
+        )
+        .run(record.status, record.runId ?? null, nowIso(), manifestId, record.questionId);
+      if (Number(updated.changes) === 0)
+        throw new Error(`unknown batch manifest record: ${manifestId}/${record.questionId}`);
+    });
+  }
+
+  /** Read only raw manifest facts; the BatchManifest domain module derives the gate. */
+  readBatchManifest(manifestId: string): StoredBatchManifest | null {
+    const manifest = this.#get("SELECT id, expected_ids_json FROM batch_manifests WHERE id = ?", manifestId);
+    if (!manifest) return null;
+    const records = this.#all(
+      "SELECT question_id, status, run_id FROM batch_manifest_records WHERE manifest_id = ? ORDER BY id",
+      manifestId,
+    ).map((row) => ({
+      questionId: Number(row.question_id),
+      status: String(row.status) as BatchTerminalStatus,
+      runId: row.run_id === null ? null : String(row.run_id),
+    })) satisfies BatchTerminalRecord[];
+    return {
+      id: String(manifest.id),
+      expectedIds: JSON.parse(String(manifest.expected_ids_json)) as number[],
+      records,
+    };
+  }
+
   /** 断点续跑的唯一判据：这道题是否已经有一个 completed 的 Run。
    *
    * 只认 `completed`。`review_rejected` 是模型没能交出可接受的计划，重跑有意义；
@@ -161,6 +278,18 @@ export class SqliteStore {
       science125Id,
     );
     return row ? String(row.id) : null;
+  }
+
+  /** Read the terminal facts for a manifest record without exposing the raw run row. */
+  batchRunFacts(runId: string): BatchRunFacts | null {
+    const row = this.#get("SELECT id, science125_id, status, error_code FROM runs WHERE id = ?", runId);
+    if (!row) return null;
+    return {
+      runId: String(row.id),
+      science125Id: typeof row.science125_id === "number" ? row.science125_id : null,
+      status: String(row.status) as RunStatus,
+      errorCode: row.error_code === null ? null : String(row.error_code),
+    };
   }
 
   /** 这个 Run 跑的是第几题。自由输入没有题号，返回 null —— 战役记忆按题分页，没题号就不分页。 */
@@ -178,6 +307,27 @@ export class SqliteStore {
 
   startAttempt(runId: string, role: Role): string {
     return this.#write((db) => {
+      const run = db.prepare("SELECT status FROM runs WHERE id = ?").get(runId) as Row | undefined;
+      if (!run) throw new Error(`unknown run: ${runId}`);
+      if (run.status !== "running") {
+        emitEvent(db, runId, "attempt.transition_rejected", {
+          action: "start_attempt",
+          attempt_status: null,
+          run_status: run.status,
+        });
+        throw new RejectedTransition(`cannot start ${role} attempt on ${run.status} run ${runId}`);
+      }
+      const active = db.prepare("SELECT id FROM attempts WHERE run_id = ? AND status = 'running'").get(runId) as
+        | Row
+        | undefined;
+      if (active) {
+        emitEvent(db, runId, "attempt.transition_rejected", {
+          action: "start_attempt",
+          attempt_status: "running",
+          run_status: "running",
+        });
+        throw new RejectedTransition(`run ${runId} already has running attempt ${String(active.id)}`);
+      }
       const count = db
         .prepare("SELECT COUNT(*) AS n FROM attempts WHERE run_id = ? AND role = ?")
         .get(runId, role) as Row;
@@ -190,6 +340,12 @@ export class SqliteStore {
       ).run(attemptId, runId, role, ordinal, now);
       db.prepare("UPDATE runs SET current_role = ?, updated_at = ? WHERE id = ?").run(role, now, runId);
       emitEvent(db, runId, "attempt.started", { role, ordinal });
+      emitEvent(db, runId, "subagent.started", {
+        subagent_id: attemptId,
+        parent_run_id: runId,
+        role,
+        ordinal,
+      });
       return attemptId;
     });
   }
@@ -209,6 +365,20 @@ export class SqliteStore {
     usage: UsageFacts | null = null,
   ): StoredArtifact {
     return this.#write((db) => {
+      const run = db.prepare("SELECT status FROM runs WHERE id = ?").get(runId) as Row | undefined;
+      if (!run) throw new Error(`unknown run: ${runId}`);
+      const attempt = db
+        .prepare("SELECT role, status FROM attempts WHERE id = ? AND run_id = ?")
+        .get(attemptId, runId) as Row | undefined;
+      if (!attempt) throw new Error(`unknown attempt: ${attemptId}`);
+      if (run.status !== "running" || attempt.status !== "running") {
+        emitEvent(db, runId, "attempt.transition_rejected", {
+          action: "publish_artifact",
+          attempt_status: attempt.status,
+          run_status: run.status,
+        });
+        throw new RejectedTransition(`cannot publish from ${attempt.status} attempt on ${run.status} run`);
+      }
       const artifactId = shortId();
       const now = nowIso();
       if (usage) {
@@ -240,6 +410,12 @@ export class SqliteStore {
         emitEvent(db, runId, "sdk.structured_correction", { corrections });
       }
       emitEvent(db, runId, "artifact.published", { artifact_type: artifact.artifact_type });
+      emitEvent(db, runId, "subagent.ended", {
+        subagent_id: attemptId,
+        role: attempt.role,
+        status: "completed",
+        failure_code: null,
+      });
       return { id: artifactId, type: artifact.artifact_type, content: artifact };
     });
   }
@@ -259,6 +435,20 @@ export class SqliteStore {
     usage: UsageFacts | null = null,
   ): void {
     this.#write((db) => {
+      const run = db.prepare("SELECT status FROM runs WHERE id = ?").get(runId) as Row | undefined;
+      if (!run) throw new Error(`unknown run: ${runId}`);
+      const attempt = db
+        .prepare("SELECT role, status FROM attempts WHERE id = ? AND run_id = ?")
+        .get(attemptId, runId) as Row | undefined;
+      if (!attempt) throw new Error(`unknown attempt: ${attemptId}`);
+      if (run.status !== "running" || attempt.status !== "running") {
+        emitEvent(db, runId, "attempt.transition_rejected", {
+          action: "fail_attempt",
+          attempt_status: attempt.status,
+          run_status: run.status,
+        });
+        throw new RejectedTransition(`cannot fail ${attempt.status} attempt on ${run.status} run`);
+      }
       const now = nowIso();
       if (usage) {
         emitEvent(db, runId, "sdk.usage", {
@@ -275,6 +465,12 @@ export class SqliteStore {
       // reason 带的是校验器内部信息，只用于排障，投影层不放行它出网。
       emitEvent(db, runId, "sdk.output_rejected", { error_type: errorType, reason: failure.reason });
       emitEvent(db, runId, "attempt.failed", { failure_code: failure.code });
+      emitEvent(db, runId, "subagent.ended", {
+        subagent_id: attemptId,
+        role: attempt.role,
+        status: "failed",
+        failure_code: failure.code,
+      });
     });
   }
 
@@ -285,7 +481,14 @@ export class SqliteStore {
         | Row
         | undefined;
       // Abort 后仍在收尾的工具可能晚到；Attempt 一旦终止，冻结审计不可再追加。
-      if (attempt?.status !== "running") return;
+      if (attempt?.status !== "running") {
+        emitEvent(db, runId, "tool.evidence_dropped", {
+          tool_name: record.tool,
+          status: record.status,
+          reason: "attempt_not_running",
+        });
+        return;
+      }
       db.prepare(
         "INSERT INTO tool_evidence(id, attempt_id, tool_name, query, output_json, status, created_at) " +
           "VALUES(?, ?, ?, ?, ?, ?, ?)",
@@ -315,7 +518,40 @@ export class SqliteStore {
       const run = db.prepare("SELECT status FROM runs WHERE id = ?").get(runId) as Row | undefined;
       if (!run) throw new Error(`unknown run: ${runId}`);
       // 终态是不可逆事实：取消/重启已经收尾后，迟到的执行流只能幂等忽略。
-      if (run.status !== "running") return;
+      if (run.status !== "running") {
+        emitEvent(db, runId, "run.transition_rejected", {
+          action: "finish_run",
+          requested_status: status,
+          run_status: run.status,
+        });
+        return;
+      }
+      const active = db
+        .prepare("SELECT COUNT(*) AS n FROM attempts WHERE run_id = ? AND status = 'running'")
+        .get(runId) as Row;
+      if (Number(active.n) > 0) {
+        emitEvent(db, runId, "run.transition_rejected", {
+          action: "finish_run",
+          requested_status: status,
+          run_status: "running",
+          reason: "active_attempts",
+        });
+        throw new RejectedTransition(`cannot finish run ${runId} with running attempts`);
+      }
+      if (status !== "completed" && options.finalArtifactId) {
+        throw new Error(`${status} run cannot carry finalArtifactId`);
+      }
+      if (status === "completed") {
+        const finalArtifactId = options.finalArtifactId;
+        if (!finalArtifactId) throw new Error(`completed run ${runId} requires finalArtifactId`);
+        const artifact = db
+          .prepare(
+            "SELECT a.id FROM artifacts a JOIN attempts t ON t.id = a.attempt_id " +
+              "WHERE a.id = ? AND a.run_id = ? AND a.type = 'research-plan' AND t.status = 'completed'",
+          )
+          .get(finalArtifactId, runId) as Row | undefined;
+        if (!artifact) throw new Error(`final artifact ${finalArtifactId} is not a completed artifact of run ${runId}`);
+      }
       db.prepare(
         "UPDATE runs SET status = ?, current_role = NULL, final_artifact_id = ?, error_code = ?, " +
           "updated_at = ? WHERE id = ? AND status = 'running'",
@@ -408,8 +644,11 @@ export class SqliteStore {
  * （执行流被放弃）。都必须留下和正常失败一样的证据，否则 API 与 SSE 会永远等下去。
  * 调用方负责先确认 Run 确实还在 running。
  */
-function failRunInPlace(db: DatabaseSync, runId: string, failureCode: string, errorType: string): void {
+function failRunInPlace(db: Database, runId: string, failureCode: string, errorType: string): void {
   const now = nowIso();
+  const attempts = db
+    .prepare("SELECT id, role FROM attempts WHERE run_id = ? AND status = 'running'")
+    .all(runId) as Row[];
   db.prepare(
     "UPDATE attempts SET status = 'failed', failure_code = ?, error_type = ?, finished_at = ? " +
       "WHERE run_id = ? AND status = 'running'",
@@ -419,12 +658,20 @@ function failRunInPlace(db: DatabaseSync, runId: string, failureCode: string, er
     now,
     runId,
   );
+  for (const attempt of attempts) {
+    emitEvent(db, runId, "subagent.ended", {
+      subagent_id: attempt.id,
+      role: attempt.role,
+      status: "failed",
+      failure_code: failureCode,
+    });
+  }
   emitEvent(db, runId, "run.failed", { failure_code: failureCode, final_artifact_id: null });
 }
 
 /** 用 SQLite 自己的长事务做单写者锁；进程退出时 OS 会自动释放，不需要 PID 接管协议。 */
-function acquireLock(path: string): DatabaseSync {
-  const lock = new DatabaseSync(path);
+function acquireLock(path: string): Database {
+  const lock = new Database(path);
   try {
     lock.exec("PRAGMA busy_timeout = 0; BEGIN EXCLUSIVE");
     return lock;
@@ -435,7 +682,7 @@ function acquireLock(path: string): DatabaseSync {
 }
 
 /** 事件写入的唯一入口。version 是 per-run 单调序号，也是 SSE 游标。 */
-function emitEvent(db: DatabaseSync, runId: string, kind: string, payload: Record<string, unknown>): number {
+function emitEvent(db: Database, runId: string, kind: string, payload: Record<string, unknown>): number {
   const row = db.prepare("SELECT version FROM runs WHERE id = ?").get(runId) as Row | undefined;
   if (!row) throw new Error(`unknown run: ${runId}`);
   const version = Number(row.version) + 1;

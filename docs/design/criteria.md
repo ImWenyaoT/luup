@@ -48,18 +48,18 @@
 
 - E0 问题源 = 官网维度 A 指定的《Science》125 前沿科学问题：`data/science125.json`（权威来源抓取，恰 125 条）；pipeline 按题号取题，也接受自由问题输入。
 - E1 单命令跑通 E2E：输入一个科学问题（默认取自 Science-125）→ 完整《科学假设与研究计划》落 SQLite 事实库（Artifact 含 JSON 与 Markdown 两种投影）。〔2026-08-16：切栈（ADR-0004）漏改补正，原文「落盘于 runs/<ts>/」是 Python 期目录制。〕
-- E1b 批量能力：批量 runner（`pnpm batch --ids 1-125｜3,54,61`，`--dry-run` 零执行）可按题号列表跑多题，题按升序派发进有界并发池（`--concurrency`，默认 3、上限 5，1 即串行；安全性论证与熔断语义见 `apps/server/src/batch/runner.ts` 的 `runBatch`，协议修订见 `docs/design/experiment-protocol.json`）（MVP 验证 ≥2 题抽样；全量 125 题为提交期动作，非 MVP 门槛，预算由用户拍板）。
-- E2 `pnpm run ci` 全绿：typecheck / oxlint / 覆盖率地板（见 `vitest.config.ts`）/ build，外加 `pnpm run test:e2e`（口径以 AGENTS.md 验证节为准）。〔2026-08-15 ADR-0004：此前是「Python 后端 pytest（地板 90）/Ruff/ty + OpenAPI client 生成检查 + Vite 前端 typecheck/build」，随 Python 栈退役改写；**要求未松动，覆盖率地板换了分母**——90 是 `backend/app` 的，现行四项地板是 `@luup/server`（`apps/server/src/`）的实测值向下取整。〕
+- E1b 批量能力：批量 runner（`bun run batch --ids 1-125｜3,54,61`，`--dry-run` 零执行）可按题号列表跑多题，题按升序派发进有界并发池（`--concurrency`，默认 3、上限 5，1 即串行；安全性论证与熔断语义见 `apps/server/src/batch/runner.ts` 的 `runBatch`，协议修订见 `docs/design/experiment-protocol.json`）（MVP 验证 ≥2 题抽样；全量 125 题为提交期动作，非 MVP 门槛，预算由用户拍板）。
+- E2 `bun run ci` 全绿：TypeScript 7 / oxlint / oxfmt / knip / build / Bun 全局覆盖率门，外加 `bun run test:e2e`（口径以 AGENTS.md 验证节为准）。〔2026-08-21 ADR-0007：Bun 1.4 成为唯一运行时与包管理器；覆盖率地板由 `apps/server/bunfig.toml` 启用 LCOV，并由 `test/coverage-gate.ts` 按全局 functions/lines ≥80% 判定。〕
 - E3 run trace（各 agent 输入输出、Reviewer 结论、verifier 结果、token 用量）落盘可查。
 
 ## G. 交付面
 
-官网当前要求技术方案 PDF ≤20 页，包含研究问题与方法、架构讲解、代表案例、源码、工作流、上下文工程、数据来源、结果与反馈迭代；FAQ 要求方向 A 提交全部 125 个问题结果。前端与测试 API 虽不是官方硬门，但由本项目主动选择交付；演示视频明确不做。据此：
+官网当前要求技术方案 PDF/PPT ≤30 页，包含研究问题与方法、架构讲解、代表案例、源码、工作流、上下文工程、数据来源、结果与反馈迭代；FAQ 要求方向 A 提交全部 125 个问题结果。本地模板个别位置仍残留“20页”，按 FAQ 的“官网最新要求优先”采用 30 页并记录来源。前端与测试 API 由参赛方部署；演示视频可选，Luup 明确不做。据此：
 
 - G1 可调用测试 API：保持现有入口可用，可触发运行并读取结果；不反向塑造 Agent 架构。
 - G2 可交互前端：保持桌面端选题、触发运行和查看结果的核心路径；不扩展部署、移动端、无障碍或实时通信专项。
 - G3 代表性测试案例：历史案例（Q61 等，含输入输出与验收报告）在 git tag `archive/phase-a-evidence-20260816`；正式批将产出新案例，前端可展示。〔2026-08-16：原文「runs/ 已留存」随证据归档迁移（协议修订 #6）改写。〕
-- G4 技术报告：PDF ≤20 页骨架（研究问题与方法、架构讲解、真实案例、上下文工程设计）——提交期完稿。
+- G4 技术报告：PDF/PPT ≤30 页骨架（研究问题与方法、架构讲解、真实案例、上下文工程设计）——提交期完稿。
 - G5 全量 125 题输出：批量 runner 须支持断点续跑（跳过已完成题）；全量生产跑为提交期动作（时长/费用由用户拍板），MVP 验证抽样 + 续跑能力。
 
 项目交付 = G1 + G2 核心路径可用、G3 已有、G5 续跑能力验证、G4 骨架；演示视频不做。
@@ -75,7 +75,7 @@
 
 | 层 | 指标 | 定义/数据源 | 翻盘什么决定 |
 |---|------|------------|-------------|
-| Tier0 | 现状保留 | B1–B4 验收器、`review.json`（旧 `verdicts/` 已随 TS 栈退役）；验证命令是 AGENTS.md 验证节那套（`pnpm run ci` + `pnpm run test:e2e`；2026-08-15 前是 Python 与 bun 两套，随 ADR-0004 合一） | 单 run 通过性 |
+| Tier0 | 现状保留 | B1–B4 验收器；验证命令是 AGENTS.md 验证节那套（`bun run ci` + `bun run test:e2e`） | 单 run 通过性 |
 | Tier1（零 LLM 派生） | M4 交付率 | deliverable runs / 总 runs（runOutcome），带二项标准误 √(p(1-p)/n)；环境性失败单列一档 | 战役节奏 |
 | | M5 Pass^2 | 同题按时间序相邻两次 run 均 deliverable 的比例 | 可靠性口径（替代单次快照） |
 | | M6 成本会计 | usage.jsonl 聚合：token/题、¥/题、按节点分解 | 重跑预算、模型分档 |

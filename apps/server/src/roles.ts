@@ -13,8 +13,13 @@ import {
   type Research,
   type Role,
 } from "./agent/contracts.ts";
-import { researchPlanQualityIssues, upstreamTraceabilityIssues } from "./agent/plan-quality.ts";
+import {
+  researchPlanExecutionIssues,
+  researchPlanQualityIssues,
+  upstreamTraceabilityIssues,
+} from "./agent/plan-quality.ts";
 import { STRUCTURED_OUTPUT_TOOL, type StructuredOutput } from "./agent/roles/structured-output.ts";
+import type { RunTraceEvent } from "./agent/run-trace.ts";
 import type { StageUsage } from "./executor.ts";
 import type { StoredInput, TaskContext } from "./store/contracts.ts";
 
@@ -33,7 +38,9 @@ function addUsage(left: StageUsage | null, right: StageUsage | undefined): Stage
 
 export type StageExecutor = (request: {
   runId: string;
+  taskId?: string;
   role: Role;
+  task?: string;
   agent: Agent<any, any>;
   input: string;
   timeoutMs: number;
@@ -41,6 +48,8 @@ export type StageExecutor = (request: {
    *  （`error.usage`）—— 两条路都汇进 `runTask` 的同一个累加器。
    *  离线替身不花钱，不实现它就是「不知道」，不会被写成零。 */
   onUsage?: (usage: StageUsage) => void;
+  /** SDK Runner 生命周期的脱敏事实；由 Harness 交给唯一 RunStore 写者。 */
+  onTrace?: (event: RunTraceEvent) => void;
 }) => Promise<unknown>;
 
 const normalize = (text: string) => text.split(/\s+/).filter(Boolean).join(" ");
@@ -246,6 +255,23 @@ function frozenEvidenceOf(context: TaskContext) {
   };
 }
 
+/** Research Artifact 里所有真实发生过的检索 ID。
+ *
+ * Hypothesis 可以把空结果/冲突检索作为反对证据或不确定性的依据，因此这里不能只
+ * 读取可引用 citations；引用真实性门仍由 `frozenEvidenceOf` 单独负责。
+ */
+function frozenResearchEvidenceIds(context: TaskContext): ReadonlySet<string> {
+  return new Set(
+    inputsOfType(context, "research").flatMap((item) => {
+      const research = item.content as unknown as Research;
+      return [
+        ...research.queries.map((query) => query.evidence_id),
+        ...research.citations.map((citation) => citation.evidence_id),
+      ];
+    }),
+  );
+}
+
 /** 每个角色如何把模型的原始输出变成可发布的领域 Artifact。
  *
  * 抛 ContractError 表示「模型写错了、可以纠错」；这些判据全部只看**冻结输入**和
@@ -288,10 +314,20 @@ function acceptFor(
       return (raw) => {
         const research = inputsOfType(context, "research");
         if (research.length === 0) throw new Error("hypothesis task is missing its Research Artifact");
-        const cited = frozenEvidenceOf(context).evidenceIds;
+        const frozenEvidenceIds = frozenResearchEvidenceIds(context);
         const proposed = withFrozenQuestion(hypothesisSchema.parse(raw), context, onDrift);
-        if (!proposed.evidence_ids.every((id) => cited.has(id))) {
-          throw new ContractError("hypothesis cites evidence outside its Research Artifacts");
+        const candidateEvidence = proposed.candidates.flatMap((candidate) => [
+          ...candidate.supporting_evidence_ids,
+          ...candidate.opposing_evidence_ids,
+        ]);
+        const comparisonEvidence = proposed.comparison.evaluations.flatMap((evaluation) => evaluation.evidence_ids);
+        const unknownEvidence = [...new Set([...candidateEvidence, ...comparisonEvidence])].filter(
+          (id) => !frozenEvidenceIds.has(id),
+        );
+        if (unknownEvidence.length > 0) {
+          throw new ContractError(
+            `hypothesis cites evidence outside its Research Artifacts: ${unknownEvidence.join(", ")}`,
+          );
         }
         return hypothesisSchema.parse({ ...proposed, research_artifact_ids: research.map((item) => item.id) });
       };
@@ -320,14 +356,44 @@ function acceptFor(
 
     case "research-plan":
       return (raw) => {
-        const candidate = researchPlanSchema.parse({
+        const proposed = researchPlanSchema.parse({
           ...researchPlanSchema.parse(raw),
           input_artifact_ids: context.inputArtifactIds,
         });
+        const hypothesis = inputsOfType(context, "hypothesis").at(-1)?.content as
+          | {
+              candidates?: Array<{ candidate_id: string }>;
+              comparison?: { selected_candidate_id?: string };
+            }
+          | undefined;
+        const candidateIds = new Set(hypothesis?.candidates?.map((item) => item.candidate_id) ?? []);
+        const selectedCandidateId = hypothesis?.comparison?.selected_candidate_id;
+        const candidate = selectedCandidateId
+          ? researchPlanSchema.parse({
+              ...proposed,
+              execution_plan: {
+                ...proposed.execution_plan,
+                predictions: proposed.execution_plan.predictions.map((prediction) => ({
+                  ...prediction,
+                  candidate_id: selectedCandidateId,
+                })),
+              },
+            })
+          : proposed;
+        const authoredCandidateIds = proposed.execution_plan.predictions.map((item) => item.candidate_id);
+        if (selectedCandidateId && authoredCandidateIds.some((id) => id !== selectedCandidateId)) {
+          onDrift({
+            artifactType: proposed.artifact_type,
+            field: "execution_plan.predictions.candidate_id",
+            before: authoredCandidateIds.join(", "),
+            after: selectedCandidateId,
+          });
+        }
         // 领域门禁与可追溯性一次报全：每个业务 Attempt 只有一次纠错机会，
         // 分两次抛会让模型修好前一半，在后一半上撞死。
         const issues = [
           ...researchPlanQualityIssues(candidate),
+          ...researchPlanExecutionIssues(candidate, candidateIds, selectedCandidateId),
           ...upstreamTraceabilityIssues(candidate, frozenEvidenceOf(context)),
         ];
         if (issues.length > 0) throw new ContractError(issues.join("；"));
@@ -404,7 +470,7 @@ export type TaskRunResult = {
  */
 export async function runTask(
   context: TaskContext,
-  options: { execute: StageExecutor; ledger?: EvidenceLedger },
+  options: { execute: StageExecutor; ledger?: EvidenceLedger; onTrace?: (event: RunTraceEvent) => void },
 ): Promise<TaskRunResult> {
   const ledger = options.ledger ?? new EvidenceLedger();
   const { agents, capture, planCapture, reviewCapture } = createRoles(ledger);
@@ -463,7 +529,9 @@ export async function runTask(
       }
       const returned = await options.execute({
         runId: context.runId,
+        taskId: context.taskId,
         role: context.role,
+        task: context.goal,
         agent,
         timeoutMs: remaining,
         input: buildStageInput({
@@ -478,6 +546,7 @@ export async function runTask(
         onUsage: (usage) => {
           spent = addUsage(spent, usage);
         },
+        onTrace: options.onTrace,
       });
       // researcher 交作业走合成工具，最终文本只是收尾回执，产物在上报窗口里。
       candidate = outputCapture ? capturedArtifact(outputCapture, context.role) : returned;
@@ -488,17 +557,18 @@ export async function runTask(
         drift,
       };
     } catch (error) {
-      spent = addUsage(spent, (error as { usage?: StageUsage }).usage);
-      if (round === 1 || !(error instanceof ContractError || (error as Error)?.name === "ZodError")) {
+      const failure = error instanceof Error ? error : new Error(String(error), { cause: error });
+      spent = addUsage(spent, (error as { usage?: StageUsage } | null)?.usage);
+      if (round === 1 || !(failure instanceof ContractError || failure.name === "ZodError")) {
         // 把纠错次数挂到异常上：失败的 Attempt 也要记准它试过几次
-        (error as { corrections?: number }).corrections = corrections;
+        (failure as { corrections?: number }).corrections = corrections;
         // 用量同理：失败的 Attempt 也花了钱，记账的一层在上面（store.failAttempt）。
-        if (spent) (error as { usage?: StageUsage }).usage = spent;
-        throw error;
+        if (spent) (failure as { usage?: StageUsage }).usage = spent;
+        throw failure;
       }
       corrections += 1;
       correction = {
-        issue: error instanceof Error ? error.message : String(error),
+        issue: failure.message,
         candidate,
         // 独立的第二次 Runner 调用看不到首轮 tool conversation，必须显式交还已冻结检索。
         frozenSearches:

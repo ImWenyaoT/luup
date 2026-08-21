@@ -6,7 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ApiError, createRun, fetchArtifact, fetchRun, subscribe } from "./api";
 import { ArtifactView } from "./artifact-view";
+import { FeedbackHistory } from "./feedback-history";
 import { Settings } from "./settings";
+import { SubagentLineage } from "./subagent-lineage";
 import { Trajectory } from "./trajectory";
 import { TERMINAL, type Artifact, type Snapshot } from "./types";
 
@@ -174,7 +176,9 @@ export function App() {
       {snapshot !== null && (
         <>
           <RunHeader snapshot={snapshot} />
+          <SubagentLineage snapshot={snapshot} />
           <Trajectory snapshot={snapshot} />
+          <FeedbackHistory snapshot={snapshot} />
           <Artifacts snapshot={snapshot} onOpen={(id) => void openArtifact(id)} />
           {artifact !== null && <ArtifactView artifact={artifact} />}
         </>

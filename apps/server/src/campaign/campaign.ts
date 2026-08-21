@@ -41,6 +41,19 @@ export type CampaignFacts = {
   references: readonly string[];
 };
 
+/** 记忆读取的状态。`empty` 只能表示「文件可读但没有记录」，不是 I/O 失败。 */
+export type CampaignReadResult = {
+  status: "not_applicable" | "disabled" | "empty" | "available" | "unavailable";
+  entries: string[];
+  reason: string | null;
+};
+
+/** 记忆写入的状态。写入失败是 Run 的旁路降级，不应改写 Run 终态。 */
+export type CampaignWriteResult = {
+  status: "disabled" | "written" | "unavailable";
+  reason: string | null;
+};
+
 /** 只有 completed 才算交付。`review_rejected` 与 `failed` 一样是「这条路没走通」。 */
 const verdictOf = (status: CampaignFacts["status"]) => (status === "completed" ? "SUCCESS" : "FAILED");
 
@@ -90,14 +103,27 @@ function pageSeed(questionId: number): string {
 }
 
 /** 读旧内容后原子替换整页，使并发读者不会看到半条追加记录。 */
-function append(path: string, block: string, seed: string, reportError: (error: unknown) => void): void {
+type AppendResult = { status: "written" | "unavailable"; reason: string | null };
+
+function errorReason(error: unknown): string {
+  if (typeof error === "object" && error !== null) {
+    const code = "code" in error && typeof error.code === "string" ? error.code : null;
+    const name = "name" in error && typeof error.name === "string" ? error.name : null;
+    if (code && name) return `${name}:${code}`;
+    if (code) return code;
+    if (name) return name;
+  }
+  return error instanceof Error ? error.name : "unknown_error";
+}
+
+function append(path: string, block: string, seed: string, reportError: (error: unknown) => void): AppendResult {
   let existing = seed;
   try {
     existing = readFileSync(path, "utf8");
   } catch (error) {
     if (!isMissing(error)) {
       reportError(error);
-      return;
+      return { status: "unavailable", reason: errorReason(error) };
     }
   }
   if (existing && !existing.endsWith("\n")) existing += "\n";
@@ -108,11 +134,13 @@ function append(path: string, block: string, seed: string, reportError: (error: 
     renameSync(temporary, path);
   } catch (error) {
     reportError(error);
+    return { status: "unavailable", reason: errorReason(error) };
   }
+  return { status: "written", reason: null };
 }
 
 function isMissing(error: unknown): boolean {
-  return (error as NodeJS.ErrnoException | null)?.code === "ENOENT";
+  return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
 }
 
 /** 战役记忆的读写通道。构造它就是「记忆开」，不构造（传 null）就是消融臂。 */
@@ -122,7 +150,7 @@ export class CampaignMemory {
   readonly #reportError: (error: unknown) => void;
 
   constructor(options: {
-    /** `memory/` 目录。不存在就整条通道静默失效 —— 删掉它流水线必须照常跑通。 */
+    /** `memory/` 目录。不存在表示显式停用；存在但不可读写则返回 unavailable。 */
     memoryDir: string;
     /** run 的仓库相对定位符。战役记忆比写它的 checkout 活得久，不能记绝对路径。 */
     locate: (runId: string) => string;
@@ -134,43 +162,70 @@ export class CampaignMemory {
     this.#reportError = options.reportError ?? ((error) => console.error("campaign memory failed", error));
   }
 
-  /** 目录缺席即整条通道失效。这是「可删除性红线」在代码里的落点。 */
-  #enabled(): boolean {
+  #directoryStatus(): { status: "disabled" | "available" | "unavailable"; reason: string | null } {
     try {
-      return statSync(this.#dir).isDirectory();
+      if (!statSync(this.#dir).isDirectory()) return { status: "unavailable", reason: "memory_dir_not_directory" };
+      return { status: "available", reason: null };
     } catch (error) {
-      if (!isMissing(error)) this.#reportError(error);
-      return false;
+      if (isMissing(error)) return { status: "disabled", reason: null };
+      this.#reportError(error);
+      return { status: "unavailable", reason: errorReason(error) };
     }
   }
 
   /** 同题最近若干条记录，供新 run 开局避开已知死路。零解析、零模型。 */
-  readPriorAttempts(questionId: number | null): string[] {
-    if (questionId === null || !this.#enabled()) return [];
+  readPriorAttempts(questionId: number | null): CampaignReadResult {
+    if (questionId === null) return { status: "not_applicable", entries: [], reason: null };
+    const directory = this.#directoryStatus();
+    if (directory.status === "disabled") return { status: "disabled", entries: [], reason: null };
+    if (directory.status === "unavailable") {
+      return { status: "unavailable", entries: [], reason: directory.reason };
+    }
     let text: string;
     try {
       text = readFileSync(join(this.#dir, "questions", `q${questionId}.md`), "utf8");
     } catch (error) {
-      if (!isMissing(error)) this.#reportError(error);
-      return [];
+      if (isMissing(error)) return { status: "empty", entries: [], reason: null };
+      this.#reportError(error);
+      return { status: "unavailable", entries: [], reason: errorReason(error) };
     }
     const entries = text
       .split("\n")
       .map((line) => line.trim())
       .filter((line) => line.startsWith(ENTRY_PREFIX));
-    return entries.slice(-PRIOR_ATTEMPT_LIMIT);
+    const limited = entries.slice(-PRIOR_ATTEMPT_LIMIT);
+    return { status: limited.length > 0 ? "available" : "empty", entries: limited, reason: null };
   }
 
   /** run 终态后追加一行。总日志必写，题页在有题号时同步。 */
-  recordRun(facts: CampaignFacts, now: Date = new Date()): void {
-    if (!this.#enabled()) return;
-    append(join(this.#dir, "log.md"), formatLogEntry(facts, this.#locate(facts.runId), now), "", this.#reportError);
-    if (facts.questionId === null) return;
-    append(
-      join(this.#dir, "questions", `q${facts.questionId}.md`),
-      formatQuestionEntry(facts, now),
-      pageSeed(facts.questionId),
-      this.#reportError,
-    );
+  recordRun(facts: CampaignFacts, now: Date = new Date()): CampaignWriteResult {
+    const directory = this.#directoryStatus();
+    if (directory.status === "disabled") return { status: "disabled", reason: null };
+    if (directory.status === "unavailable") return { status: "unavailable", reason: directory.reason };
+
+    let locator: string;
+    try {
+      locator = this.#locate(facts.runId);
+    } catch (error) {
+      this.#reportError(error);
+      return { status: "unavailable", reason: errorReason(error) };
+    }
+
+    const results = [append(join(this.#dir, "log.md"), formatLogEntry(facts, locator, now), "", this.#reportError)];
+    if (facts.questionId !== null) {
+      results.push(
+        append(
+          join(this.#dir, "questions", `q${facts.questionId}.md`),
+          formatQuestionEntry(facts, now),
+          pageSeed(facts.questionId),
+          this.#reportError,
+        ),
+      );
+    }
+    const failed = results.filter((result) => result.status === "unavailable");
+    if (failed.length > 0) {
+      return { status: "unavailable", reason: failed.map((result) => result.reason ?? "unknown_error").join(",") };
+    }
+    return { status: "written", reason: null };
   }
 }

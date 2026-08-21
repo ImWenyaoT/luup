@@ -1,12 +1,35 @@
 import { EvidenceLedger } from "./agent/evidence.ts";
 import { classifyFailure } from "./agent/failures.ts";
-import type { EvidenceReview, Research, ResearchPlan, Review, Role } from "./agent/contracts.ts";
+import type { RunTraceEvent } from "./agent/run-trace.ts";
+import type { DomainArtifact, EvidenceReview, Research, ResearchPlan, Review, Role } from "./agent/contracts.ts";
+import {
+  evaluationRoundSchema,
+  evaluationUsageTokens,
+  knownDelta,
+  REVIEW_RUBRIC_RATIONALE,
+  REVIEW_RUBRIC_VERSION,
+  reviewScoreTotal,
+} from "./eval/iteration.ts";
 import type { StageUsage } from "./executor.ts";
 import { runTask, type StageExecutor } from "./roles.ts";
 import type { CampaignMemoryPort, RunStore, Verifier } from "./seams/index.ts";
 import type { StoredInput, TaskContext, UsageFacts } from "./store/contracts.ts";
 import type { StoredArtifact } from "./store/store.ts";
 import { createReferenceVerifier, verificationFailureCode } from "./verify/verifier.ts";
+
+type CampaignReadResult = ReturnType<CampaignMemoryPort["readPriorAttempts"]>;
+type CampaignWriteResult = ReturnType<CampaignMemoryPort["recordRun"]>;
+
+function campaignErrorReason(error: unknown): string {
+  if (typeof error === "object" && error !== null) {
+    const code = "code" in error && typeof error.code === "string" ? error.code : null;
+    const name = "name" in error && typeof error.name === "string" ? error.name : null;
+    if (code && name) return `${name}:${code}`;
+    if (code) return code;
+    if (name) return name;
+  }
+  return error instanceof Error ? error.name : "unknown_error";
+}
 
 /** Attempt 失败时抛，用来中断五阶段流程。失败本身已经落库。 */
 class AttemptFailed extends Error {
@@ -82,21 +105,51 @@ export class Harness {
    */
   async execute(runId: string): Promise<RunOutcome> {
     const questionId = this.#store.science125Id(runId);
-    const priorAttempts = this.#memory?.readPriorAttempts(questionId) ?? [];
+    let memoryRead: CampaignReadResult | null = null;
+    if (this.#memory) {
+      try {
+        memoryRead = this.#memory.readPriorAttempts(questionId);
+      } catch (error) {
+        memoryRead = { status: "unavailable", entries: [], reason: campaignErrorReason(error) };
+      }
+    }
+    const priorAttempts = memoryRead?.entries ?? [];
     this.#store.emit(runId, "campaign.prior_attempts", {
       question_id: questionId,
-      count: priorAttempts.length,
+      // I/O 不可用时「0」不是事实；null 让离线指标把它排除为 unknown。
+      count: memoryRead?.status === "unavailable" ? null : priorAttempts.length,
     });
+    if (memoryRead?.status === "unavailable") {
+      this.#store.emit(runId, "campaign.memory_degraded", {
+        phase: "read",
+        status: memoryRead.status,
+        reason: memoryRead.reason,
+      });
+    }
     const outcome = await this.#pipeline(runId, priorAttempts);
     const plan = this.#store.latestArtifact(runId, "research-plan")?.content as ResearchPlan | undefined;
-    this.#memory?.recordRun({
-      runId,
-      questionId,
-      status: outcome.status,
-      failureCode: outcome.errorCode,
-      title: plan?.paper_title ?? null,
-      references: plan?.references ?? [],
-    });
+    if (this.#memory) {
+      let memoryWrite: CampaignWriteResult;
+      try {
+        memoryWrite = this.#memory.recordRun({
+          runId,
+          questionId,
+          status: outcome.status,
+          failureCode: outcome.errorCode,
+          title: plan?.paper_title ?? null,
+          references: plan?.references ?? [],
+        });
+      } catch (error) {
+        memoryWrite = { status: "unavailable", reason: campaignErrorReason(error) };
+      }
+      if (memoryWrite.status === "unavailable") {
+        this.#store.emit(runId, "campaign.memory_degraded", {
+          phase: "write",
+          status: memoryWrite.status,
+          reason: memoryWrite.reason,
+        });
+      }
+    }
     return outcome;
   }
 
@@ -145,8 +198,17 @@ export class Harness {
       const domainInputs = [...research, ...hypotheses, evidenceReview].map(toInput);
       let plan!: StoredArtifact;
       let review!: StoredArtifact;
+      let previousEvaluation: {
+        scoreTotal: number;
+        limitations: number;
+        roundCostTokens: number | null;
+        rawPlanArtifactId: string;
+        rawReviewArtifactId: string;
+      } | null = null;
 
       for (let round = 1; round <= 2; round += 1) {
+        const evaluationCostBefore = evaluationUsageTokens(this.#store.eventsAfter(runId, 0));
+        const previousPlan = plan;
         const plannerInputs = round === 1 ? domainInputs : [...domainInputs, toInput(plan), toInput(review)];
         plan = await this.#step(
           runId,
@@ -155,6 +217,17 @@ export class Harness {
           plannerInputs,
           round === 1 ? "生成可验证研究计划" : "根据冻结 Review Artifact 修订研究计划",
         );
+        const changedFields = previousPlan ? changedTopLevelFields(previousPlan.content, plan.content).join(",") : "";
+        if (previousPlan) {
+          this.#store.emit(runId, "revision.applied", {
+            round,
+            source: "model_reviewer",
+            feedback_source: "auto",
+            from_artifact_id: previousPlan.id,
+            to_artifact_id: plan.id,
+            changed_fields: changedFields,
+          });
+        }
 
         review = await this.#step(
           runId,
@@ -165,7 +238,47 @@ export class Harness {
         );
 
         const verdict = review.content as Review;
+        const evaluationCostAfter = evaluationUsageTokens(this.#store.eventsAfter(runId, 0));
+        const roundCostTokens = knownDelta(evaluationCostAfter, evaluationCostBefore);
+        const scoreAfterTotal = reviewScoreTotal(verdict);
+        const scoreBeforeTotal = previousEvaluation?.scoreTotal ?? null;
+        const limitationsAfter = verdict.weaknesses.length;
+        const limitationsBefore = previousEvaluation?.limitations ?? null;
         if (verdict.accepted) {
+          this.#store.emit(
+            runId,
+            "evaluation.round",
+            evaluationRoundSchema.parse({
+              evaluator: "model_reviewer",
+              target: "research-plan",
+              sample: "one run / one research plan",
+              sample_size: 1,
+              rubric_version: REVIEW_RUBRIC_VERSION,
+              scientific_rationale: REVIEW_RUBRIC_RATIONALE,
+              round,
+              phase: previousEvaluation ? "revision" : "raw",
+              action: "accept",
+              feedback_source: "auto",
+              feedback_artifact_id: null,
+              feedback_count: verdict.feedback.length,
+              raw_plan_artifact_id: previousEvaluation?.rawPlanArtifactId ?? plan.id,
+              raw_review_artifact_id: previousEvaluation?.rawReviewArtifactId ?? review.id,
+              plan_artifact_id: plan.id,
+              review_artifact_id: review.id,
+              changed_fields: changedFields,
+              score_before_total: scoreBeforeTotal,
+              score_after_total: scoreAfterTotal,
+              score_delta_total: knownDelta(scoreAfterTotal, scoreBeforeTotal),
+              round_cost_tokens: roundCostTokens,
+              cost_delta_tokens: knownDelta(roundCostTokens, previousEvaluation?.roundCostTokens ?? null),
+              limitations_before_count: limitationsBefore,
+              limitations_after_count: limitationsAfter,
+              limitation_delta_count: knownDelta(limitationsAfter, limitationsBefore),
+              stop_reason: "reviewer_accepted",
+              retry_reason: null,
+              rollback_reason: null,
+            }),
+          );
           // Reviewer 说好只是另一个模型的判断。终态之前还有一道不问模型的验收：
           // 计划引的文献必须真的存在，而且就是本 run 检索并冻结下来的那几篇。
           const verification = await this.#verifyReferences({
@@ -193,11 +306,74 @@ export class Harness {
           this.#store.finishRun(runId, "completed", { finalArtifactId: plan.id });
           return { status: "completed", finalArtifactId: plan.id, errorCode: null };
         }
+        const shouldRevise = round < 2 && verdict.suggested_successor_roles.includes("research-plan");
+        const stopReason = shouldRevise
+          ? null
+          : round >= 2
+            ? "revision_budget_exhausted"
+            : "reviewer_did_not_request_research_plan";
+        const retryReason = shouldRevise ? "reviewer_requested_revision" : null;
+        const priorEvaluation = previousEvaluation;
+        this.#store.emit(
+          runId,
+          "evaluation.round",
+          evaluationRoundSchema.parse({
+            evaluator: "model_reviewer",
+            target: "research-plan",
+            sample: "one run / one research plan",
+            sample_size: 1,
+            rubric_version: REVIEW_RUBRIC_VERSION,
+            scientific_rationale: REVIEW_RUBRIC_RATIONALE,
+            round,
+            phase: previousEvaluation ? "revision" : "raw",
+            action: shouldRevise ? "revise" : "stop",
+            feedback_source: "auto",
+            feedback_artifact_id: review.id,
+            feedback_count: verdict.feedback.length,
+            raw_plan_artifact_id: previousEvaluation?.rawPlanArtifactId ?? plan.id,
+            raw_review_artifact_id: previousEvaluation?.rawReviewArtifactId ?? review.id,
+            plan_artifact_id: plan.id,
+            review_artifact_id: review.id,
+            changed_fields: changedFields,
+            score_before_total: scoreBeforeTotal,
+            score_after_total: scoreAfterTotal,
+            score_delta_total: knownDelta(scoreAfterTotal, scoreBeforeTotal),
+            round_cost_tokens: roundCostTokens,
+            cost_delta_tokens: knownDelta(roundCostTokens, previousEvaluation?.roundCostTokens ?? null),
+            limitations_before_count: limitationsBefore,
+            limitations_after_count: limitationsAfter,
+            limitation_delta_count: knownDelta(limitationsAfter, limitationsBefore),
+            stop_reason: stopReason,
+            retry_reason: retryReason,
+            rollback_reason: null,
+          }),
+        );
+        this.#store.emit(runId, "feedback.received", {
+          source: "model_reviewer",
+          feedback_source: "auto",
+          target: "research-plan",
+          round,
+          action: shouldRevise ? "revise" : "stop",
+          feedback_count: verdict.feedback.length,
+          feedback_artifact_id: review.id,
+          retry_reason: retryReason,
+          stop_reason: stopReason,
+          rollback_reason: null,
+        });
         // 第二次拒绝、或者 Reviewer 认为一次修订解决不了，都必须终止。
-        if (round === 2 || !verdict.suggested_successor_roles.includes("research-plan")) {
+        if (!shouldRevise) {
           this.#store.finishRun(runId, "review_rejected", { errorCode: "review_rejected" });
           return { status: "review_rejected", finalArtifactId: null, errorCode: "review_rejected" };
         }
+        const rawPlanArtifactId: string = priorEvaluation === null ? plan.id : priorEvaluation.rawPlanArtifactId;
+        const rawReviewArtifactId: string = priorEvaluation === null ? review.id : priorEvaluation.rawReviewArtifactId;
+        previousEvaluation = {
+          scoreTotal: scoreAfterTotal,
+          limitations: limitationsAfter,
+          roundCostTokens,
+          rawPlanArtifactId,
+          rawReviewArtifactId,
+        };
       }
       throw new Error("unreachable pipeline state");
     } catch (error) {
@@ -229,7 +405,11 @@ export class Harness {
     };
     const ledger = this.#createLedger({ runId, attemptId });
     try {
-      const result = await runTask(context, { execute: this.#execute, ledger });
+      const result = await runTask(context, {
+        execute: this.#execute,
+        ledger,
+        onTrace: (event) => this.#store.emit(runId, `sdk.trace.${event.kind}`, traceEventPayload(event)),
+      });
       // 覆写救回了这个 Attempt，所以它必须留痕：产物发布之前先把「代码替掉了模型写的哪个
       // 字段」落成事实，否则 Artifact 看上去永远是对的，漂移发生过几次谁也说不出来。
       for (const item of result.drift) {
@@ -263,7 +443,12 @@ export class Harness {
     } catch (error) {
       const failure = classifyFailure(error);
       const errorType = error instanceof Error ? error.name : "Error";
-      const corrections = (error as { corrections?: number }).corrections ?? 0;
+      const corrections =
+        typeof error === "object" &&
+        error !== null &&
+        typeof (error as { corrections?: unknown }).corrections === "number"
+          ? (error as { corrections: number }).corrections
+          : 0;
       // 失败也花了钱。用量由 executor 挂在它抛出的分类异常上、由 runTask 沿两次调用累加，
       // 到这里才落库 —— 不透传就等于把失败的成本从账上抹掉，跑完 125 题算总账时
       // 差的正是最该被看见的那一块。拿不到就传 null，绝不用零顶替。
@@ -278,6 +463,14 @@ export class Harness {
       throw new AttemptFailed(failure.code, failure.reason);
     }
   }
+}
+
+function changedTopLevelFields(before: DomainArtifact, after: DomainArtifact): string[] {
+  const beforeRecord = before as unknown as Record<string, unknown>;
+  const afterRecord = after as unknown as Record<string, unknown>;
+  return [...new Set([...Object.keys(beforeRecord), ...Object.keys(afterRecord)])]
+    .filter((field) => JSON.stringify(beforeRecord[field]) !== JSON.stringify(afterRecord[field]))
+    .sort();
 }
 
 /** 漂移记录里的正文摘要。
@@ -301,6 +494,71 @@ function usageFacts(role: Role, usage: StageUsage | null | undefined): UsageFact
     outputTokens: usage.outputTokens,
     totalTokens: usage.totalTokens,
   };
+}
+
+/** Runner hooks 的结构化事实先在控制面压平，再进入统一事件写者。
+ *
+ * 事件内不放 prompt、模型输出、工具参数或工具结果；input 只留长度/hash/字段名。
+ * 数组改成稳定的逗号串，公共投影的标量闸因此不会意外放行整棵内部对象。
+ */
+function traceEventPayload(event: RunTraceEvent): Record<string, unknown> {
+  switch (event.kind) {
+    case "started":
+      return {
+        trace_id: event.trace_id,
+        role: event.role,
+        agent: event.agent,
+        model: event.model,
+        task: event.task,
+        input_encoding: event.input_summary.encoding,
+        input_chars: event.input_summary.chars,
+        input_sha256: event.input_summary.sha256,
+        input_fields: event.input_summary.top_level_fields.join(","),
+        structured_constraint: event.structured_constraint,
+        available_tools: event.available_tools.join(","),
+      };
+    case "agent_started":
+      return {
+        trace_id: event.trace_id,
+        agent: event.agent,
+        turn: event.turn,
+        input_items: event.input_items,
+      };
+    case "agent_ended":
+      return { trace_id: event.trace_id, agent: event.agent, turn: event.turn };
+    case "tool_started":
+      return { trace_id: event.trace_id, agent: event.agent, tool: event.tool, ordinal: event.ordinal };
+    case "tool_ended":
+      return {
+        trace_id: event.trace_id,
+        agent: event.agent,
+        tool: event.tool,
+        ordinal: event.ordinal,
+        status: event.status,
+        duration_ms: event.duration_ms,
+      };
+    case "ended":
+      return {
+        trace_id: event.trace_id,
+        role: event.role,
+        outcome: event.outcome,
+        stop_reason: event.stop_reason,
+        usage_requests: event.usage.requests,
+        usage_input_tokens: event.usage.input_tokens,
+        usage_output_tokens: event.usage.output_tokens,
+        usage_total_tokens: event.usage.total_tokens,
+        usage_tool_calls: event.usage.tool_calls,
+        trace_events: event.trace_events,
+        truncated: event.truncated,
+      };
+    case "callback_error":
+      return {
+        trace_id: event.trace_id,
+        role: event.role,
+        callback: event.callback,
+        error_type: event.error_type,
+      };
+  }
 }
 
 function toInput(artifact: StoredArtifact): StoredInput {

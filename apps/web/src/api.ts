@@ -81,6 +81,10 @@ export function subscribe(runId: string, from: number, onTick: () => void): () =
   for (const kind of [
     "run.created",
     "attempt.started",
+    "subagent.started",
+    "subagent.ended",
+    "feedback.received",
+    "revision.applied",
     "tool.evidence_recorded",
     "sdk.structured_correction",
     "artifact.published",

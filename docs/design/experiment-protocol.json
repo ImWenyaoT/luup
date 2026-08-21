@@ -202,6 +202,23 @@
       },
       "unchanged": "各 cohort 的围栏语义与允许用途（过程事实可引、目标指标不可并入正式读数）维持修订 #3/#4 所记。测量、终态判定、归桶、统计、`arms`、`phase_b_subset`、`metrics`、`declarations` 一字未动。",
       "effect_on_numbers": "不触碰任何数字：被删 db 的数字本就不在正式读数内，转录聚合已标注运营参考身份。"
+    },
+    {
+      "date": "2026-08-22",
+      "before_phase_a": false,
+      "before_definitive_phase_a": true,
+      "before_any_reading": false,
+      "recorded_when": "**历史 pilot/v2/v3 已读、正式全量 Science-125 尚未启动。** 本轮只运行了确定性测试、125 题 dry-run 与一条不带 science125_id 的付费 free-form canary；它们均不得并入正式 Phase A。",
+      "registered_commit_amended": null,
+      "summary": "正式批重启前的执行合同升级：运行时由 Node/pnpm/node:sqlite 全量迁为 Bun 1.4/Bun workspace/bun:sqlite；保留 @openai/agents 0.16 + Qwen 百炼 seam。产物合同新增多个候选假设、结构化研究边界与可执行研究计划；RunTrace、BatchManifest 与失败诊断成为 SQLite 事实。",
+      "changes": {
+        "runtime": "所有根入口改为 `bun run`，正式 live batch 在打开数据库前强制 Bun 1.4.0；TypeScript 由 Bun 原生执行，无后端构建或 transpile 产物。旧修订中的 pnpm/node 命令均作为历史坐标保留，不再是当前执行入口。",
+        "artifact_contract": "Research 新增研究对象、范围、变量、已有认识、争议、未知、知识缺口与约束；Hypothesis 要求至少两个可区分候选并保留支持/反对证据、替代解释、不确定性和比较筛选；ResearchPlan 新增预测、数据与条件、有序步骤、分析规则、结果分支、停止、回退和补证条件。候选仍是待验证主张，不因被选中而成为结论。",
+        "trace_and_failure_facts": "每个角色调用新增脱敏 SDK RunTrace（模型、任务、输入摘要、结构化约束、工具 callId 生命周期、终态与 usage）；晚到证据、非法状态迁移、旁路 callback、campaign unavailable、SSE/未知公共投影均显式记为 dropped/rejected/degraded/unsupported，不把 unknown 读成空或零。",
+        "batch_manifest": "每批创建或用 `--manifest-id` 恢复 durable manifest；每题 success/partial/failure/human_review 必须与同题 SQLite Run 终态一致，重复、遗漏、无效关联使完整性 gate 失败。`bun run batch --ids 1-125 --dry-run` 只规划且零模型调用。"
+      },
+      "unchanged": "正式 Phase A 仍必须使用全新数据库运行 1–125 全集；arms、phase_b_subset、统计设计、双分母、失败桶、熔断阈值、最多两轮补证/修订与不作显著性主张的纪律不变。历史 pilot/v2/v3、free-form canary 和确定性运行全部围出正式读数。",
+      "effect_on_numbers": "这些合同会改变未来正式批的交付率、失败分布、token 与 corrections，方向未知；没有任何历史结果被重写或合并。正式全量批尚未启动。"
     }
   ],
   "interpretation": "这是对已记录架构取舍的证据，不是普适优越性主张。结论的形状只能是「在这一条 harness commit、这一个题库、这一条串行顺序下，跨 run 记忆让交付率朝某个方向动了多少」，不能读成「记忆机制优于无记忆」或反过来。Do not claim superiority from one successful trace, one direction, or an unpriced token count.",

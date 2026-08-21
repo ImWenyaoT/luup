@@ -14,12 +14,12 @@
  * 这里做的是跨 Run 的率与配对比较。两份文件各自重写 URL 归一化之类的小工具，
  * 理由同 scoring.ts 顶部所述 —— 评估口径必须比被评的代码更稳定。
  *
- *     node --experimental-strip-types src/eval/metrics.ts --db outputs/runtime/typescript-runs.db
+ *     bun run eval --db outputs/runtime/typescript-runs.db
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { Database } from "bun:sqlite";
 import { parseArgs } from "node:util";
 
 /** 不反映提案质量的失败类别：环境、供应商、凭据、超时 —— 换个模型再跑一遍也修不掉，
@@ -96,14 +96,26 @@ export type RunFacts = {
  * 注入条数。没有注入事件的 run（Wave 1 之前建的库）算不出泄漏，不据此判失效，
  * 但会在 `runsWithoutInjectionEvent` 里单列，读数的人自己决定信不信。
  */
-export function ablationEffective(facts: RunFacts): boolean {
-  return facts.memoryArm !== "off" || (facts.injected ?? 0) === 0;
+export function ablationEffective(facts: RunFacts): boolean | null {
+  if (facts.memoryArm !== "off") return true;
+  if (facts.injected === null) return null;
+  return facts.injected === 0;
 }
 
 // --- 从 SQLite 读事实 ---------------------------------------------------
 
 const text = (value: unknown): string | null => (typeof value === "string" && value ? value : null);
 const count = (value: unknown): number => (typeof value === "number" ? value : 0);
+
+function injectionCount(row: Row | undefined): number | null {
+  if (!row) return null;
+  try {
+    const value = (JSON.parse(String(row.payload_json)) as { count?: unknown }).count;
+    return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+  } catch {
+    return null;
+  }
+}
 
 /** 折叠空白并转小写：判断两次检索是不是「同一次查询」。 */
 export function normalizeQuery(value: string): string {
@@ -127,7 +139,7 @@ function cohortLabel(raw: unknown): string {
 
 /** 把一个库里所有 Run 读成 RunFacts。只读打开，绝不会写到被评的库。 */
 export function loadRunFacts(dbPath: string): RunFacts[] {
-  const db = new DatabaseSync(dbPath, { readOnly: true });
+  const db = new Database(dbPath, { readonly: true });
   try {
     // memory_arm 是 Wave 2 才补的列。评估是只读的，补不了列，所以缺列时读 null
     // 而不是让整份报告炸掉 —— 老库仍要能被读出交付率。
@@ -147,7 +159,7 @@ export function loadRunFacts(dbPath: string): RunFacts[] {
   }
 }
 
-function collectRunFacts(db: DatabaseSync, run: Row): RunFacts {
+function collectRunFacts(db: Database, run: Row): RunFacts {
   const runId = String(run.id);
   const attempts = db.prepare("SELECT role, status, corrections FROM attempts WHERE run_id = ?").all(runId) as Row[];
   const queries = (
@@ -178,7 +190,7 @@ function collectRunFacts(db: DatabaseSync, run: Row): RunFacts {
     rejected: run.status === "review_rejected",
     arxivCalls: queries.length,
     distinctQueries: new Set(queries).size,
-    injected: injection ? count(JSON.parse(String(injection.payload_json)).count) : null,
+    injected: injectionCount(injection),
   };
 }
 
@@ -297,7 +309,8 @@ export function memoryInjection(facts: readonly RunFacts[]) {
       unlabelled: known.filter((item) => item.memoryArm === null).reduce((sum, item) => sum + item.injected!, 0),
     },
     // 消融失效：off 臂却读到了记忆。这些 run 不是对照，必须剔出配对。
-    ablationIneffectiveRuns: facts.filter((item) => !ablationEffective(item)).map((item) => item.runId),
+    ablationIneffectiveRuns: facts.filter((item) => ablationEffective(item) === false).map((item) => item.runId),
+    ablationUnknownRuns: facts.filter((item) => ablationEffective(item) === null).map((item) => item.runId),
   };
 }
 
@@ -394,11 +407,16 @@ export function memoryArmComparison(facts: readonly RunFacts[]): McNemar | null 
   const excluded: McNemar["excludedRuns"] = [];
   for (const [questionId, group] of byQuestion(facts)) {
     for (const item of group) {
-      if (item.memoryArm === "off" && !ablationEffective(item)) {
-        excluded.push({ questionId, runId: item.runId, reason: "消融失效：off 臂仍被注入跨 run 记忆" });
+      const effective = ablationEffective(item);
+      if (item.memoryArm === "off" && effective !== true) {
+        excluded.push({
+          questionId,
+          runId: item.runId,
+          reason: effective === false ? "消融失效：off 臂仍被注入跨 run 记忆" : "消融状态未知：缺少有效注入事件",
+        });
       }
     }
-    const off = group.filter((item) => item.memoryArm === "off" && ablationEffective(item)).at(-1);
+    const off = group.filter((item) => item.memoryArm === "off" && ablationEffective(item) === true).at(-1);
     const on = group.filter((item) => item.memoryArm === "on").at(-1);
     if (!off || !on) continue;
     rows.push({

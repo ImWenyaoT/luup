@@ -1,4 +1,4 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { Database } from "bun:sqlite";
 
 export const RUN_STATUSES = ["running", "completed", "review_rejected", "failed"] as const;
 export const ATTEMPT_STATUSES = ["running", "completed", "failed"] as const;
@@ -94,6 +94,24 @@ CREATE TABLE IF NOT EXISTS events (
   created_at TEXT NOT NULL,
   UNIQUE(run_id, version)
 );
+
+-- A batch manifest is the durable expected set for one Science-125 execution.
+-- Records intentionally have no uniqueness constraint: a duplicate is evidence of
+-- an invalid batch and must remain visible to the completeness gate, not be ignored.
+CREATE TABLE IF NOT EXISTS batch_manifests (
+  id TEXT PRIMARY KEY,
+  expected_ids_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS batch_manifest_records (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  manifest_id TEXT NOT NULL REFERENCES batch_manifests(id),
+  question_id INTEGER NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('success', 'partial', 'failure', 'human_review')),
+  run_id TEXT,
+  created_at TEXT NOT NULL
+);
 `;
 
 /** 后加的列。`CREATE TABLE IF NOT EXISTS` 对已存在的库是空操作，只补列这一条路。 */
@@ -103,7 +121,7 @@ const ADDED_RUN_COLUMNS: ReadonlyArray<[string, string]> = [
   ["memory_arm", "TEXT"],
 ];
 
-export function createSchema(db: DatabaseSync): void {
+export function createSchema(db: Database): void {
   db.exec(DDL);
   // 只补列、不改列、不删列：批跑要能接着跑迁移期已经建好的库，
   // 而 runs 里已经落盘的事实不因为加了两列就重写。

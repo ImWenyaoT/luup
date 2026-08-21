@@ -7,7 +7,7 @@
 
 import assert from "node:assert/strict";
 import { Agent, Usage, type Model, type ModelProvider, type ModelResponse } from "@openai/agents";
-import { test } from "vitest";
+import { test } from "bun:test";
 
 import { StageError } from "../src/agent/failures.ts";
 import { createQwenExecutor, TRANSIENT_RETRY } from "../src/executor.ts";
@@ -131,6 +131,35 @@ test("a dropped connection counts as transient even without a status code", asyn
   assert.equal(await stage({ getModel: () => model }), "交卷");
   assert.equal(calls, 2);
 }, 10_000);
+
+test("success callback failures do not turn a completed model call into a stage failure", async () => {
+  const { provider } = scripted(["ok"]);
+  const traceEvents: Array<{ kind: string; callback?: string }> = [];
+  const execute = createQwenExecutor(() => {
+    throw new Error("canary metrics sink unavailable");
+  }, provider);
+
+  const output = await execute({
+    runId: "run",
+    taskId: "attempt",
+    role: "reviewer",
+    agent: new Agent({ name: "probe", instructions: "只用来触发一次模型调用", model: "fake" }),
+    input: "{}",
+    timeoutMs: 30_000,
+    onUsage: () => {
+      throw new Error("usage sink unavailable");
+    },
+    onTrace: (event) => {
+      traceEvents.push({ kind: event.kind, callback: "callback" in event ? event.callback : undefined });
+    },
+  });
+
+  assert.equal(output, "交卷");
+  assert.deepEqual(
+    traceEvents.filter((event) => event.kind === "callback_error").map((event) => event.callback),
+    ["onUsage", "onComplete"],
+  );
+});
 
 test("the backoff ladder is the one the protocol amendment registered", () => {
   // 协议修订 #3 写死了这几个数：2 次、2s/8s、带抖动。改动它们必须同时改修订，

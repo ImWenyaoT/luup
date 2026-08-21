@@ -63,9 +63,33 @@ const citationSchema = proposedCitationSchema.extend({
   year: z.number().int().nullable().optional(),
 });
 
+/** 科学问题的结构化 framing。
+ *
+ * 这不是 summary 的同义改写，而是把评审需要核验的中间事实单独冻结：研究对象与范围、
+ * 变量的操作化、已有认识、争议、未知和知识缺口。没有这组字段，后续候选假设和计划
+ * 无法证明自己是在回答哪个缺口，也无法区分事实、争议与模型推断。
+ */
+const researchVariableSchema = z.object({
+  name: z.string().min(1),
+  role: z.enum(["independent", "dependent", "control", "confounder", "observed"]),
+  operationalization: z.string().min(1),
+});
+
+const researchFramingSchema = z.object({
+  research_object: z.string().min(1),
+  scope: z.string().min(1),
+  variables: z.array(researchVariableSchema).min(1),
+  known: z.array(z.string().min(1)).min(1),
+  controversies: z.array(z.string().min(1)).min(1),
+  unknowns: z.array(z.string().min(1)).min(1),
+  knowledge_gap: z.string().min(1),
+  constraints: z.array(z.string().min(1)).min(1),
+});
+
 export const researchSchema = z.object({
   artifact_type: z.literal("research"),
   question: z.string().min(1),
+  research_framing: researchFramingSchema,
   summary: z.string().min(1),
   claims: z
     .array(
@@ -121,17 +145,94 @@ export const researchProposalSchema = researchSchema.extend({
   citations: z.array(proposedCitationSchema).min(1).max(15),
 });
 
-export const hypothesisSchema = z.object({
-  artifact_type: z.literal("hypothesis"),
-  question: z.string().min(1),
-  hypothesis: z.string().min(1),
-  rationale: z.string().min(1),
+/** 一个候选假设，而不是已证实结论。
+ *
+ * 这里把“支持”和“反对”拆成两个字段，并保留替代解释与不确定性。这样即使证据
+ * 冲突或不足，Artifact 也只能表达“候选待检验”，不能用一个 `supported: true`
+ * 把模型推断伪装成事实。
+ */
+export const hypothesisCandidateSchema = z.object({
+  candidate_id: z.string().min(1),
+  claim_status: z.literal("candidate"),
+  core_claim: z.string().min(1),
+  basis: z.string().min(1),
+  supporting_evidence_ids: z.array(z.string().min(1)).max(30),
+  opposing_evidence_ids: z.array(z.string().min(1)).max(30),
   falsifiable_predictions: z.array(z.string().min(1)).min(1).max(5),
+  alternative_explanations: z.array(z.string().min(1)).min(1).max(5),
+  uncertainty: z.array(z.string().min(1)).min(1).max(5),
   boundaries: z.array(z.string().min(1)).min(1).max(5),
-  research_artifact_ids: z.array(z.string().min(1)).min(1),
-  evidence_ids: z.array(z.string().min(1)).min(1),
   validation_conditions: z.array(z.string().min(1)).min(1).max(5),
 });
+
+const hypothesisComparisonCriterionSchema = z.object({
+  criterion: z.string().min(1),
+  rationale: z.string().min(1),
+});
+
+const hypothesisCandidateEvaluationSchema = z.object({
+  candidate_id: z.string().min(1),
+  rank: z.number().int().min(1),
+  strengths: z.array(z.string().min(1)).min(1).max(5),
+  weaknesses: z.array(z.string().min(1)).min(1).max(5),
+  evidence_ids: z.array(z.string().min(1)).max(30),
+  rationale: z.string().min(1),
+});
+
+export const hypothesisComparisonSchema = z.object({
+  criteria: z.array(hypothesisComparisonCriterionSchema).min(1).max(8),
+  evaluations: z.array(hypothesisCandidateEvaluationSchema).min(2).max(6),
+  selected_candidate_id: z.string().min(1),
+  selection_rationale: z.string().min(1),
+});
+
+export const hypothesisSchema = z
+  .object({
+    artifact_type: z.literal("hypothesis"),
+    question: z.string().min(1),
+    /** 至少两条可区分候选；选中只表示进入研究计划，不表示已被证实。 */
+    candidates: z.array(hypothesisCandidateSchema).min(2).max(6),
+    comparison: hypothesisComparisonSchema,
+    selection_status: z.literal("candidate_selected"),
+    research_artifact_ids: z.array(z.string().min(1)).min(1),
+  })
+  .superRefine((value, ctx) => {
+    const candidateIds = value.candidates.map((candidate) => candidate.candidate_id);
+    const uniqueCandidateIds = new Set(candidateIds);
+    if (uniqueCandidateIds.size !== candidateIds.length) {
+      ctx.addIssue({ code: "custom", path: ["candidates"], message: "candidate_id 必须唯一" });
+    }
+    const normalizedClaims = value.candidates.map((candidate) => candidate.core_claim.trim().replace(/\s+/g, " "));
+    if (new Set(normalizedClaims).size !== normalizedClaims.length) {
+      ctx.addIssue({ code: "custom", path: ["candidates"], message: "候选的 core_claim 必须实质可区分" });
+    }
+
+    const evaluationIds = value.comparison.evaluations.map((evaluation) => evaluation.candidate_id);
+    const candidateIdSet = new Set(candidateIds);
+    const missingEvaluations = candidateIds.filter((id) => !evaluationIds.includes(id));
+    const unknownEvaluations = evaluationIds.filter((id) => !candidateIdSet.has(id));
+    if (missingEvaluations.length > 0 || unknownEvaluations.length > 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["comparison", "evaluations"],
+        message: `每条候选必须恰好有比较记录；缺少 ${missingEvaluations.join(",") || "无"}，未知 ${unknownEvaluations.join(",") || "无"}`,
+      });
+    }
+    if (new Set(evaluationIds).size !== evaluationIds.length) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["comparison", "evaluations"],
+        message: "比较记录不能重复 candidate_id",
+      });
+    }
+    if (!candidateIdSet.has(value.comparison.selected_candidate_id)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["comparison", "selected_candidate_id"],
+        message: "selected_candidate_id 必须指向候选集中的 candidate_id",
+      });
+    }
+  });
 
 export const evidenceReviewSchema = z.object({
   artifact_type: z.literal("evidence-review"),
@@ -180,6 +281,51 @@ const groundedItemSchema = z.object({
   evidence_id: z.string().min(1),
 });
 
+const researchPredictionSchema = z.object({
+  candidate_id: z.string().min(1),
+  prediction: chineseProse,
+  falsification_criterion: chineseProse,
+});
+
+const researchDataRequirementSchema = z.object({
+  source: z.string().min(1),
+  variables: z.array(z.string().min(1)).min(1),
+  conditions: z.array(chineseProse).min(1),
+});
+
+const researchStepSchema = z.object({
+  order: z.number().int().min(1),
+  action: chineseProse,
+  expected_output: chineseProse,
+});
+
+const researchAnalysisSchema = z.object({
+  method: chineseProse,
+  inputs: z.array(z.string().min(1)).min(1),
+  decision_rule: chineseProse,
+});
+
+const resultInterpretationSchema = z.object({
+  observed_result: chineseProse,
+  meaning: chineseProse,
+});
+
+/** 可执行计划的最小闭环：预测—数据/条件—步骤/分析—不同结果含义—停止、回退、补证。
+ *
+ * 旧版只有 methods/design/expected_outcomes 三段 prose，无法核验“下一步具体做什么”
+ * 以及结果出现分叉时如何处理；这里让每个分支都成为结构化字段，仍保留旧字段供提交模板使用。
+ */
+const executableResearchPlanSchema = z.object({
+  predictions: z.array(researchPredictionSchema).min(1),
+  data_requirements: z.array(researchDataRequirementSchema).min(1),
+  steps: z.array(researchStepSchema).min(2),
+  analysis: z.array(researchAnalysisSchema).min(1),
+  result_interpretations: z.array(resultInterpretationSchema).min(2),
+  stop_conditions: z.array(chineseProse).min(1),
+  rollback_conditions: z.array(chineseProse).min(1),
+  supplement_evidence_conditions: z.array(chineseProse).min(1),
+});
+
 export const researchPlanSchema = z.object({
   artifact_type: z.literal("research-plan"),
   problem_statement: chineseProse,
@@ -191,6 +337,7 @@ export const researchPlanSchema = z.object({
   source: z.string().min(1),
   /** 研究目标的中文叙述 —— 要达成什么，不是「目标数据集/目标域」的英文名。 */
   target: chineseProse,
+  execution_plan: executableResearchPlanSchema,
   paper_title: chineseProse,
   paper_abstract: chineseProse,
   methods: chineseProse,
