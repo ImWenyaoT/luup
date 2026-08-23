@@ -19,10 +19,10 @@
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { Database } from "bun:sqlite";
+import { DatabaseSync } from "node:sqlite";
 import { parseArgs } from "node:util";
 
-import { resolveManifestRunScope, type ManifestRunScope } from "../reporting/manifest-scope.ts";
+import { resolveManifestRunScope, type ManifestRunScope } from "../batch/manifest-scope.ts";
 
 /** 不反映提案质量的失败类别：环境、供应商、凭据、超时 —— 换个模型再跑一遍也修不掉，
  *  只有改环境才修得掉。质量分母把它们整个排除。
@@ -144,7 +144,7 @@ function cohortLabel(raw: unknown): string {
 
 /** 把一个库里所有 Run 读成 RunFacts。只读打开，绝不会写到被评的库。 */
 export function loadRunFacts(dbPath: string, manifestId?: string): RunFacts[] {
-  const db = new Database(dbPath, { readonly: true });
+  const db = new DatabaseSync(dbPath, { readOnly: true });
   try {
     const scope = manifestId === undefined ? undefined : resolveManifestRunScope(db, manifestId);
     return loadRunFactsFromDatabase(db, scope);
@@ -153,7 +153,7 @@ export function loadRunFacts(dbPath: string, manifestId?: string): RunFacts[] {
   }
 }
 
-function loadRunFactsFromDatabase(db: Database, scope?: ManifestRunScope): RunFacts[] {
+function loadRunFactsFromDatabase(db: DatabaseSync, scope?: ManifestRunScope): RunFacts[] {
   // memory_arm 是 Wave 2 才补的列。评估是只读的，补不了列，所以缺列时读 null
   // 而不是让整份报告炸掉 —— 老库仍要能被读出交付率。
   const columns = new Set(
@@ -175,7 +175,7 @@ function loadRunFactsFromDatabase(db: Database, scope?: ManifestRunScope): RunFa
     .map((run) => collectRunFacts(db, run, corrections));
 }
 
-function collectRunFacts(db: Database, run: Row, correctionsColumn: string): RunFacts {
+function collectRunFacts(db: DatabaseSync, run: Row, correctionsColumn: string): RunFacts {
   const runId = String(run.id);
   const attempts = db
     .prepare(`SELECT role, status, ${correctionsColumn} FROM attempts WHERE run_id = ?`)
@@ -520,7 +520,7 @@ export function evaluate(facts: readonly RunFacts[], source: string, scope?: Man
 }
 
 export function evaluateDatabase(dbPath: string, manifestId?: string): MetricsReport {
-  const db = new Database(dbPath, { readonly: true });
+  const db = new DatabaseSync(dbPath, { readOnly: true });
   try {
     const scope = manifestId === undefined ? undefined : resolveManifestRunScope(db, manifestId);
     return evaluate(loadRunFactsFromDatabase(db, scope), resolve(dbPath), scope);

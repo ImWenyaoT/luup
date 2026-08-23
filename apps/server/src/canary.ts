@@ -1,5 +1,5 @@
 import { mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 
 import { EvidenceLedger } from "./agent/evidence.ts";
 import { Harness } from "./harness.ts";
@@ -83,4 +83,5 @@ async function main(): Promise<void> {
   }
 }
 
-if (import.meta.main) await main();
+const isDirectEntry = process.argv[1] ? resolve(process.argv[1]) === resolve(import.meta.filename ?? "") : false;
+if (isDirectEntry) await main();

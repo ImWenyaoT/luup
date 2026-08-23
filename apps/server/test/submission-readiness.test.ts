@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Database } from "bun:sqlite";
-import { onTestFinished, test } from "bun:test";
+import { DatabaseSync } from "node:sqlite";
+import { onTestFinished, test } from "vitest";
 
 import { buildSubmissionReadiness, main, writeSubmissionReadiness } from "../src/submission/readiness.ts";
 import { SqliteStore } from "../src/store/store.ts";
@@ -44,7 +44,7 @@ test("submission readiness is a fail-closed, read-only audit with explicit exter
   assert.equal(report.checks.find((item) => item.name === "public_webui")?.state, "manual");
   assert.equal(existsSync(join(root, "report")), false);
 
-  const db = new Database(dbPath, { readonly: true });
+  const db = new DatabaseSync(dbPath, { readOnly: true });
   try {
     assert.equal(
       (db.prepare("SELECT status FROM runs WHERE id = ?").get(runId) as { status: string }).status,

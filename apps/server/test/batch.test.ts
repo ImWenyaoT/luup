@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { onTestFinished, test } from "bun:test";
+import { onTestFinished, test } from "vitest";
 import type { DomainArtifact } from "../src/agent/contracts.ts";
 
 type TestContext = { onTestFinished: typeof onTestFinished };
@@ -14,7 +14,7 @@ import {
   MAX_CONCURRENCY,
   parseConcurrency,
   parseIds,
-  validateBatchBunRuntime,
+  validateBatchRuntime,
   remainingPath,
   runBatch,
   main,
@@ -695,21 +695,21 @@ test("memory-off is fail-closed before SQLite for confirmation, ids, and source 
   assert.equal(existsSync(missingConfirmationDb), false);
 
   const code = await main(["--ids", "1", "--no-memory", "--confirm-memory-ablation", "--db", dbPath], {
-    bunVersion: "1.4.0",
+    nodeVersion: "v22.12.0",
   });
   assert.equal(code, 2);
   assert.match(output, /精确匹配.*30 题/);
   assert.equal(existsSync(dbPath), false);
 });
 
-test("formal live batch requires the pinned Bun runtime, while dry-run is portable", () => {
-  assert.equal(validateBatchBunRuntime({ bunVersion: "1.4.0", dryRun: false }), null);
-  assert.match(validateBatchBunRuntime({ bunVersion: "1.3.9", dryRun: false }) ?? "", /1\.3\.9/);
-  assert.match(validateBatchBunRuntime({ bunVersion: "1.3.9", dryRun: false }) ?? "", /Bun 1\.4\.0/);
-  assert.equal(validateBatchBunRuntime({ bunVersion: "1.3.9", dryRun: true }), null);
+test("formal live batch requires the pinned Node runtime, while dry-run is portable", () => {
+  assert.equal(validateBatchRuntime({ nodeVersion: "v22.12.0", dryRun: false }), null);
+  assert.match(validateBatchRuntime({ nodeVersion: "v20.10.0", dryRun: false }) ?? "", /20\.10\.0/);
+  assert.match(validateBatchRuntime({ nodeVersion: "v20.10.0", dryRun: false }) ?? "", /Node\.js >= 22/);
+  assert.equal(validateBatchRuntime({ nodeVersion: "v20.10.0", dryRun: true }), null);
 });
 
-test("live batch rejects an unsupported Bun runtime before opening SQLite", async () => {
+test("live batch rejects an unsupported Node runtime before opening SQLite", async () => {
   const t = { onTestFinished };
   const dir = workspace(t);
   const dbPath = join(dir, "runtime", "runs.db");
@@ -723,10 +723,10 @@ test("live batch rejects an unsupported Bun runtime before opening SQLite", asyn
     process.stdout.write = originalWrite;
   });
 
-  const code = await main(["--ids", "1", "--db", dbPath], { bunVersion: "1.3.9" });
+  const code = await main(["--ids", "1", "--db", dbPath], { nodeVersion: "v20.9.0" });
   assert.equal(code, 2);
-  assert.match(output, /1\.3\.9/);
-  assert.match(output, /Bun 1\.4\.0/);
+  assert.match(output, /20\.9\.0/);
+  assert.match(output, /Node\.js >= 22/);
   assert.equal(existsSync(dbPath), false);
 });
 

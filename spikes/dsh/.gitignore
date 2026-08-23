@@ -1,6 +1,0 @@
-# dsh 的 profile home：出厂模板自动初始化的 profile、会话日志、凭据文档。
-# 全部可由 `pnpm smoke` 重新生成，且 .credentials.yaml 可能含密钥——永不入库。
-.dsh-home/
-
-# 冒烟产物
-outputs/

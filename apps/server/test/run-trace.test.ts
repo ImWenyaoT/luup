@@ -8,7 +8,7 @@ import {
   type ModelResponse,
   type RunContext,
 } from "@openai/agents";
-import { test } from "bun:test";
+import { test } from "vitest";
 
 import {
   installRunnerTraceHooks,

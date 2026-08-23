@@ -27,10 +27,10 @@ import { Harness } from "../harness.ts";
 import { findQuestion, science125Integrity, science125Text, type Science125Question } from "../domain/science125.ts";
 import type { StageExecutor } from "../roles.ts";
 import { modelConfigStatus } from "../seams/index.ts";
-import type { MemoryArm, SourceIdentity } from "../store/contracts.ts";
+import type { MemoryArm, SourceIdentity } from "../agent/contracts.ts";
 import { SqliteStore } from "../store/store.ts";
 
-const MODULE_REPO_ROOT = resolve(import.meta.dir, "../../../..");
+const MODULE_REPO_ROOT = resolve(import.meta.dirname, "../../../..");
 
 /** 40 分钟还没终态的流水线是挂了，不是慢。
  *
@@ -80,15 +80,16 @@ const INFRA_TIMEOUT: FailureCode = "infra_timeout";
 const CLEAN: ReadonlySet<string> = new Set(["passed", "skipped", "planned"]);
 
 export type BatchRuntimePreflight = {
-  bunVersion: string;
+  nodeVersion: string;
   dryRun: boolean;
 };
 
-/** 正式 live batch 的运行时门；dry-run 是规划动作，不受 Bun 版本限制。 */
-export function validateBatchBunRuntime({ bunVersion, dryRun }: BatchRuntimePreflight): string | null {
+/** 正式 live batch 的运行时门；dry-run 是规划动作，不受 Node 版本限制。 */
+export function validateBatchRuntime({ nodeVersion, dryRun }: BatchRuntimePreflight): string | null {
   if (dryRun) return null;
-  if (bunVersion === "1.4.0") return null;
-  return `正式 live batch 要求 Bun 1.4.0；当前版本是 ${bunVersion}，请按 packageManager 固定版本运行。`;
+  const major = parseInt(nodeVersion.replace(/^v/, "").split(".")[0] ?? "0", 10);
+  if (major >= 22) return null;
+  return `正式 live batch 要求 Node.js >= 22；当前版本是 ${nodeVersion}，请按 packageManager 固定版本运行。`;
 }
 
 export type QuestionStatus = "passed" | "failed" | "skipped" | "error" | "missing" | "planned";
@@ -699,7 +700,13 @@ export function createHarnessRunner(store: SqliteStore, memory: CampaignMemory |
 
 export async function main(
   argv: string[] = process.argv.slice(2),
-  runtime: { bunVersion?: string; modelCredential?: boolean } = {},
+  runtime: {
+    nodeVersion?: string;
+    bunVersion?: string;
+    modelCredential?: boolean;
+    sourceFact?: typeof readSourceIdentity;
+    run?: RunQuestion;
+  } = {},
 ): Promise<number> {
   let parsed;
   try {
@@ -756,11 +763,8 @@ export async function main(
   const confirmedScience125 = parsed.values["confirm-science125"] === true;
   const confirmedMemoryAblation = parsed.values["confirm-memory-ablation"] === true;
   const releaseCommit = parsed.values["release-commit"];
-  const runtimeError = validateBatchBunRuntime({
-    bunVersion:
-      runtime.bunVersion ??
-      (globalThis as typeof globalThis & { Bun?: { version: string } }).Bun?.version ??
-      "unavailable",
+  const runtimeError = validateBatchRuntime({
+    nodeVersion: runtime.nodeVersion ?? process.version,
     dryRun,
   });
   if (runtimeError) {
@@ -806,10 +810,7 @@ export async function main(
       process.stdout.write("[batch] --preflight 只验收正式 Phase A 全量或预注册 Phase B memory-off 批次。\n");
       return 2;
     }
-    const bunVersion =
-      runtime.bunVersion ??
-      (globalThis as typeof globalThis & { Bun?: { version: string } }).Bun?.version ??
-      "unavailable";
+    const nodeVersion = runtime.nodeVersion ?? process.version;
     process.stdout.write("[batch] preflight admitted\n");
     process.stdout.write(
       `${JSON.stringify(
@@ -820,7 +821,7 @@ export async function main(
           questionIds: compactIds(questionIds ?? []),
           memoryArm: launchAdmission.plan.memoryArm,
           databasePath: requestedDbPath,
-          bunVersion,
+          nodeVersion,
           sourceIdentity: launchAdmission.plan.sourceIdentity,
           releaseGuarded: launchAdmission.plan.releaseGuarded,
           credential: "configured",

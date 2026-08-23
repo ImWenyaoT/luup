@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { RunContext } from "@openai/agents";
-import { test } from "bun:test";
+import { test } from "vitest";
 
 import { CrossrefLookupError, resolveCrossrefDoi, searchCrossref } from "../src/agent/crossref.ts";
 import { EvidenceLedger } from "../src/agent/evidence.ts";

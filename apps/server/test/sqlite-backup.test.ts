@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "bun:test";
-import { Database } from "bun:sqlite";
+import { DatabaseSync } from "node:sqlite";
+import { test } from "vitest";
 
 import { createSchema } from "../src/store/schema.ts";
 import { backupSqlite, main, restoreSqlite, verifySqlite } from "../src/store/backup.ts";
@@ -17,8 +17,8 @@ function withTempDirectory(run: (directory: string) => void): void {
   }
 }
 
-function createDatabase(path: string): Database {
-  const db = new Database(path);
+function createDatabase(path: string): DatabaseSync {
+  const db = new DatabaseSync(path);
   createSchema(db);
   return db;
 }
@@ -71,10 +71,13 @@ test("backup captures committed WAL facts and refuses to overwrite an existing t
     assert.equal(report.verification.ok, true);
     assert.equal(verifySqlite(target).ok, true);
 
-    const copy = new Database(target, { readonly: true });
-    assert.deepEqual(copy.query("SELECT question FROM runs WHERE id = 'wal-run'").get(), {
-      question: "fact committed in wal",
-    });
+    const copy = new DatabaseSync(target, { readOnly: true });
+    assert.deepEqual(
+      { ...copy.prepare("SELECT question FROM runs WHERE id = 'wal-run'").get() },
+      {
+        question: "fact committed in wal",
+      },
+    );
     copy.close();
     db.close();
 
@@ -101,10 +104,13 @@ test("restore only creates a new target and verifies the restored database", () 
     assert.equal(existsSync(restored), true);
     assert.deepEqual(verifySqlite(restored).issues, []);
 
-    const copy = new Database(restored, { readonly: true });
-    assert.deepEqual(copy.query("SELECT question FROM runs WHERE id = 'restore-run'").get(), {
-      question: "restored fact",
-    });
+    const copy = new DatabaseSync(restored, { readOnly: true });
+    assert.deepEqual(
+      { ...copy.prepare("SELECT question FROM runs WHERE id = 'restore-run'").get() },
+      {
+        question: "restored fact",
+      },
+    );
     copy.close();
 
     writeFileSync(restored, "do not overwrite");

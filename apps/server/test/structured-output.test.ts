@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "bun:test";
+import { test } from "vitest";
 
 import { RunContext } from "@openai/agents";
 
@@ -10,7 +10,7 @@ import { createRoles } from "../src/agent/roles/index.ts";
 import { createStructuredOutput, STRUCTURED_OUTPUT_TOOL } from "../src/agent/roles/structured-output.ts";
 import { isContextOverflow, maxTurnsFor } from "../src/executor.ts";
 import { runTask, type StageExecutor } from "../src/roles.ts";
-import type { TaskContext } from "../src/store/contracts.ts";
+import type { TaskContext } from "../src/agent/contracts.ts";
 
 const artifact = {
   artifact_type: "research",

@@ -14,8 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # 根包（harness 本体）的门矩阵，与 `bun run ci` 同序。覆盖率地板写在
-  # 覆盖率地板只放在 bunfig.toml，不在这里复写一份——两处数字会分叉。
+  # 门矩阵与 `pnpm run ci` 同序
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -24,25 +23,17 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Set up Bun
-        # 默认从 package.json 的 packageManager 读取版本，只有一个事实源。
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "pnpm"
       - name: Install
-        run: bun install --frozen-lockfile
-      - name: Type check
-        run: bun run typecheck
-      - name: Lint
-        run: bun run lint
-      - name: Format
-        run: bun run format:check
-      - name: Knip
-        run: bun run knip
-      - name: Build
-        run: bun run build
-      - name: Test
-        run: bun run test:coverage
-      - name: Test (frontend units)
-        run: bun run --filter @luup/frontend test
+        run: pnpm install --frozen-lockfile
+      - name: CI Gate
+        run: pnpm run ci
 
   # 交付形态的端到端：确定性 runtime + 单进程托管静态产物，零 LLM 调用、零外部网络。
   e2e:
@@ -53,19 +44,22 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "pnpm"
       - name: Install
-        run: bun install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
       - name: Install Playwright browsers
-        run: bunx playwright install --with-deps chromium
+        run: pnpm exec playwright install --with-deps chromium
       - name: Test
         # playwright.config.ts 的 webServer 自己 build 再起 src/main.ts，这里不重复 build。
-        run: bun run test:e2e
+        run: pnpm run test:e2e
       - name: Upload Playwright traces
         if: ${{ failure() }}
-        # CI 的 reporter 是 `github`，不产 HTML 报告；失败时值得捞的是 trace，
-        # 它落在 playwright.config.ts 的 outputDir（仓根 outputs/playwright/results）。
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: playwright-traces

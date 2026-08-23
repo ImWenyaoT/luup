@@ -1,7 +1,8 @@
 import { lstatSync, mkdirSync, statSync, unlinkSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { Database } from "bun:sqlite";
+import { DatabaseSync } from "node:sqlite";
 
 type TableDefinition = {
   name: string;
@@ -140,16 +141,18 @@ function removeCreatedDatabase(path: string): void {
   }
 }
 
-function tableChecks(db: Database): TableCheck[] {
-  const tableRows = db.query("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name?: unknown }>;
+function tableChecks(db: DatabaseSync): TableCheck[] {
+  const tableRows = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{
+    name?: unknown;
+  }>;
   const existing = new Set(tableRows.map((row) => (typeof row.name === "string" ? row.name : "")));
   return CORE_TABLES.map((table) => {
     if (!existing.has(table.name)) {
       return { name: table.name, present: false, ok: false, missingColumns: [...table.columns] };
     }
     const columns = new Set(
-      (db.query(`PRAGMA table_info(${quoteSqliteString(table.name)})`).all() as Array<{ name?: unknown }>).map((row) =>
-        typeof row.name === "string" ? row.name : "",
+      (db.prepare(`PRAGMA table_info(${quoteSqliteString(table.name)})`).all() as Array<{ name?: unknown }>).map(
+        (row) => (typeof row.name === "string" ? row.name : ""),
       ),
     );
     const missingColumns = table.columns.filter((column) => !columns.has(column));
@@ -157,8 +160,8 @@ function tableChecks(db: Database): TableCheck[] {
   });
 }
 
-function pragmaValues(db: Database, pragma: string): string[] {
-  return (db.query(`PRAGMA ${pragma}`).all() as Array<Record<string, unknown>>).map((row) => {
+function pragmaValues(db: DatabaseSync, pragma: string): string[] {
+  return (db.prepare(`PRAGMA ${pragma}`).all() as Array<Record<string, unknown>>).map((row) => {
     const value = Object.values(row)[0];
     return typeof value === "string" ? value : JSON.stringify(value);
   });
@@ -178,13 +181,13 @@ export function verifySqlite(databasePath: string): SqliteVerification {
     };
   }
 
-  let db: Database | null = null;
+  let db: DatabaseSync | null = null;
   try {
-    db = new Database(path, { readonly: true });
+    db = new DatabaseSync(path, { readOnly: true });
     db.exec("PRAGMA busy_timeout = 5000");
     const integrityCheck = pragmaValues(db, "integrity_check");
-    const foreignKeyErrors = (db.query("PRAGMA foreign_key_check").all() as Array<Record<string, unknown>>).map((row) =>
-      JSON.stringify(row),
+    const foreignKeyErrors = (db.prepare("PRAGMA foreign_key_check").all() as Array<Record<string, unknown>>).map(
+      (row) => JSON.stringify(row),
     );
     const tables = tableChecks(db);
     const issues: string[] = [];
@@ -204,14 +207,10 @@ export function verifySqlite(databasePath: string): SqliteVerification {
       integrityCheck: [],
       foreignKeyErrors: [],
       tables: emptyTableChecks(),
-      issues: [`database_open_failed:${describe(error)}`],
+      issues: [describe(error)],
     };
   } finally {
-    try {
-      db?.close();
-    } catch {
-      // Verification already has a durable result; a close error must not hide it.
-    }
+    db?.close();
   }
 }
 
@@ -231,11 +230,11 @@ function createSnapshot(sourcePath: string, destinationPath: string, operation: 
   mkdirSync(dirname(destination), { recursive: true });
 
   let created = false;
-  let db: Database | null = null;
+  let db: DatabaseSync | null = null;
   try {
     // VACUUM INTO asks SQLite for a transactionally consistent image and includes
     // committed pages still residing in the source connection's WAL.
-    db = new Database(source, { readonly: true });
+    db = new DatabaseSync(source, { readOnly: true });
     db.exec("PRAGMA busy_timeout = 5000");
     db.exec(`VACUUM INTO ${quoteSqliteString(destination)}`);
     created = entryExists(destination);
@@ -251,52 +250,47 @@ function createSnapshot(sourcePath: string, destinationPath: string, operation: 
     if (created) removeCreatedDatabase(destination);
     throw error;
   } finally {
-    try {
-      db?.close();
-    } catch {
-      // Preserve the operation error or result; the snapshot has already been verified.
-    }
+    db?.close();
   }
 }
 
-/** Create a new, non-overwriting SQLite snapshot. */
 export function backupSqlite(sourcePath: string, destinationPath: string): SqliteSnapshot {
   return createSnapshot(sourcePath, destinationPath, "backup");
 }
 
-/** Restore a verified snapshot into a new path; existing files and sidecars are never overwritten. */
 export function restoreSqlite(sourcePath: string, destinationPath: string): SqliteSnapshot {
   return createSnapshot(sourcePath, destinationPath, "restore");
 }
 
 function printUsage(): void {
   process.stderr.write(
-    "用法：bun run db:backup -- --source <db> --target <backup>\n" +
-      "      bun run db:verify -- --source <db>\n" +
-      "      bun run db:restore -- --source <backup> --target <db>\n",
+    "用法：tsx apps/server/src/store/backup.ts backup --source <db> --target <backup>\n" +
+      "      tsx apps/server/src/store/backup.ts verify --source <db>\n" +
+      "      tsx apps/server/src/store/backup.ts restore --source <backup> --target <db>\n",
   );
 }
 
-/** CLI seam. It fails closed before opening/creating any database when arguments are incomplete. */
 export function main(argv: string[] = process.argv.slice(2)): number {
-  const [operation, ...args] = argv;
-  if (operation !== "backup" && operation !== "verify" && operation !== "restore") {
+  const operation = argv[0];
+  if (!operation || (operation !== "backup" && operation !== "verify" && operation !== "restore")) {
     printUsage();
     return 2;
   }
+
   let values: { source?: string; target?: string };
   try {
-    values = parseArgs({
-      args,
+    const parsed = parseArgs({
+      args: argv.slice(1),
       options: {
         source: { type: "string" },
         target: { type: "string" },
       },
       strict: true,
       allowPositionals: false,
-    }).values;
-  } catch (error) {
-    process.stderr.write(`[db:${operation}] ${describe(error)}\n`);
+    });
+    values = parsed.values;
+  } catch {
+    printUsage();
     return 2;
   }
 
@@ -323,4 +317,5 @@ export function main(argv: string[] = process.argv.slice(2)): number {
   }
 }
 
-if (import.meta.main) process.exitCode = main();
+const isDirectEntry = process.argv[1] ? resolve(process.argv[1]) === fileURLToPath(import.meta.url) : false;
+if (isDirectEntry) process.exitCode = main();

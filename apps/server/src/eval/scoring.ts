@@ -22,10 +22,10 @@
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
-import { Database } from "bun:sqlite";
+import { DatabaseSync } from "node:sqlite";
 import { parseArgs } from "node:util";
 
-import { resolveManifestRunScope, type ManifestRunScope } from "../reporting/manifest-scope.ts";
+import { resolveManifestRunScope, type ManifestRunScope } from "../batch/manifest-scope.ts";
 
 export const MAX_SCORE = 5;
 
@@ -162,7 +162,7 @@ function groundedItems(plan: JsonObject): { field: string; evidenceId: unknown }
 }
 
 /** 把一个 Run 的打分素材从 5 张表里捞出来，组装成一个 RunFacts。 */
-export function collectRunFacts(db: Database, runId: string): RunFacts {
+export function collectRunFacts(db: DatabaseSync, runId: string): RunFacts {
   const runRow = db.prepare("SELECT id, question, status FROM runs WHERE id = ?").get(runId) as Row | undefined;
   if (runRow === undefined) throw new Error(`run not found: ${runId}`);
 
@@ -379,7 +379,7 @@ export function loadRunScoresWithScope(
   dbPath: string,
   manifestId?: string,
 ): { scores: RunScore[]; scope?: ScoringManifestScope } {
-  const db = new Database(dbPath, { readonly: true });
+  const db = new DatabaseSync(dbPath, { readOnly: true });
   try {
     const scope = manifestId === undefined ? undefined : resolveManifestRunScope(db, manifestId);
     const runIds = (db.prepare("SELECT id FROM runs ORDER BY created_at, rowid").all() as Row[]).map((row) =>

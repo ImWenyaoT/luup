@@ -2,9 +2,9 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
-import { Database } from "bun:sqlite";
+import { DatabaseSync } from "node:sqlite";
 
-import { resolveManifestRunScope, type ManifestRunScope } from "../reporting/manifest-scope.ts";
+import { resolveManifestRunScope, type ManifestRunScope } from "../batch/manifest-scope.ts";
 
 export const USAGE_REPORT_FORMAT = "luup.usage-report" as const;
 export const USAGE_REPORT_VERSION = 2 as const;
@@ -193,7 +193,7 @@ export function buildUsageReport(
   generatedAt = new Date().toISOString(),
   manifestId?: string,
 ): UsageReport {
-  const db = new Database(dbPath, { readonly: true });
+  const db = new DatabaseSync(dbPath, { readOnly: true });
   try {
     const scope = manifestId === undefined ? undefined : resolveManifestRunScope(db, manifestId);
     const runs = (
@@ -416,7 +416,7 @@ function manifestScopeReport(scope: ManifestRunScope): ManifestScopeReport {
   };
 }
 
-function loadAttempts(db: Database, runId: string, questionId: number | null): AttemptUsage[] {
+function loadAttempts(db: DatabaseSync, runId: string, questionId: number | null): AttemptUsage[] {
   const events = (
     db
       .prepare("SELECT version, kind, payload_json FROM events WHERE run_id = ? ORDER BY version")

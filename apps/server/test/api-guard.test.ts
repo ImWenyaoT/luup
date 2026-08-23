@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "bun:test";
+import { test } from "vitest";
 
 import { createApp } from "../src/server.ts";
 import { SqliteStore } from "../src/store/store.ts";
@@ -16,6 +16,7 @@ function withEnv(name: string, value: string | undefined): () => void {
 
 test("an opt-in API token protects paid run creation", async () => {
   const restore = withEnv("LUUP_API_TOKEN", "test-token");
+  const restoreKey = withEnv("QWEN_API_KEY", "sk-dummy-test-key");
   const store = new SqliteStore(":memory:");
   let created = 0;
   const harness = {
@@ -26,6 +27,7 @@ test("an opt-in API token protects paid run creation", async () => {
     execute: async () => undefined,
   };
   const server = createApp({ store, harness: harness as any });
+  await server.ready;
   try {
     const missing = await fetch(`${server.url.origin}/api/runs`, {
       method: "POST",
@@ -45,6 +47,7 @@ test("an opt-in API token protects paid run creation", async () => {
   } finally {
     await server.stop(true);
     store.close();
+    restoreKey();
     restore();
   }
 });
@@ -62,6 +65,7 @@ test("live mode fails closed when the API token is missing", async () => {
     execute: async () => undefined,
   };
   const server = createApp({ store, harness: harness as any });
+  await server.ready;
   try {
     const response = await fetch(`${server.url.origin}/api/runs`, {
       method: "POST",
@@ -92,6 +96,7 @@ test("live mode refuses a Run before creation when model credentials are absent"
     execute: async () => undefined,
   };
   const server = createApp({ store, harness: harness as any });
+  await server.ready;
   try {
     const response = await fetch(`${server.url.origin}/api/runs`, {
       method: "POST",
@@ -122,6 +127,7 @@ test("the paid run queue has a finite opt-in bound", async () => {
     execute: async () => blocked,
   };
   const server = createApp({ store, harness: harness as any });
+  await server.ready;
   try {
     const request = (question: string) =>
       fetch(`${server.url.origin}/api/runs`, {

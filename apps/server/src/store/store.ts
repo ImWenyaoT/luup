@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { Database } from "bun:sqlite";
+import { DatabaseSync } from "node:sqlite";
 
 import type { DomainArtifact, Role } from "../agent/contracts.ts";
 import type { EvidenceRecord } from "../agent/evidence.ts";
@@ -11,7 +11,7 @@ import {
   type BatchTerminalStatus,
   type StoredBatchManifest,
 } from "../batch/manifest.ts";
-import type { MemoryArm, SourceIdentity, StoredInput, UsageFacts } from "./contracts.ts";
+import type { MemoryArm, SourceIdentity, StoredInput, UsageFacts } from "../agent/contracts.ts";
 import { createSchema, nowIso, type RunStatus } from "./schema.ts";
 
 type Row = Record<string, any>;
@@ -56,22 +56,22 @@ export const normalizeQuestion = (question: string) => question.split(/\s+/).fil
 
 /** SQLite 持久化。
  *
- * `bun:sqlite` 的 `Database` 是同步的，和 Python 的 `sqlite3` 一样 —— 读路径可以
+ * `node:sqlite` 的 `DatabaseSync` 是同步的，和 Python 的 `sqlite3` 一样 —— 读路径可以
  * 一比一翻译，不用退化成 await 瀑布。零依赖。
  *
  * 这一层只管**记账**：谁在什么时候、基于哪些冻结输入、产出了什么、查过什么。
  * 「下一个角色是谁」不在这里，在 harness 的控制流里。
  */
 export class SqliteStore {
-  readonly #db: Database;
-  readonly #lockDb: Database | null;
+  readonly #db: DatabaseSync;
+  readonly #lockDb: DatabaseSync | null;
 
   constructor(path: string) {
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
     // 文件名带上协议含义，避免把迁移分支早期的纯文本 `.lock` 当成 SQLite 打开。
     this.#lockDb = path === ":memory:" ? null : acquireLock(`${path}.writer-lock.db`);
     try {
-      this.#db = new Database(path);
+      this.#db = new DatabaseSync(path);
       createSchema(this.#db);
       this.#failInterruptedRuns();
     } catch (error) {
@@ -83,10 +83,16 @@ export class SqliteStore {
   close(): void {
     try {
       this.#db.close();
+    } catch {
+      // 幂等关闭，已经关闭时不抛
     } finally {
       if (this.#lockDb) {
-        this.#lockDb.exec("ROLLBACK");
-        this.#lockDb.close();
+        try {
+          this.#lockDb.exec("ROLLBACK");
+          this.#lockDb.close();
+        } catch {
+          // 进程退出时锁会被 OS 回收，不抛
+        }
       }
     }
   }
@@ -107,7 +113,7 @@ export class SqliteStore {
     }
   }
 
-  #write<T>(fn: (db: Database) => T): T {
+  #write<T>(fn: (db: DatabaseSync) => T): T {
     this.#db.exec("BEGIN IMMEDIATE");
     try {
       const result = fn(this.#db);
@@ -766,7 +772,7 @@ function parseSourceIdentity(value: unknown): SourceIdentity | null {
  * （执行流被放弃）。都必须留下和正常失败一样的证据，否则 API 与 SSE 会永远等下去。
  * 调用方负责先确认 Run 确实还在 running。
  */
-function failRunInPlace(db: Database, runId: string, failureCode: string, errorType: string): void {
+function failRunInPlace(db: DatabaseSync, runId: string, failureCode: string, errorType: string): void {
   const now = nowIso();
   const attempts = db
     .prepare("SELECT id, role FROM attempts WHERE run_id = ? AND status = 'running'")
@@ -792,8 +798,8 @@ function failRunInPlace(db: Database, runId: string, failureCode: string, errorT
 }
 
 /** 用 SQLite 自己的长事务做单写者锁；进程退出时 OS 会自动释放，不需要 PID 接管协议。 */
-function acquireLock(path: string): Database {
-  const lock = new Database(path);
+function acquireLock(path: string): DatabaseSync {
+  const lock = new DatabaseSync(path);
   try {
     lock.exec("PRAGMA busy_timeout = 0; BEGIN EXCLUSIVE");
     return lock;
@@ -804,7 +810,7 @@ function acquireLock(path: string): Database {
 }
 
 /** 事件写入的唯一入口。version 是 per-run 单调序号，也是 SSE 游标。 */
-function emitEvent(db: Database, runId: string, kind: string, payload: Record<string, unknown>): number {
+function emitEvent(db: DatabaseSync, runId: string, kind: string, payload: Record<string, unknown>): number {
   const row = db.prepare("SELECT version FROM runs WHERE id = ?").get(runId) as Row | undefined;
   if (!row) throw new Error(`unknown run: ${runId}`);
   const version = Number(row.version) + 1;

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "bun:test";
+import { test } from "vitest";
 
 import { researchPlanSchema, type ResearchPlan } from "../src/agent/contracts.ts";
 import { researchPlanExecutionIssues, researchPlanQualityIssues } from "../src/agent/plan-quality.ts";

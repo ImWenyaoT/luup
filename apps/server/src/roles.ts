@@ -21,7 +21,7 @@ import {
 import { STRUCTURED_OUTPUT_TOOL, type StructuredOutput } from "./agent/roles/structured-output.ts";
 import type { RunTraceEvent } from "./agent/run-trace.ts";
 import type { StageUsage } from "./executor.ts";
-import type { StoredInput, TaskContext } from "./store/contracts.ts";
+import type { StoredInput, TaskContext } from "./agent/contracts.ts";
 
 /** 两次调用的用量相加。缺失不是零：一边缺就以另一边为准，两边都缺就还是「不知道」。 */
 function addUsage(left: StageUsage | null, right: StageUsage | undefined): StageUsage | null {

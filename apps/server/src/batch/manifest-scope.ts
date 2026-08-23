@@ -1,4 +1,4 @@
-import { Database } from "bun:sqlite";
+import { DatabaseSync } from "node:sqlite";
 
 /** A read-only cohort selected by one durable batch manifest. */
 export type ManifestRunScope = {
@@ -31,7 +31,7 @@ type RunFact = {
  * manifest status. Invalid records remain excluded and are visible through the
  * excluded database-run count/IDs in each report.
  */
-export function resolveManifestRunScope(db: Database, manifestId: string): ManifestRunScope {
+export function resolveManifestRunScope(db: DatabaseSync, manifestId: string): ManifestRunScope {
   const manifest = db.prepare("SELECT id, expected_ids_json FROM batch_manifests WHERE id = ?").get(manifestId) as
     | Row
     | undefined;

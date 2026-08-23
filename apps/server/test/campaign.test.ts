@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { onTestFinished, test } from "bun:test";
+import { onTestFinished, test } from "vitest";
 
 type TestContext = { onTestFinished: typeof onTestFinished };
 

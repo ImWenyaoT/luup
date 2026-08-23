@@ -2,14 +2,14 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { onTestFinished, test } from "bun:test";
+import { onTestFinished, test } from "vitest";
 
 import { createDeterministicRuntime, createDeterministicVerifier } from "../src/executor-deterministic.ts";
 import { Harness } from "../src/harness.ts";
-import { createApp, runtimeMode } from "../src/server.ts";
+import { createApp, runtimeMode, type LuupServer } from "../src/server.ts";
 import { SqliteStore } from "../src/store/store.ts";
 
-async function listen(): Promise<{ base: string; server: Bun.Server<undefined>; store: SqliteStore }> {
+async function listen(): Promise<{ base: string; server: LuupServer; store: SqliteStore }> {
   const store = new SqliteStore(":memory:");
   const runtime = createDeterministicRuntime(store);
   const harness = new Harness(store, runtime.execute, {
@@ -18,10 +18,11 @@ async function listen(): Promise<{ base: string; server: Bun.Server<undefined>; 
     verifyReferences: createDeterministicVerifier(),
   });
   const server = createApp({ store, harness, runtime: "deterministic" });
+  await server.ready;
   return { base: server.url.origin, server, store };
 }
 
-async function close(server: Bun.Server<undefined>, store: SqliteStore): Promise<void> {
+async function close(server: LuupServer, store: SqliteStore): Promise<void> {
   await server.stop(true);
   store.close();
 }
@@ -148,6 +149,7 @@ test("runs at most two distinct Runs at once", async () => {
     },
   } as unknown as Harness;
   const server = createApp({ store, harness, runtime: "deterministic" });
+  await server.ready;
   const base = server.url.origin;
 
   await Promise.all(
@@ -184,6 +186,7 @@ test("reports an unexpected background failure and settles a still-running Run",
     runtime: "deterministic",
     reportError: (message, error) => errors.push([message, error]),
   });
+  await server.ready;
   const base = server.url.origin;
   const created = await (
     await fetch(`${base}/api/runs`, {
@@ -252,6 +255,7 @@ test("authenticated researcher feedback is queued once and invalid requests fail
   store.publishArtifact(runId, planner, { artifact_type: "research-plan" } as any, [], 0);
   store.startAttempt(runId, "reviewer");
   const server = createApp({ store, harness: {} as Harness, runtime: "deterministic" });
+  await server.ready;
   try {
     const endpoint = `${server.url.origin}/api/runs/${runId}/feedback`;
     assert.equal(
@@ -311,6 +315,7 @@ test("unknown API routes stay JSON 404 when the SPA is enabled", async () => {
     verifyReferences: createDeterministicVerifier(),
   });
   const server = createApp({ store, harness, runtime: "deterministic", webDist: dist });
+  await server.ready;
   const base = server.url.origin;
 
   const api = await fetch(`${base}/api/typo`);
@@ -330,6 +335,7 @@ test("does not expose internal exception details in a 500 response", async () =>
     },
   } as unknown as Harness;
   const server = createApp({ store, harness, runtime: "deterministic" });
+  await server.ready;
   const response = await fetch(`${server.url.origin}/api/runs`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -408,6 +414,7 @@ test("SSE replay 失败时报告诊断并发送可识别的错误帧", async () 
     runtime: "deterministic",
     reportError: (message, error) => errors.push([message, error]),
   });
+  await server.ready;
 
   const response = await fetch(`${server.url.origin}/api/runs/${runId}/events`);
   const body = await response.text();

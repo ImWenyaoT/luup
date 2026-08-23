@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Database } from "bun:sqlite";
-import { onTestFinished, test } from "bun:test";
+import { DatabaseSync } from "node:sqlite";
+import { onTestFinished, test } from "vitest";
 
 type TestContext = { onTestFinished: typeof onTestFinished };
 
@@ -23,7 +23,7 @@ import {
   renderMarkdown,
   type RunFacts,
 } from "../src/eval/metrics.ts";
-import type { MemoryArm, SourceIdentity } from "../src/store/contracts.ts";
+import type { MemoryArm, SourceIdentity } from "../src/agent/contracts.ts";
 import { SqliteStore } from "../src/store/store.ts";
 
 type Seed = {
@@ -329,7 +329,7 @@ test("corrections and reviewer rejections are counted over the right denominator
 test("malformed correction facts remain unknown instead of being counted as zero", () => {
   const t = { onTestFinished };
   const path = fixture(t, [{ questionId: 1, status: "completed", corrections: 1 }]);
-  const db = new Database(path);
+  const db = new DatabaseSync(path);
   db.exec("UPDATE attempts SET corrections = 'not-a-number'");
   db.close();
 
@@ -342,7 +342,7 @@ test("malformed correction facts remain unknown instead of being counted as zero
 test("a legacy database without the corrections column reports unknown instead of failing or using zero", () => {
   const t = { onTestFinished };
   const path = fixture(t, [{ questionId: 1, status: "completed" }]);
-  const db = new Database(path);
+  const db = new DatabaseSync(path);
   db.exec("ALTER TABLE attempts DROP COLUMN corrections");
   db.close();
 
@@ -479,7 +479,7 @@ test("a database written before the memory column existed still reads back", () 
   const t = { onTestFinished };
   const path = fixture(t, [{ questionId: 1, status: "completed" }]);
   // 只读打开的库补不了列。把列去掉，模拟 Wave 1 建的库。
-  const db = new Database(path);
+  const db = new DatabaseSync(path);
   db.exec("ALTER TABLE runs DROP COLUMN memory_arm");
   db.close();
 

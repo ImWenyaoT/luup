@@ -1,6 +1,9 @@
-import type { Artifact, Snapshot } from "./types";
+import { treaty } from "@elysiajs/eden";
+import type { Artifact, Science125Data, Science125Question, Snapshot } from "./types";
 
 const SNAPSHOT_TIMEOUT_MS = 10_000;
+
+export const client = treaty<any>(typeof window !== "undefined" ? window.location.origin : "http://localhost");
 
 export class ApiError extends Error {
   readonly status: number;
@@ -31,7 +34,6 @@ export async function createRun(question: string): Promise<Snapshot> {
 }
 
 export async function fetchRun(runId: string): Promise<Snapshot> {
-  // 浏览器原生超时会中断卡住的连接，让 App 现有的重试与恢复定时器能继续工作。
   return parse<Snapshot>(
     await fetch(`/api/runs/${encodeURIComponent(runId)}`, {
       signal: AbortSignal.timeout(SNAPSHOT_TIMEOUT_MS),
@@ -70,7 +72,18 @@ export async function fetchConfig(): Promise<ConfigStatus> {
   return parse<ConfigStatus>(await fetch("/api/config"));
 }
 
-/** 密钥只进不出：请求带 key，响应永远只有三态状态。 */
+export async function fetchScience125(): Promise<Science125Data> {
+  return parse<Science125Data>(await fetch("/api/science125"));
+}
+
+export async function fetchScience125Question(
+  id: number,
+): Promise<{ question: Science125Question; formattedText: string }> {
+  return parse<{ question: Science125Question; formattedText: string }>(
+    await fetch(`/api/science125/${encodeURIComponent(id)}`),
+  );
+}
+
 export async function saveConfig(next: {
   api_key?: string;
   model_id?: string;
@@ -85,15 +98,9 @@ export async function saveConfig(next: {
   );
 }
 
-/** SSE 只当「有事发生了」的低延迟提示，权威状态一律回头拉快照。
- *
- * 这样后端新增事件种类时前端没跟上也不会丢数据，只是晚一拍 —— 代价仅仅是多一次
- * 快照请求，换来的是两边不必为了「对齐」去改帧格式。
- */
 export function subscribe(runId: string, from: number, onTick: () => void): () => void {
   const source = new EventSource(`/api/runs/${encodeURIComponent(runId)}/events?after=${from}`);
   const handle = () => onTick();
-  // 帧是命名事件（`event: <kind>`），EventSource 不会把它们派发到 onmessage。
   for (const kind of [
     "run.created",
     "attempt.started",

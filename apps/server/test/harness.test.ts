@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { onTestFinished, test } from "bun:test";
+import { onTestFinished, test } from "vitest";
 
 import { ArxivLookupError } from "../src/agent/arxiv.ts";
 import type { ResearchPlan } from "../src/agent/contracts.ts";

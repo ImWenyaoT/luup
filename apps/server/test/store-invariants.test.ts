@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "bun:test";
+import { test } from "vitest";
 
 import type { DomainArtifact } from "../src/agent/contracts.ts";
 import { SqliteStore } from "../src/store/store.ts";

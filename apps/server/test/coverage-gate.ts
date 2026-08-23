@@ -1,6 +1,8 @@
+import { readFileSync } from "node:fs";
+
 const minimum = 0.8;
 const reportPath = "coverage/lcov.info";
-const report = await Bun.file(reportPath).text();
+const report = readFileSync(reportPath, "utf8");
 
 let functionTotal = 0;
 let functionHit = 0;

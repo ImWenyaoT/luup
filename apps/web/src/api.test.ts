@@ -1,6 +1,17 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, test, vi } from "vitest";
+const mock = vi.fn;
 
-import { ApiError, createRun, fetchConfig, fetchRun, saveConfig, submitResearcherFeedback } from "./api";
+import {
+  ApiError,
+  client,
+  createRun,
+  fetchConfig,
+  fetchRun,
+  fetchScience125,
+  fetchScience125Question,
+  saveConfig,
+  submitResearcherFeedback,
+} from "./api";
 
 /** api 层的错误路径：这是切栈时丢掉的那类覆盖（#20 曾用它抓出 4 个真 bug）。 */
 
@@ -22,7 +33,7 @@ function stubFetch(implementation: typeof fetch): void {
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
-  mock.restore();
+  vi.restoreAllMocks();
 });
 
 describe("错误路径", () => {
@@ -92,5 +103,30 @@ describe("请求形状", () => {
       "content-type": "application/json",
       authorization: "Bearer secret",
     });
+  });
+
+  test("fetchScience125 requests /api/science125 and returns parsed json", async () => {
+    const mockData = { source: "src", retrievedAt: "2026-08-08", total: 125, domains: [] };
+    const spy = mock(async () => respond(200, JSON.stringify(mockData)));
+    stubFetch(spy as unknown as typeof fetch);
+    const data = await fetchScience125();
+    expect(data).toEqual(mockData);
+    expect((spy.mock.calls[0] as unknown[])[0]).toBe("/api/science125");
+  });
+
+  test("fetchScience125Question encodes question id and returns item", async () => {
+    const mockQ = { question: { id: 61, domain: "Physics", question: "Dark matter" }, formattedText: "text" };
+    const spy = mock(async () => respond(200, JSON.stringify(mockQ)));
+    stubFetch(spy as unknown as typeof fetch);
+    const data = await fetchScience125Question(61);
+    expect(data).toEqual(mockQ);
+    expect((spy.mock.calls[0] as unknown[])[0]).toBe("/api/science125/61");
+  });
+
+  test("client (Eden Treaty) provides type-safe endpoints", () => {
+    const c = client as any;
+    expect(typeof c.api.runs.post).toBe("function");
+    expect(typeof c.api.config.get).toBe("function");
+    expect(typeof c.api.science125.get).toBe("function");
   });
 });

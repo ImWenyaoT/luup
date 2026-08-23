@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync 
 import { basename, dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
-import { Database } from "bun:sqlite";
+import { DatabaseSync } from "node:sqlite";
 
 import {
   buildBatchSubmissionIndexReadOnly,
@@ -483,10 +483,10 @@ function safeReport<T>(fn: () => T): { value: T | null; error: string } {
 }
 
 class ReadOnlySubmissionDatabase implements BatchSubmissionReadSource, RepresentativeCaseReadSource {
-  readonly #db: Database;
+  readonly #db: DatabaseSync;
 
   constructor(path: string) {
-    this.#db = new Database(path, { readonly: true });
+    this.#db = new DatabaseSync(path, { readOnly: true });
   }
 
   close(): void {

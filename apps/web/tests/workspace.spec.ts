@@ -12,7 +12,7 @@ test("completes a deterministic research run through the Bun server", async ({ p
   await page.getByRole("button", { name: "保存" }).click();
   await expect(page.getByText("已保存，下一次运行即生效。")).toBeVisible();
   await expect(page.getByText("qwen-e2e")).toBeVisible();
-  await page.getByText("设置", { exact: true }).click();
+  await page.getByRole("button", { name: "关闭" }).click();
 
   await page.getByPlaceholder("提出一个可以设计实验去检验的研究问题").fill("冻结证据能降低科研 Agent 的无来源引用吗？");
   await page.getByRole("button", { name: "开始研究" }).click();
@@ -138,4 +138,29 @@ test("completes a deterministic research run through the Bun server", async ({ p
   await page.getByRole("button", { name: "开始研究" }).click();
   await expect(page.getByText("Run 不存在。")).not.toBeVisible();
   await expect(completedBadge).toBeVisible();
+});
+
+test("selects Science 125 benchmark preset question and triggers direct run", async ({ page }) => {
+  await page.goto("/");
+
+  await expect(page.getByText("Science 125 题库选题")).toBeVisible();
+  await expect(page.getByText("125 题已冻结")).toBeVisible();
+
+  // 左侧边栏搜索 #61
+  const searchInput = page.getByPlaceholder("搜索题号 (如 #61) 或中英文关键词…");
+  await expect(searchInput).toBeVisible();
+  await searchInput.fill("61");
+  await expect(page.getByRole("complementary").getByText("#61")).toBeVisible();
+
+  // 点击侧边栏筛选出的题目直接开跑
+  const runButtons = page.getByRole("complementary").getByRole("button", { name: "开跑 →" });
+  await expect(runButtons.first()).toBeVisible();
+  await runButtons.first().click();
+
+  const completedBadge = page
+    .locator('[data-slot="badge"]')
+    .filter({ hasText: /^已完成$/ })
+    .first();
+  await expect(completedBadge).toBeVisible();
+  await expect(page.getByText("冻结产物")).toBeVisible();
 });

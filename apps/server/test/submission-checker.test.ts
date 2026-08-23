@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "bun:test";
+import { test } from "vitest";
 
 import { checkSubmissionFile, mp4DurationSeconds, pdfPageCount } from "../src/submission/checker.ts";
 

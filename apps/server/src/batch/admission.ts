@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import type { MemoryArm, SourceIdentity } from "../store/contracts.ts";
+import type { MemoryArm, SourceIdentity } from "../agent/contracts.ts";
 import type { BatchRunFacts } from "../store/store.ts";
 
 type LaunchIntent = {
@@ -135,7 +135,7 @@ function sourceFact(intent: LaunchIntent): SourceIdentity | null {
     : readSourceIdentity(intent.repoRoot);
 }
 
-export function readPhaseBQuestionIds(repoRoot: string = resolve(import.meta.dir, "../../../..")): number[] {
+export function readPhaseBQuestionIds(repoRoot: string = resolve(import.meta.dirname, "../../../..")): number[] {
   const path = resolve(repoRoot, "docs/design/experiment-protocol.json");
   let raw: unknown;
   try {

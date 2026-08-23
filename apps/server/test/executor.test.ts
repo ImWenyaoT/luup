@@ -7,7 +7,7 @@
 
 import assert from "node:assert/strict";
 import { Agent, Usage, type Model, type ModelProvider, type ModelResponse } from "@openai/agents";
-import { test } from "bun:test";
+import { test } from "vitest";
 
 import { StageError } from "../src/agent/failures.ts";
 import { createQwenExecutor, TRANSIENT_RETRY } from "../src/executor.ts";

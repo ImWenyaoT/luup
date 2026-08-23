@@ -1,7 +1,8 @@
 /**
- * 只剩主题。
+ * Codex Theme v1 (Light & Dark Variants).
  *
- * 本文件只声明主题令牌；布局和外观由 Tailwind 与 shadcn 组件负责。
+ * Light: surface #ffffff, ink #0d0d0d, accent #0169cc, semantic: diffAdded #00a240, diffRemoved #e02e2a, skill #751ed9
+ * Dark: surface #111111, ink #fcfcfc, accent #0169cc, font: Inter, semantic: diffAdded #00a240, diffRemoved #e02e2a, skill #b06dff
  */
 
 @import "tailwindcss";
@@ -10,51 +11,67 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --radius: 0.625rem;
-  --background: oklch(0.982 0.006 255);
-  --foreground: oklch(0.21 0.035 258);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.55 0.22 260);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.965 0.018 255);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --radius: 0.5rem;
+  --background: #ffffff;
+  --foreground: #0d0d0d;
+  --card: #ffffff;
+  --card-foreground: #0d0d0d;
+  --primary: #0169cc;
+  --primary-foreground: #ffffff;
+  --secondary: #f4f4f5;
+  --secondary-foreground: #0d0d0d;
+  --muted: #f4f4f5;
+  --muted-foreground: #666666;
+  --accent: #eff6ff;
+  --accent-foreground: #0169cc;
+  --destructive: #e02e2a;
+  --destructive-foreground: #ffffff;
+  --success: #00a240;
+  --success-foreground: #ffffff;
+  --skill: #751ed9;
+  --skill-foreground: #ffffff;
+  --border: #e5e5e5;
+  --input: #e5e5e5;
+  --ring: #0169cc;
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --background: #111111;
+  --foreground: #fcfcfc;
+  --card: #181818;
+  --card-foreground: #fcfcfc;
+  --primary: #0169cc;
+  --primary-foreground: #ffffff;
+  --secondary: #1e1e1e;
+  --secondary-foreground: #fcfcfc;
+  --muted: #1a1a1a;
+  --muted-foreground: #999999;
+  --accent: #172334;
+  --accent-foreground: #60a5fa;
+  --destructive: #e02e2a;
+  --destructive-foreground: #ffffff;
+  --success: #00a240;
+  --success-foreground: #ffffff;
+  --skill: #b06dff;
+  --skill-foreground: #ffffff;
+  --border: #262626;
+  --input: #262626;
+  --ring: #0169cc;
 }
 
 @theme inline {
-  /* Geist 没有中文字形，界面几乎全是中文，所以后面必须跟一串中文回退。 */
-  --font-sans: "Geist Variable", ui-sans-serif, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --font-sans:
+    "Inter", "Geist Variable", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC",
+    "Microsoft YaHei", sans-serif;
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-skill: var(--skill);
+  --color-skill-foreground: var(--skill-foreground);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -70,7 +87,7 @@
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  --radius-4xl: calc(var(--radius) * 2.4);
 }
 
 @layer base {

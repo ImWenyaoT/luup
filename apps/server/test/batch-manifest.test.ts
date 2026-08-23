@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "bun:test";
+import { test } from "vitest";
 
 import type { DomainArtifact } from "../src/agent/contracts.ts";
 import { BatchManifest, type BatchTerminalStatus } from "../src/batch/manifest.ts";

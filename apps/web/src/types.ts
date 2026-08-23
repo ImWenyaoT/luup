@@ -203,3 +203,22 @@ export const ROLE_LABEL: Record<Role, string> = {
 };
 
 export const TERMINAL: ReadonlySet<RunStatus> = new Set(["completed", "review_rejected", "failed"]);
+
+export type Science125Question = {
+  id: number;
+  domain: string;
+  question: string;
+};
+
+type Science125Domain = {
+  domain: string;
+  count: number;
+  questions: Science125Question[];
+};
+
+export type Science125Data = {
+  source: string;
+  retrievedAt: string;
+  total: number;
+  domains: Science125Domain[];
+};

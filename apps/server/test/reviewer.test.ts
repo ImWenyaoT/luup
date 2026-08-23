@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { test } from "bun:test";
+import { test } from "vitest";
 
 import { EvidenceLedger } from "../src/agent/evidence.ts";
 import { ContractError } from "../src/agent/failures.ts";
 import { reportStructuredOutput } from "../src/agent/roles/structured-output.ts";
 import { runTask, type StageExecutor } from "../src/roles.ts";
-import type { TaskContext } from "../src/store/contracts.ts";
+import type { TaskContext } from "../src/agent/contracts.ts";
 import { SqliteStore } from "../src/store/store.ts";
 
 const reviewerInputs = [

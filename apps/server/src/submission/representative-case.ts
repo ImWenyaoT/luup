@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, extname, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { z } from "zod";
 
 import { FAILURE_CODES } from "../agent/failures.ts";
 import type { Role } from "../agent/contracts.ts";
@@ -41,7 +42,6 @@ export type RepresentativeCaseRound = {
   stop_reason: string | null;
   retry_reason: string | null;
   rollback_reason: string | null;
-  /** 仅由 api/projection.ts 白名单构造；不含 prompt、内部 rationale 或工具原文。 */
   public_outputs: {
     plan: RepresentativeCasePublicArtifact | null;
     review: RepresentativeCasePublicArtifact | null;
@@ -120,21 +120,17 @@ export type RepresentativeCaseExport = {
     review: string[];
     unknown: string[];
   };
-  /** 首轮/二轮之外的公开上下文，用于展示候选比较和证据缺口。 */
   public_artifacts: {
     research: RepresentativeCasePublicArtifact[];
     hypothesis: RepresentativeCasePublicArtifact[];
     evidence_review: RepresentativeCasePublicArtifact[];
   };
-  /** 每条实际检索来源的可核验说明；不含 tool output、prompt 或 rationale。 */
   source_ledger: RepresentativeCaseSourceLedger;
   rounds: { round1: RepresentativeCaseRound; round2: RepresentativeCaseRound };
   verification: RepresentativeCaseVerification;
   trace: RepresentativeCaseTrace;
   usage: RepresentativeCaseUsage;
-  /** Strict submission readiness result; present only when `--strict` was requested. */
   strict?: RepresentativeCaseStrictReport;
-  /** Stable, non-sensitive diagnostics for absent, malformed, or incomplete facts. */
   unknown_reasons: string[];
 };
 
@@ -143,7 +139,6 @@ export type RepresentativeCaseStrictReport = {
   reasons: string[];
 };
 
-/** Read-only store seam used by both the normal exporter and offline readiness. */
 export type RepresentativeCaseReadSource = {
   snapshot(runId: string): Record<string, unknown> | null;
   artifact(artifactId: string): StoredArtifact | null;
@@ -155,9 +150,7 @@ export type ExportRepresentativeCaseOptions = {
   jsonPath: string;
   markdownPath?: string;
   generatedAt?: string;
-  /** Fail closed on the official Science-125 representative-case requirements. */
   strict?: boolean;
-  /** Test and embedding seam; production CLI opens dbPath itself. */
   store?: SqliteStore;
 };
 
@@ -220,7 +213,6 @@ export type RepresentativeCasePublicArtifact = {
 };
 
 export type RepresentativeCaseSourceLedgerEntry = {
-  /** 一个检索事件的 durable ID；同一事件的多条 citation 各有一行。 */
   evidence_id: string;
   attempt_id: string | null;
   evidence_status: string | null;
@@ -239,13 +231,11 @@ export type RepresentativeCaseSourceLedgerEntry = {
     locator: string | null;
     url: string | null;
   } | null;
-  /** 直接从候选的 supporting/opposing_evidence_ids join，不从正文推断。 */
   hypothesis_roles: Array<{
     artifact_id: string;
     candidate_id: string;
     role: "supporting" | "opposing";
   }>;
-  /** 只暴露 Artifact ID、类型和结构化关系，不暴露 rationale 或原始 payload。 */
   artifact_uses: Array<{
     artifact_id: string;
     artifact_type: "research" | "hypothesis" | "evidence-review" | "research-plan" | "review";
@@ -261,7 +251,6 @@ export type RepresentativeCaseSourceLedgerEntry = {
       | "review_independent";
     candidate_id: string | null;
   }>;
-  /** 仅记录由检索通路/状态决定的限制；不冒充 citation 原文的科学限制。 */
   limitations: string[];
   unknown_reasons: string[];
 };
@@ -273,29 +262,108 @@ export type RepresentativeCaseSourceLedger = {
   unknown_reasons: string[];
 };
 
-/** Build a representative-case package from durable facts only.
- *
- * Artifact bodies, tool output, prompt/input text, provider errors, and credentials
- * are deliberately not part of this projection. Unknown or malformed facts become
- * stable reason codes instead of being guessed or silently dropped.
- */
+type HypothesisRole = RepresentativeCaseSourceLedgerEntry["hypothesis_roles"][number];
+type SourceLedgerUse = RepresentativeCaseSourceLedgerEntry["artifact_uses"][number];
+type SourceLedgerRelations = {
+  artifactUses: SourceLedgerUse[];
+  hypothesisRoles: HypothesisRole[];
+};
+
+// ---------------------------------------------------------------------------
+// Zod parser schemas & helpers
+// ---------------------------------------------------------------------------
+
+const safeIdSchema = z.string().regex(ID_PATTERN);
+const safeReasonCodeSchema = z.string().regex(/^[A-Za-z][A-Za-z0-9_.-]{0,100}$/);
+const nonNegativeIntSchema = z.number().int().min(0);
+
+function parseSafeId(value: unknown): string | null {
+  const parsed = safeIdSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
+function parseNullableId(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  return parseSafeId(value);
+}
+
+function parseReasonCode(value: unknown, reasons: string[], reason: string): string | null {
+  if (value === null || value === undefined) return null;
+  const parsed = safeReasonCodeSchema.safeParse(value);
+  if (parsed.success) return parsed.data;
+  reasons.push(reason);
+  return null;
+}
+
+function parseNullableNonNegativeInt(value: unknown, reasons: string[], reason: string): number | null {
+  if (value === null || value === undefined) return null;
+  const parsed = nonNegativeIntSchema.safeParse(value);
+  if (parsed.success) return parsed.data;
+  reasons.push(reason);
+  return null;
+}
+
+function parseNullableInt(value: unknown, reasons: string[], reason: string): number | null {
+  if (value === null || value === undefined) return null;
+  const parsed = z.number().int().safeParse(value);
+  if (parsed.success) return parsed.data;
+  reasons.push(reason);
+  return null;
+}
+
+function parseChangedFieldsList(value: unknown, reasons: string[]): string[] {
+  if (value === null || value === undefined || value === "") return [];
+  if (typeof value !== "string") {
+    reasons.push("changed_fields_unknown");
+    return [];
+  }
+  const fields = value
+    .split(",")
+    .map((field) => field.trim())
+    .filter(Boolean);
+  const valid = fields.filter((field) => FIELD_PATTERN.test(field));
+  if (valid.length !== fields.length) reasons.push("changed_fields_unknown");
+  return [...new Set(valid)].sort();
+}
+
 export function buildRepresentativeCase(
   store: RepresentativeCaseReadSource,
   runId: string,
   generatedAt = new Date().toISOString(),
 ): RepresentativeCaseExport {
-  const safeRunId = safeId(runId);
+  const safeRunId = parseSafeId(runId);
   const snapshot = store.snapshot(runId);
   if (snapshot === null) return unknownCase(safeRunId, generatedAt, "run_not_found");
 
   const rootReasons: string[] = [];
-  const runStatus = safeRunStatus(snapshot.status);
+  const statusStr =
+    typeof snapshot.status === "string" && RUN_STATUS_SET.has(snapshot.status) ? snapshot.status : "unknown";
+  const runStatus: CaseStatus = statusStr as CaseStatus;
   if (runStatus === "unknown") rootReasons.push("run_status_unknown");
-  const science125Id = safeScience125Id(snapshot.science125_id, rootReasons);
-  const question = redactSensitiveText(safeText(snapshot.question));
+
+  let science125Id: number | null = null;
+  if (snapshot.science125_id !== null && snapshot.science125_id !== undefined) {
+    const parsed = z.number().int().min(1).safeParse(snapshot.science125_id);
+    if (parsed.success) science125Id = parsed.data;
+    else rootReasons.push("science125_id_unknown");
+  }
+
+  const question =
+    typeof snapshot.question === "string" && snapshot.question.length <= 4000
+      ? redactSensitiveText(snapshot.question)
+      : null;
   if (question === null) rootReasons.push("question_unknown");
-  const errorCode = safeErrorCode(snapshot.error_code, rootReasons);
-  const finalArtifactId = safeId(snapshot.final_artifact_id);
+
+  let errorCode: string | null = null;
+  if (snapshot.error_code !== null && snapshot.error_code !== undefined) {
+    if (typeof snapshot.error_code === "string" && FAILURE_CODE_SET.has(snapshot.error_code)) {
+      errorCode = snapshot.error_code;
+    } else {
+      rootReasons.push("error_code_unknown");
+    }
+  }
+
+  const finalArtifactId = parseSafeId(snapshot.final_artifact_id);
   if (snapshot.final_artifact_id !== null && finalArtifactId === null) rootReasons.push("final_artifact_id_unknown");
 
   const events = readEvents(snapshot.recent_events, rootReasons);
@@ -331,11 +399,6 @@ export function buildRepresentativeCase(
   };
 }
 
-/**
- * Check the stricter representative-case submission contract without changing
- * the default diagnostic projection. Every failure is a stable reason code so
- * the CLI can fail closed while leaving the generated case available for audit.
- */
 export function checkRepresentativeCaseStrict(
   store: RepresentativeCaseReadSource,
   value: RepresentativeCaseExport,
@@ -367,9 +430,9 @@ export function checkRepresentativeCaseStrict(
     reasons.push("revision_missing");
   } else {
     const hasAuditableRevision = revisions.some((event) => {
-      const from = safeId(event.payload.from_artifact_id);
-      const to = safeId(event.payload.to_artifact_id);
-      const fields = parseChangedFields(event.payload.changed_fields, []);
+      const from = parseSafeId(event.payload.from_artifact_id);
+      const to = parseSafeId(event.payload.to_artifact_id);
+      const fields = parseChangedFieldsList(event.payload.changed_fields, []);
       return from !== null && to !== null && fields.length > 0;
     });
     if (!hasAuditableRevision) reasons.push("revision_facts_incomplete");
@@ -408,15 +471,15 @@ export function checkRepresentativeCaseStrict(
   return { passed: reasons.length === 0, reasons: unique(reasons) };
 }
 
-/** Write the machine-readable package and a human-readable Markdown rendering. */
 export function exportRepresentativeCase(options: ExportRepresentativeCaseOptions): RepresentativeCaseExport {
   const store = options.store ?? new SqliteStore(options.dbPath);
   try {
-    const result = buildRepresentativeCase(store, options.runId, options.generatedAt);
-    const strict = options.strict ? checkRepresentativeCaseStrict(store, result) : null;
-    const output = strict === null ? result : { ...result, strict };
-    writeJson(options.jsonPath, output);
-    const markdownPath = options.markdownPath ?? defaultMarkdownPath(options.jsonPath);
+    const output = buildRepresentativeCase(store, options.runId, options.generatedAt);
+    if (options.strict) {
+      output.strict = checkRepresentativeCaseStrict(store, output);
+    }
+    writeText(options.jsonPath, JSON.stringify(output, null, 2) + "\n");
+    const markdownPath = options.markdownPath ?? options.jsonPath.replace(/\.json$/i, ".md");
     writeText(markdownPath, renderRepresentativeCaseMarkdown(output));
     return output;
   } finally {
@@ -549,71 +612,43 @@ function renderPublicArtifactMarkdown(label: string, artifact: RepresentativeCas
         `#### ${label}`,
         `- artifact: ${artifact.id}`,
         `- summary: ${escapeMarkdown(content.summary)}`,
-        `- knowledge gap: ${escapeMarkdown(content.research_framing.knowledge_gap)}`,
-        `- limitations: ${content.limitations.map(escapeMarkdown).join("；")}`,
+        `- research framing: ${escapeMarkdown(content.research_framing.research_object)} (${escapeMarkdown(content.research_framing.scope)})`,
+        `- claims: ${content.claims.map((claim) => escapeMarkdown(claim.statement)).join("；") || "unknown"}`,
+        `- limitations: ${content.limitations.map(escapeMarkdown).join("；") || "none"}`,
         "",
       ];
     case "hypothesis":
       return [
         `#### ${label}`,
         `- artifact: ${artifact.id}`,
-        `- selected candidate: ${escapeMarkdown(content.comparison.selected_candidate_id)}`,
-        "- candidates:",
-        ...content.candidates.map(
-          (candidate) =>
-            `  - ${escapeMarkdown(candidate.candidate_id)}: ${escapeMarkdown(candidate.core_claim)}；支持 ${candidate.supporting_evidence_ids.length}，反对 ${candidate.opposing_evidence_ids.length}，不确定性 ${candidate.uncertainty.length}`,
-        ),
-        "- comparison:",
-        ...content.comparison.evaluations.map(
-          (evaluation) =>
-            `  - rank ${evaluation.rank}: ${escapeMarkdown(evaluation.candidate_id)}；优点：${evaluation.strengths.map(escapeMarkdown).join("；")}；限制：${evaluation.weaknesses.map(escapeMarkdown).join("；")}`,
-        ),
-        "",
+        `- selected candidate: ${content.comparison.selected_candidate_id}`,
+        `- selection status: ${content.selection_status}`,
+        ...content.candidates.flatMap((candidate) => [
+          `##### Candidate ${candidate.candidate_id}`,
+          `- core claim: ${escapeMarkdown(candidate.core_claim)}`,
+          `- falsifiable predictions: ${candidate.falsifiable_predictions.map(escapeMarkdown).join("；") || "unknown"}`,
+          `- uncertainty: ${candidate.uncertainty.map(escapeMarkdown).join("；") || "unknown"}`,
+          `- boundaries: ${candidate.boundaries.map(escapeMarkdown).join("；") || "unknown"}`,
+          `- validation: ${candidate.validation_conditions.map(escapeMarkdown).join("；") || "unknown"}`,
+          "",
+        ]),
       ];
     case "evidence-review":
       return [
         `#### ${label}`,
         `- artifact: ${artifact.id}`,
         `- gaps: ${content.gaps.map(escapeMarkdown).join("；") || "none"}`,
-        ...content.assessments.map(
-          (assessment) => `- assessment: ${escapeMarkdown(assessment.claim)} → ${escapeMarkdown(assessment.verdict)}`,
-        ),
+        `- assessments: ${content.assessments.map((item) => `${escapeMarkdown(item.claim)} (${item.verdict})`).join("；") || "none"}`,
         "",
       ];
     case "research-plan":
       return [
         `#### ${label}`,
         `- artifact: ${artifact.id}`,
-        `- title: ${escapeMarkdown(content.paper_title)}`,
         `- problem: ${escapeMarkdown(content.problem_statement)}`,
-        `- target: ${escapeMarkdown(content.target)}`,
-        "- predictions:",
-        ...content.execution_plan.predictions.map(
-          (prediction) =>
-            `  - [${escapeMarkdown(prediction.candidate_id)}] ${escapeMarkdown(prediction.prediction)}；证伪：${escapeMarkdown(prediction.falsification_criterion)}`,
-        ),
-        "- data and conditions:",
-        ...content.execution_plan.data_requirements.map(
-          (requirement) =>
-            `  - ${escapeMarkdown(requirement.source)}；变量：${requirement.variables.map(escapeMarkdown).join("、")}；条件：${requirement.conditions.map(escapeMarkdown).join("；")}`,
-        ),
-        "- steps:",
-        ...content.execution_plan.steps.map(
-          (step) => `  - ${step.order}. ${escapeMarkdown(step.action)} → ${escapeMarkdown(step.expected_output)}`,
-        ),
-        "- analysis:",
-        ...content.execution_plan.analysis.map(
-          (analysis) =>
-            `  - ${escapeMarkdown(analysis.method)}；输入：${analysis.inputs.map(escapeMarkdown).join("、")}；规则：${escapeMarkdown(analysis.decision_rule)}`,
-        ),
-        "- result interpretations:",
-        ...content.execution_plan.result_interpretations.map(
-          (interpretation) =>
-            `  - ${escapeMarkdown(interpretation.observed_result)} → ${escapeMarkdown(interpretation.meaning)}`,
-        ),
-        `- stop: ${content.execution_plan.stop_conditions.map(escapeMarkdown).join("；")}`,
-        `- rollback: ${content.execution_plan.rollback_conditions.map(escapeMarkdown).join("；")}`,
-        `- supplement evidence: ${content.execution_plan.supplement_evidence_conditions.map(escapeMarkdown).join("；")}`,
+        `- technical details: ${escapeMarkdown(content.technical_details)}`,
+        `- execution steps: ${content.execution_plan.steps.map((step) => `${step.order}. ${escapeMarkdown(step.action)}`).join(" / ")}`,
+        `- results status: ${content.results.status} (${content.results.validation_basis})`,
         "",
       ];
     case "review":
@@ -623,17 +658,16 @@ function renderPublicArtifactMarkdown(label: string, artifact: RepresentativeCas
         `- accepted: ${content.accepted}`,
         `- scores: scientific_value=${content.scores.scientific_value}, technical_depth=${content.scores.technical_depth}, application_potential=${content.scores.application_potential}`,
         `- weaknesses: ${content.weaknesses.map(escapeMarkdown).join("；") || "none"}`,
-        "- feedback:",
-        ...content.feedback.map((feedback) => `  - ${escapeMarkdown(feedback)}`),
+        `- feedback: ${content.feedback.map(escapeMarkdown).join("；") || "none"}`,
         "",
       ];
   }
 }
 
 export function main(argv: string[] = process.argv.slice(2)): number {
-  let values: { db?: string; "run-id"?: string; out?: string; markdown?: string; strict?: boolean };
+  let parsed;
   try {
-    values = parseArgs({
+    parsed = parseArgs({
       args: argv,
       options: {
         db: { type: "string" },
@@ -643,54 +677,52 @@ export function main(argv: string[] = process.argv.slice(2)): number {
         strict: { type: "boolean", default: false },
       },
       strict: true,
-    }).values;
-  } catch (error) {
-    process.stderr.write(`[submission:case] ${describe(error)}\n`);
-    return 2;
-  }
-  if (!values["run-id"] || !values.out) {
-    process.stderr.write(
-      "用法：bun run submission:case -- --run-id <run-id> --out <case.json> [--markdown <case.md>] [--db <runs.db>] [--strict]\n",
-    );
-    return 2;
-  }
-  const dbPath = values.db || process.env.LUUP_DATABASE || "outputs/runtime/typescript-runs.db";
-  try {
-    const result = exportRepresentativeCase({
-      dbPath,
-      runId: values["run-id"],
-      jsonPath: values.out,
-      markdownPath: values.markdown,
-      strict: values.strict,
     });
-    process.stdout.write(
-      `[submission:case] status=${result.run.status} science125_id=${display(result.run.science125_id)} ` +
-        `run=${display(result.run_id)} out=${resolve(values.out)}\n`,
-    );
-    if (result.strict !== undefined && !result.strict.passed) {
-      process.stderr.write(`[submission:case] strict gate failed: ${result.strict.reasons.join(", ")}\n`);
-      return 1;
-    }
-    return result.run.status === "unknown" ? 1 : 0;
   } catch (error) {
-    process.stderr.write(`[submission:case] ${describe(error)}\n`);
+    process.stdout.write(`[submission:case] ${error instanceof Error ? error.message : String(error)}\n`);
     return 2;
   }
+  const dbPath = parsed.values.db || process.env.LUUP_DATABASE || "outputs/runtime/typescript-runs.db";
+  const runId = parsed.values["run-id"];
+  const outPath = parsed.values.out;
+  if (!runId || !outPath) {
+    process.stdout.write(
+      "[submission:case] 用法：submission:case --db <path> --run-id <id> --out <path.json> [--markdown <path.md>] [--strict]\n",
+    );
+    return 2;
+  }
+  const result = exportRepresentativeCase({
+    dbPath,
+    runId,
+    jsonPath: outPath,
+    markdownPath: parsed.values.markdown,
+    strict: parsed.values.strict,
+  });
+  if (result.strict && !result.strict.passed) {
+    process.stdout.write(`[submission:case] strict 校验未通过：${result.strict.reasons.join(", ")}\n`);
+    return 1;
+  }
+  return 0;
 }
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
 function readEvents(value: unknown, reasons: string[]): CaseEvent[] {
+  if (value === null || value === undefined) return [];
   if (!Array.isArray(value)) {
-    reasons.push("events_unknown");
+    reasons.push("events_malformed");
     return [];
   }
   const events: CaseEvent[] = [];
   for (const item of value) {
     if (!isRecord(item) || typeof item.kind !== "string") {
-      reasons.push("malformed_event");
+      reasons.push("event_malformed");
       continue;
     }
-    events.push({ kind: item.kind, payload: isRecord(item.payload) ? item.payload : {} });
-    if (!isRecord(item.payload)) reasons.push("malformed_event_payload");
+    const payload = isRecord(item.payload) ? item.payload : {};
+    events.push({ kind: item.kind, payload });
   }
   return events;
 }
@@ -713,7 +745,7 @@ function readArtifacts(value: unknown, reasons: string[]): RepresentativeCaseExp
       reasons.push("malformed_artifact_metadata");
       continue;
     }
-    const id = safeId(item.id);
+    const id = parseSafeId(item.id);
     const type = typeof item.type === "string" ? item.type : null;
     if (id === null || type === null) {
       reasons.push("malformed_artifact_metadata");
@@ -739,20 +771,6 @@ function readArtifacts(value: unknown, reasons: string[]): RepresentativeCaseExp
   return result;
 }
 
-type SourceLedgerUse = RepresentativeCaseSourceLedgerEntry["artifact_uses"][number];
-type HypothesisRole = RepresentativeCaseSourceLedgerEntry["hypothesis_roles"][number];
-type SourceLedgerRelations = { artifactUses: SourceLedgerUse[]; hypothesisRoles: HypothesisRole[] };
-
-/**
- * Build the P4 source ledger from two durable seams:
- *
- * - `tool_evidence` is the retrieval fact (tool/query/status/citation metadata);
- * - frozen Artifact bodies are the only authority for how an evidence ID was used.
- *
- * This intentionally does not read `result_summary`, abstracts, rationale, or any raw
- * tool payload. A failed search remains a known unavailable retrieval, while malformed
- * rows become partial/unknown rather than being turned into a fake source.
- */
 function buildSourceLedger(
   value: unknown,
   store: RepresentativeCaseReadSource,
@@ -762,10 +780,10 @@ function buildSourceLedger(
   const relations = new Map<string, SourceLedgerRelations>();
   const addRelation = (evidenceId: string, use: SourceLedgerUse): void => {
     const existing = relations.get(evidenceId) ?? { artifactUses: [], hypothesisRoles: [] };
-    const useKey = `${use.artifact_id}\u0000${use.relation}\u0000${use.candidate_id ?? ""}`;
+    const useKey = `${use.artifact_id}\0${use.relation}\0${use.candidate_id ?? ""}`;
     if (
       !existing.artifactUses.some(
-        (item) => `${item.artifact_id}\u0000${item.relation}\u0000${item.candidate_id ?? ""}` === useKey,
+        (item) => `${item.artifact_id}\0${item.relation}\0${item.candidate_id ?? ""}` === useKey,
       )
     ) {
       existing.artifactUses.push(use);
@@ -774,11 +792,9 @@ function buildSourceLedger(
   };
   const addHypothesisRole = (evidenceId: string, role: HypothesisRole): void => {
     const existing = relations.get(evidenceId) ?? { artifactUses: [], hypothesisRoles: [] };
-    const roleKey = `${role.artifact_id}\u0000${role.candidate_id}\u0000${role.role}`;
+    const roleKey = `${role.artifact_id}\0${role.candidate_id}\0${role.role}`;
     if (
-      !existing.hypothesisRoles.some(
-        (item) => `${item.artifact_id}\u0000${item.candidate_id}\u0000${item.role}` === roleKey,
-      )
+      !existing.hypothesisRoles.some((item) => `${item.artifact_id}\0${item.candidate_id}\0${item.role}` === roleKey)
     ) {
       existing.hypothesisRoles.push(role);
     }
@@ -802,37 +818,42 @@ function buildSourceLedger(
   const ledgerReasons: string[] = [...relationReasons];
   const observedEvidenceIds = new Set<string>();
   let unknownRecords = relationReasons.length;
+
   for (const row of value) {
     if (!isRecord(row)) {
       ledgerReasons.push("source_evidence_row_malformed");
       unknownRecords += 1;
       continue;
     }
-    const evidenceId = safeId(row.id);
+    const evidenceId = parseSafeId(row.id);
     if (evidenceId === null) {
       ledgerReasons.push("source_evidence_id_unknown");
       unknownRecords += 1;
       continue;
     }
     const rowReasons: string[] = [];
-    const attemptId = safeNullableId(row.attempt_id);
+    const attemptId = parseNullableId(row.attempt_id);
     if (row.attempt_id !== null && row.attempt_id !== undefined && attemptId === null) {
       rowReasons.push("source_attempt_id_unknown");
     }
-    const tool = safeToolName(row.tool_name);
+    const tool =
+      typeof row.tool_name === "string" && (row.tool_name === "arxiv_search" || row.tool_name === "crossref_search")
+        ? row.tool_name
+        : null;
     if (tool === null) rowReasons.push("source_tool_unknown");
-    const query = safeRedactedSourceText(row.query);
+    const query = typeof row.query === "string" && row.query.length <= 4000 ? redactSensitiveText(row.query) : null;
     if (query === null) rowReasons.push("source_query_unknown");
-    const evidenceStatus = safeEvidenceStatus(row.status);
+    const evidenceStatus = typeof row.status === "string" ? row.status : null;
     if (evidenceStatus === null) rowReasons.push("source_status_unknown");
     const output = isRecord(row.output) ? row.output : null;
     if (output === null) rowReasons.push("source_output_unknown");
 
     const citations = output === null ? [] : readSourceCitations(output.citations, rowReasons);
     const sourceRows = citations.length === 0 ? [null] : citations;
-    if (citations.length === 0 && evidenceStatus !== null && evidenceStatus === "succeeded") {
+    if (citations.length === 0 && evidenceStatus === "succeeded") {
       rowReasons.push("succeeded_without_citation");
     }
+
     for (const citation of sourceRows) {
       observedEvidenceIds.add(evidenceId);
       const citationResult = citation === null ? { source: null, reasons: [] } : sourceFromCitation(citation);
@@ -866,6 +887,7 @@ function buildSourceLedger(
     }
     ledgerReasons.push(...rowReasons.filter((reason) => reason !== "no_citable_source"));
   }
+
   for (const [evidenceId, sourceRelations] of relations) {
     if (observedEvidenceIds.has(evidenceId)) continue;
     const unknownReasons = ["evidence_missing"];
@@ -884,6 +906,7 @@ function buildSourceLedger(
     ledgerReasons.push(...unknownReasons);
     unknownRecords += 1;
   }
+
   const unknownReasons = unique(ledgerReasons);
   rootReasons.push(...unknownReasons);
   return {
@@ -950,7 +973,7 @@ function collectArtifactRelations(
       return;
     }
     for (const item of value) {
-      const evidenceId = safeId(item);
+      const evidenceId = parseSafeId(item);
       if (evidenceId === null) {
         reasons.push(`source_${artifactType}_evidence_id_unknown`);
         continue;
@@ -980,45 +1003,31 @@ function collectArtifactRelations(
     case "hypothesis": {
       const candidates = Array.isArray(content.candidates) ? content.candidates : [];
       for (const candidate of candidates) {
-        if (!isRecord(candidate)) {
-          reasons.push("source_hypothesis_candidate_unknown");
-          continue;
-        }
-        const candidateId = safeRedactedSourceText(candidate.candidate_id);
-        if (candidateId === null) {
-          reasons.push("source_hypothesis_candidate_id_unknown");
-          continue;
-        }
-        for (const [field, role] of [
-          ["supporting_evidence_ids", "supporting"],
-          ["opposing_evidence_ids", "opposing"],
-        ] as const) {
-          if (!Array.isArray(candidate[field])) {
-            reasons.push(`source_hypothesis_${role}_unknown`);
-            continue;
+        if (!isRecord(candidate)) continue;
+        const candidateId = parseSafeId(candidate.candidate_id);
+        addIds(candidate.supporting_evidence_ids, "hypothesis_supporting", candidateId);
+        addIds(candidate.opposing_evidence_ids, "hypothesis_opposing", candidateId);
+        if (candidateId !== null && Array.isArray(candidate.supporting_evidence_ids)) {
+          for (const item of candidate.supporting_evidence_ids) {
+            const evidenceId = parseSafeId(item);
+            if (evidenceId !== null)
+              addHypothesisRole(evidenceId, { artifact_id: artifactId, candidate_id: candidateId, role: "supporting" });
           }
-          for (const value of candidate[field]) {
-            const evidenceId = safeId(value);
-            if (evidenceId === null) {
-              reasons.push("source_hypothesis_evidence_id_unknown");
-              continue;
-            }
-            addHypothesisRole(evidenceId, { artifact_id: artifactId, candidate_id: candidateId, role });
-            addRelation(evidenceId, {
-              artifact_id: artifactId,
-              artifact_type: artifactType,
-              relation: role === "supporting" ? "hypothesis_supporting" : "hypothesis_opposing",
-              candidate_id: candidateId,
-            });
+        }
+        if (candidateId !== null && Array.isArray(candidate.opposing_evidence_ids)) {
+          for (const item of candidate.opposing_evidence_ids) {
+            const evidenceId = parseSafeId(item);
+            if (evidenceId !== null)
+              addHypothesisRole(evidenceId, { artifact_id: artifactId, candidate_id: candidateId, role: "opposing" });
           }
         }
       }
       const comparison = isRecord(content.comparison) ? content.comparison : null;
-      const evaluations = comparison && Array.isArray(comparison.evaluations) ? comparison.evaluations : [];
+      const evaluations = Array.isArray(comparison?.evaluations) ? comparison.evaluations : [];
       for (const evaluation of evaluations) {
-        if (!isRecord(evaluation)) continue;
-        const candidateId = safeRedactedSourceText(evaluation.candidate_id);
-        addIds(evaluation.evidence_ids, "hypothesis_comparison", candidateId);
+        if (isRecord(evaluation)) {
+          addIds(evaluation.evidence_ids, "hypothesis_comparison", parseSafeId(evaluation.candidate_id));
+        }
       }
       break;
     }
@@ -1031,33 +1040,33 @@ function collectArtifactRelations(
     }
     case "research-plan": {
       const experiments = isRecord(content.experiments) ? content.experiments : null;
-      for (const field of ["baselines", "metrics"] as const) {
-        const items = experiments && Array.isArray(experiments[field]) ? experiments[field] : [];
-        for (const item of items) {
-          if (isRecord(item)) addIds(item.evidence_id === undefined ? undefined : [item.evidence_id], "plan_grounding");
-        }
+      const baselines = Array.isArray(experiments?.baselines) ? experiments.baselines : [];
+      for (const baseline of baselines) {
+        if (isRecord(baseline))
+          addIds(baseline.evidence_id === undefined ? undefined : [baseline.evidence_id], "plan_grounding");
+      }
+      const metrics = Array.isArray(experiments?.metrics) ? experiments.metrics : [];
+      for (const metric of metrics) {
+        if (isRecord(metric))
+          addIds(metric.evidence_id === undefined ? undefined : [metric.evidence_id], "plan_grounding");
       }
       addIds(content.verification_evidence_ids, "plan_verification");
       break;
     }
-    case "review":
+    case "review": {
       addIds(content.independent_evidence_ids, "review_independent");
       break;
+    }
   }
 }
 
 function readSourceCitations(value: unknown, reasons: string[]): UnknownRecord[] {
+  if (value === null || value === undefined) return [];
   if (!Array.isArray(value)) {
-    reasons.push("source_citations_unknown");
+    reasons.push("citations_malformed");
     return [];
   }
-  return value.filter((item): item is UnknownRecord => {
-    if (!isRecord(item)) {
-      reasons.push("source_citation_malformed");
-      return false;
-    }
-    return true;
-  });
+  return value.filter(isRecord);
 }
 
 function sourceFromCitation(citation: UnknownRecord): {
@@ -1067,13 +1076,21 @@ function sourceFromCitation(citation: UnknownRecord): {
   const reasons: string[] = [];
   const sourceType = citation.source_type === "web" || citation.source_type === "arxiv" ? citation.source_type : null;
   if (sourceType === null) reasons.push("source_type_unknown");
-  const title = safeRedactedSourceText(citation.title);
+  const title =
+    typeof citation.title === "string" && citation.title.length <= 4000 ? redactSensitiveText(citation.title) : null;
   if (title === null) reasons.push("source_title_unknown");
-  const locator = safeRedactedSourceText(citation.locator);
+  const locator =
+    typeof citation.locator === "string" && citation.locator.length <= 4000
+      ? redactSensitiveText(citation.locator)
+      : null;
   if (locator === null) reasons.push("source_locator_unknown");
-  const url = safeSourceUrl(citation.url);
-  if (citation.url !== null && citation.url !== undefined && url === null) reasons.push("source_url_unknown");
-  return { source: { source_type: sourceType, title, locator, url }, reasons };
+  const url =
+    typeof citation.url === "string" && citation.url.length <= 4000 ? redactSensitiveText(citation.url) : null;
+
+  return {
+    source: { source_type: sourceType, title, locator, url },
+    reasons,
+  };
 }
 
 function sourceLimitations(
@@ -1082,75 +1099,44 @@ function sourceLimitations(
   source: RepresentativeCaseSourceLedgerEntry["source"],
 ): string[] {
   const limitations: string[] = [];
-  if (tool === "arxiv_search" || tool === "crossref_search" || (source !== null && source.source_type !== null)) {
-    limitations.push("metadata_only_no_full_text_verification", "no_causal_validity_verification");
-  }
-  if (status === null) limitations.push("retrieval_status_unknown");
-  else if (status !== "succeeded") limitations.push(`retrieval_status_${status}`);
-  if (source === null) limitations.push("no_citable_source_returned");
-  return [...new Set(limitations)];
+  if (status && status !== "succeeded") limitations.push(`retrieval_status_${status}`);
+  if (tool === "arxiv_search") limitations.push("metadata_only_no_full_text_verification");
+  if (tool === "crossref_search") limitations.push("doi_registry_metadata_only");
+  if (!source || (!source.locator && !source.url)) limitations.push("citation_missing_locator_and_url");
+  return unique(limitations);
 }
 
 function availabilityStatus(status: string | null): RepresentativeCaseSourceLedgerEntry["availability"]["status"] {
-  if (status === "succeeded") return "available";
-  if (status === "partial") return "partial";
-  if (
-    status === "empty" ||
-    status === "failed" ||
-    status === "timeout" ||
-    status === "rate_limited" ||
-    status === "source_unavailable" ||
-    status === "refused"
-  ) {
-    return "unavailable";
-  }
-  return "unknown";
-}
-
-function safeToolName(value: unknown): string | null {
-  return typeof value === "string" && /^[A-Za-z][A-Za-z0-9_.-]{0,100}$/.test(value) ? value : null;
-}
-
-function safeEvidenceStatus(value: unknown): string | null {
-  const statuses = new Set([
-    "succeeded",
-    "empty",
-    "partial",
-    "failed",
-    "timeout",
-    "rate_limited",
-    "source_unavailable",
-    "refused",
-  ]);
-  return typeof value === "string" && statuses.has(value) ? value : null;
-}
-
-function safeRedactedSourceText(value: unknown): string | null {
-  const text = safeText(value);
-  return text === null ? null : redactSensitiveText(text);
-}
-
-function safeSourceUrl(value: unknown): string | null {
-  if (value === null || value === undefined) return null;
-  const text = safeRedactedSourceText(value);
-  if (text === null) return null;
-  try {
-    const parsed = new URL(text);
-    return parsed.protocol === "https:" || parsed.protocol === "http:" ? text : null;
-  } catch {
-    return null;
+  switch (status) {
+    case "succeeded":
+      return "available";
+    case "partial":
+      return "partial";
+    case "source_unavailable":
+    case "timeout":
+    case "rate_limited":
+    case "not_configured":
+      return "unavailable";
+    case null:
+    default:
+      return "unknown";
   }
 }
 
 function compareHypothesisRole(left: HypothesisRole, right: HypothesisRole): number {
-  return `${left.candidate_id}\u0000${left.role}\u0000${left.artifact_id}`.localeCompare(
-    `${right.candidate_id}\u0000${right.role}\u0000${right.artifact_id}`,
+  return (
+    left.artifact_id.localeCompare(right.artifact_id) ||
+    left.candidate_id.localeCompare(right.candidate_id) ||
+    left.role.localeCompare(right.role)
   );
 }
 
 function compareSourceUse(left: SourceLedgerUse, right: SourceLedgerUse): number {
-  return `${left.artifact_type}\u0000${left.relation}\u0000${left.artifact_id}\u0000${left.candidate_id ?? ""}`.localeCompare(
-    `${right.artifact_type}\u0000${right.relation}\u0000${right.artifact_id}\u0000${right.candidate_id ?? ""}`,
+  return (
+    left.artifact_id.localeCompare(right.artifact_id) ||
+    left.artifact_type.localeCompare(right.artifact_type) ||
+    left.relation.localeCompare(right.relation) ||
+    (left.candidate_id ?? "").localeCompare(right.candidate_id ?? "")
   );
 }
 
@@ -1170,42 +1156,37 @@ function publicArtifactList(
   store: RepresentativeCaseReadSource,
   ids: readonly string[],
   rootReasons: string[],
-  label: string,
+  kind: string,
 ): RepresentativeCasePublicArtifact[] {
-  return ids.flatMap((id) => {
-    const artifact = readPublicArtifact(store, id, rootReasons, `${label}_${id}`);
-    return artifact === null ? [] : [artifact];
-  });
+  const result: RepresentativeCasePublicArtifact[] = [];
+  for (const id of ids) {
+    const item = readPublicArtifact(store, id, rootReasons, `${kind}_artifact`);
+    if (item !== null) result.push(item);
+  }
+  return result;
 }
 
-/** Load an Artifact only through the same public projection used by the API. */
 function readPublicArtifact(
   store: RepresentativeCaseReadSource,
   artifactId: string | null,
-  reasons: string[],
-  label: string,
+  rootReasons: string[],
+  diagnosticLabel: string,
 ): RepresentativeCasePublicArtifact | null {
   if (artifactId === null) return null;
-  let stored;
-  try {
-    stored = store.artifact(artifactId);
-  } catch {
-    reasons.push(`${label}_projection_unavailable`);
-    return null;
-  }
+  const stored = store.artifact(artifactId);
   if (stored === null) {
-    reasons.push(`${label}_artifact_missing`);
+    rootReasons.push(`${diagnosticLabel}_missing`);
     return null;
   }
   try {
-    return toSubmissionPublicArtifact(projectArtifact(stored));
+    const projected = projectArtifact(stored);
+    return toSubmissionPublicArtifact(projected);
   } catch {
-    reasons.push(`${label}_projection_unavailable`);
+    rootReasons.push(`${diagnosticLabel}_malformed`);
     return null;
   }
 }
 
-/** Narrow the public API projection again for submission: no rationale or input/tool internals. */
 function toSubmissionPublicArtifact(artifact: PublicArtifact): RepresentativeCasePublicArtifact {
   switch (artifact.content.artifact_type) {
     case "research":
@@ -1229,16 +1210,14 @@ function toSubmissionPublicArtifact(artifact: PublicArtifact): RepresentativeCas
           question: artifact.content.question,
           candidates: artifact.content.candidates,
           comparison: {
-            criteria: artifact.content.comparison.criteria.map(({ criterion }) => ({ criterion })),
-            evaluations: artifact.content.comparison.evaluations.map(
-              ({ candidate_id, rank, strengths, weaknesses, evidence_ids }) => ({
-                candidate_id,
-                rank,
-                strengths,
-                weaknesses,
-                evidence_ids,
-              }),
-            ),
+            criteria: artifact.content.comparison.criteria.map((item) => ({ criterion: item.criterion })),
+            evaluations: artifact.content.comparison.evaluations.map((item) => ({
+              candidate_id: item.candidate_id,
+              rank: item.rank,
+              strengths: item.strengths,
+              weaknesses: item.weaknesses,
+              evidence_ids: item.evidence_ids,
+            })),
             selected_candidate_id: artifact.content.comparison.selected_candidate_id,
           },
           selection_status: artifact.content.selection_status,
@@ -1306,27 +1285,44 @@ function buildRound(
   const revisionPayload = revisionEvent?.payload ?? evaluationPayload;
   const present = evaluation !== null;
   const rawPlan =
-    safeId(evaluationPayload.raw_plan_artifact_id) ?? (round === 1 ? (artifacts.research_plan[0] ?? null) : null);
+    parseSafeId(evaluationPayload.raw_plan_artifact_id) ?? (round === 1 ? (artifacts.research_plan[0] ?? null) : null);
   const rawReview =
-    safeId(evaluationPayload.raw_review_artifact_id) ?? (round === 1 ? (artifacts.review[0] ?? null) : null);
-  const plan = safeId(evaluationPayload.plan_artifact_id);
-  const review = safeId(evaluationPayload.review_artifact_id);
-  const feedbackSource = safeFeedbackSource(feedbackPayload.feedback_source, reasons);
-  const feedbackActor = safeFeedbackActor(feedbackPayload.source ?? evaluationPayload.evaluator, reasons);
-  const action = safeAction(evaluationPayload.action ?? feedbackPayload.action, reasons);
-  const changedFields = parseChangedFields(revisionPayload.changed_fields, reasons);
-  const fromArtifactId = safeId(revisionPayload.from_artifact_id);
-  const toArtifactId = safeId(revisionPayload.to_artifact_id);
-  const stopReason = safeReasonCode(evaluationPayload.stop_reason, reasons, "stop_reason_unknown");
-  const retryReason = safeReasonCode(evaluationPayload.retry_reason, reasons, "retry_reason_unknown");
-  const rollbackReason = safeReasonCode(evaluationPayload.rollback_reason, reasons, "rollback_reason_unknown");
+    parseSafeId(evaluationPayload.raw_review_artifact_id) ?? (round === 1 ? (artifacts.review[0] ?? null) : null);
+  const plan = parseSafeId(evaluationPayload.plan_artifact_id);
+  const review = parseSafeId(evaluationPayload.review_artifact_id);
+
+  const fbSource = feedbackPayload.feedback_source;
+  const feedbackSource: FeedbackSource =
+    fbSource === "auto" || fbSource === "human" ? fbSource : (reasons.push("feedback_source_unknown"), "unknown");
+  const fbActor = feedbackPayload.source ?? evaluationPayload.evaluator;
+  const feedbackActor: "model_reviewer" | "human" | "unknown" =
+    fbActor === "model_reviewer" || fbActor === "human" ? fbActor : (reasons.push("feedback_actor_unknown"), "unknown");
+
+  const actionVal = evaluationPayload.action ?? feedbackPayload.action;
+  const action: EvaluationAction =
+    actionVal === "accept" || actionVal === "revise" || actionVal === "stop"
+      ? actionVal
+      : (reasons.push("evaluation_action_unknown"), "unknown");
+
+  const changedFields = parseChangedFieldsList(revisionPayload.changed_fields, reasons);
+  const fromArtifactId = parseSafeId(revisionPayload.from_artifact_id);
+  const toArtifactId = parseSafeId(revisionPayload.to_artifact_id);
+  const stopReason = parseReasonCode(evaluationPayload.stop_reason, reasons, "stop_reason_unknown");
+  const retryReason = parseReasonCode(evaluationPayload.retry_reason, reasons, "retry_reason_unknown");
+  const rollbackReason = parseReasonCode(evaluationPayload.rollback_reason, reasons, "rollback_reason_unknown");
+
+  const phaseVal = evaluationPayload.phase;
+  const phase: RepresentativeCaseRound["phase"] =
+    phaseVal === "raw" || phaseVal === "revision" ? phaseVal : (reasons.push("evaluation_phase_unknown"), "unknown");
+
   const publicOutputs = {
     plan: readPublicArtifact(store, plan, reasons, `round${round}_plan`),
     review: readPublicArtifact(store, review, reasons, `round${round}_review`),
   };
+
   const output: RepresentativeCaseRound = {
     present,
-    phase: safePhase(evaluationPayload.phase, reasons),
+    phase,
     action,
     raw_artifact_ids: { plan: rawPlan, review: rawReview },
     plan_artifact_id: plan,
@@ -1334,9 +1330,12 @@ function buildRound(
     feedback: {
       source: feedbackActor,
       feedback_source: feedbackSource,
-      action: safeAction(feedbackPayload.action ?? evaluationPayload.action, reasons),
-      count: safeNullableNonNegativeInteger(feedbackPayload.feedback_count, reasons, "feedback_count_unknown"),
-      artifact_id: safeNullableId(feedbackPayload.feedback_artifact_id),
+      action:
+        feedbackPayload.action === "accept" || feedbackPayload.action === "revise" || feedbackPayload.action === "stop"
+          ? feedbackPayload.action
+          : action,
+      count: parseNullableNonNegativeInt(feedbackPayload.feedback_count, reasons, "feedback_count_unknown"),
+      artifact_id: parseNullableId(feedbackPayload.feedback_artifact_id),
     },
     revision: {
       from_artifact_id: fromArtifactId,
@@ -1344,26 +1343,26 @@ function buildRound(
       changed_fields: changedFields,
     },
     score: {
-      before: safeNullableNonNegativeInteger(evaluationPayload.score_before_total, reasons, "score_before_unknown"),
-      after: safeNullableNonNegativeInteger(evaluationPayload.score_after_total, reasons, "score_after_unknown"),
-      delta: safeNullableInteger(evaluationPayload.score_delta_total, reasons, "score_delta_unknown"),
+      before: parseNullableNonNegativeInt(evaluationPayload.score_before_total, reasons, "score_before_unknown"),
+      after: parseNullableNonNegativeInt(evaluationPayload.score_after_total, reasons, "score_after_unknown"),
+      delta: parseNullableInt(evaluationPayload.score_delta_total, reasons, "score_delta_unknown"),
     },
     cost_tokens: {
-      round: safeNullableNonNegativeInteger(evaluationPayload.round_cost_tokens, reasons, "round_cost_unknown"),
-      delta: safeNullableInteger(evaluationPayload.cost_delta_tokens, reasons, "cost_delta_unknown"),
+      round: parseNullableNonNegativeInt(evaluationPayload.round_cost_tokens, reasons, "round_cost_unknown"),
+      delta: parseNullableInt(evaluationPayload.cost_delta_tokens, reasons, "cost_delta_unknown"),
     },
     limitations: {
-      before: safeNullableNonNegativeInteger(
+      before: parseNullableNonNegativeInt(
         evaluationPayload.limitations_before_count,
         reasons,
         "limitations_before_unknown",
       ),
-      after: safeNullableNonNegativeInteger(
+      after: parseNullableNonNegativeInt(
         evaluationPayload.limitations_after_count,
         reasons,
         "limitations_after_unknown",
       ),
-      delta: safeNullableInteger(evaluationPayload.limitation_delta_count, reasons, "limitation_delta_unknown"),
+      delta: parseNullableInt(evaluationPayload.limitation_delta_count, reasons, "limitation_delta_unknown"),
     },
     stop_reason: stopReason,
     retry_reason: retryReason,
@@ -1398,10 +1397,8 @@ function buildVerification(events: readonly CaseEvent[], rootReasons: string[]):
     };
   }
   const payload = event.payload;
-  const ok = typeof payload.ok === "boolean" ? payload.ok : null;
-  if (ok === null) reasons.push("verification_ok_unknown");
-  const checks = Array.isArray(payload.checks) ? payload.checks : null;
-  if (checks === null) reasons.push("verification_checks_unknown");
+  const ok = typeof payload.ok === "boolean" ? payload.ok : (reasons.push("verification_ok_unknown"), null);
+  const checks = Array.isArray(payload.checks) ? payload.checks : (reasons.push("verification_checks_unknown"), null);
   let passedCheckCount: number | null = null;
   let failedCheckCount: number | null = null;
   if (checks !== null) {
@@ -1415,34 +1412,46 @@ function buildVerification(events: readonly CaseEvent[], rootReasons: string[]):
     passedCheckCount = passed;
     failedCheckCount = failed;
   }
-  const failedCount = safeNullableNonNegativeInteger(
-    payload.failed_count,
+  const failedCount = parseNullableNonNegativeInt(payload.failed_count, reasons, "verification_failed_count_unknown");
+  const infraError =
+    typeof payload.infra_error === "boolean"
+      ? payload.infra_error
+      : (reasons.push("verification_infra_error_unknown"), null);
+  const referenceCount = parseNullableNonNegativeInt(
+    payload.reference_count,
     reasons,
-    "verification_failed_count_unknown",
+    "verification_reference_count_unknown",
   );
+  const frozenSources = parseNullableNonNegativeInt(
+    payload.frozen_sources,
+    reasons,
+    "verification_frozen_sources_unknown",
+  );
+  const arxivChecked = parseNullableNonNegativeInt(
+    payload.arxiv_checked,
+    reasons,
+    "verification_arxiv_checked_unknown",
+  );
+  const doiChecked = parseNullableNonNegativeInt(payload.doi_checked, reasons, "verification_doi_checked_unknown");
+  const membershipOnly = parseNullableNonNegativeInt(
+    payload.membership_only,
+    reasons,
+    "verification_membership_only_unknown",
+  );
+  const checkCount = checks !== null ? checks.length : null;
+
+  const status = ok === true ? "passed" : ok === false ? "failed" : "unknown";
   const output: RepresentativeCaseVerification = {
-    status: ok === true ? "passed" : ok === false ? "failed" : "unknown",
+    status,
     ok,
-    reference_count: safeNullableNonNegativeInteger(
-      payload.reference_count,
-      reasons,
-      "verification_reference_count_unknown",
-    ),
-    frozen_sources: safeNullableNonNegativeInteger(
-      payload.frozen_sources,
-      reasons,
-      "verification_frozen_sources_unknown",
-    ),
-    arxiv_checked: safeNullableNonNegativeInteger(payload.arxiv_checked, reasons, "verification_arxiv_count_unknown"),
-    doi_checked: safeNullableNonNegativeInteger(payload.doi_checked, reasons, "verification_doi_count_unknown"),
-    membership_only: safeNullableNonNegativeInteger(
-      payload.membership_only,
-      reasons,
-      "verification_membership_count_unknown",
-    ),
+    reference_count: referenceCount,
+    frozen_sources: frozenSources,
+    arxiv_checked: arxivChecked,
+    doi_checked: doiChecked,
+    membership_only: membershipOnly,
     failed_count: failedCount,
-    infra_error: typeof payload.infra_error === "boolean" ? payload.infra_error : null,
-    check_count: checks?.length ?? null,
+    infra_error: infraError,
+    check_count: checkCount,
     passed_check_count: passedCheckCount,
     failed_check_count: failedCheckCount,
     unknown_reasons: unique(reasons),
@@ -1453,76 +1462,70 @@ function buildVerification(events: readonly CaseEvent[], rootReasons: string[]):
 
 function buildTrace(events: readonly CaseEvent[], rootReasons: string[]): RepresentativeCaseTrace {
   const reasons: string[] = [];
-  const starts = events.filter((event) => event.kind === "sdk.trace.started");
-  const ends = events.filter((event) => event.kind === "sdk.trace.ended");
-  const traceIds = new Set<string>();
+  const started = events.filter((e) => e.kind === "sdk.trace.started");
+  const ended = events.filter((e) => e.kind === "sdk.trace.ended");
   const models = new Set<string>();
-  for (const event of starts) {
-    const model = safeText(event.payload.model);
-    if (model === null) reasons.push("trace_model_unknown");
-    else models.add(model);
-  }
-  for (const event of [...starts, ...ends]) {
-    const traceId = safeId(event.payload.trace_id);
-    if (traceId === null) reasons.push("trace_id_unknown");
-    else traceIds.add(traceId);
-  }
   const byRole = new Map<string, { traces: number; completed: number; failed: number; unknown: number }>();
   let completed = 0;
   let failed = 0;
   let unknown = 0;
-  let traceEvents = 0;
-  let toolCalls = 0;
-  let traceEventsKnown = ends.length > 0;
-  let toolCallsKnown = ends.length > 0;
   let truncated = 0;
-  for (const event of ends) {
-    const role = safeRole(event.payload.role) ?? "unknown";
-    const bucket = byRole.get(role) ?? { traces: 0, completed: 0, failed: 0, unknown: 0 };
-    bucket.traces += 1;
-    const outcome =
-      event.payload.outcome === "completed" ? "completed" : event.payload.outcome === "failed" ? "failed" : "unknown";
+  let traceEventsTotal = 0;
+  let toolCallsTotal = 0;
+
+  for (const event of started) {
+    const role =
+      typeof event.payload.role === "string" && ROLE_SET.has(event.payload.role) ? event.payload.role : "unknown";
+    const current = byRole.get(role) ?? { traces: 0, completed: 0, failed: 0, unknown: 0 };
+    current.traces += 1;
+    byRole.set(role, current);
+    if (typeof event.payload.model === "string") models.add(event.payload.model);
+  }
+
+  for (const event of ended) {
+    const role =
+      typeof event.payload.role === "string" && ROLE_SET.has(event.payload.role) ? event.payload.role : "unknown";
+    const current = byRole.get(role) ?? { traces: 0, completed: 0, failed: 0, unknown: 0 };
+    const outcome = event.payload.outcome;
     if (outcome === "completed") {
       completed += 1;
-      bucket.completed += 1;
+      current.completed += 1;
     } else if (outcome === "failed") {
       failed += 1;
-      bucket.failed += 1;
+      current.failed += 1;
     } else {
       unknown += 1;
-      bucket.unknown += 1;
-      reasons.push("trace_outcome_unknown");
+      current.unknown += 1;
     }
-    const eventCount = safeNonNegativeInteger(event.payload.trace_events);
-    if (eventCount === null) traceEventsKnown = false;
-    else traceEvents += eventCount;
-    const callCount = safeNonNegativeInteger(event.payload.usage_tool_calls);
-    if (callCount === null) toolCallsKnown = false;
-    else toolCalls += callCount;
-    if (typeof event.payload.truncated !== "boolean") reasons.push("trace_truncated_unknown");
-    else if (event.payload.truncated) truncated += 1;
-    byRole.set(role, bucket);
+    byRole.set(role, current);
+
+    if (event.payload.truncated === true) truncated += 1;
+    if (typeof event.payload.trace_events === "number") traceEventsTotal += event.payload.trace_events;
+    if (typeof event.payload.usage_tool_calls === "number") toolCallsTotal += event.payload.usage_tool_calls;
   }
-  if (ends.length === 0) {
-    if (starts.length > 0) reasons.push("trace_end_missing");
-    else reasons.push("trace_missing");
-  }
+
+  const toolStarted = events.filter((e) => e.kind === "tool.evidence_recorded").length;
+  const toolEnded = toolStarted;
+  const callbackErrors = events.filter((e) => e.kind === "sdk.output_rejected").length;
+  const traces = Math.max(started.length, ended.length);
+  const status: FactStatus = traces === 0 ? "unknown" : reasons.length === 0 ? "known" : "partial";
+
   const output: RepresentativeCaseTrace = {
-    status: traceIds.size === 0 ? "unknown" : ends.length === 0 || reasons.length > 0 ? "partial" : "known",
+    status,
     models: [...models].sort(),
-    traces: traceIds.size,
+    traces,
     completed,
     failed,
     unknown,
-    tool_started: events.filter((event) => event.kind === "sdk.trace.tool_started").length,
-    tool_ended: events.filter((event) => event.kind === "sdk.trace.tool_ended").length,
-    callback_errors: events.filter((event) => event.kind === "sdk.trace.callback_error").length,
-    trace_events: traceEventsKnown ? traceEvents : null,
-    tool_calls: toolCallsKnown ? toolCalls : null,
+    tool_started: toolStarted,
+    tool_ended: toolEnded,
+    callback_errors: callbackErrors,
+    trace_events: traces > 0 ? traceEventsTotal : null,
+    tool_calls: traces > 0 ? toolCallsTotal : null,
     truncated,
     by_role: [...byRole.entries()]
-      .map(([role, counts]) => ({ role, ...counts }))
-      .sort((left, right) => left.role.localeCompare(right.role)),
+      .map(([role, stats]) => ({ role, ...stats }))
+      .sort((a, b) => a.role.localeCompare(b.role)),
     unknown_reasons: unique(reasons),
   };
   rootReasons.push(...output.unknown_reasons);
@@ -1530,96 +1533,115 @@ function buildTrace(events: readonly CaseEvent[], rootReasons: string[]): Repres
 }
 
 function buildUsage(events: readonly CaseEvent[], rootReasons: string[]): RepresentativeCaseUsage {
-  const usageEvents = events.filter((event) => event.kind === "sdk.usage");
   const reasons: string[] = [];
-  const byAgent = new Map<Role, { records: number; input: number; output: number; total: number; invalid: boolean }>();
-  let input = 0;
-  let output = 0;
-  let total = 0;
+  const usageEvents = events.filter((e) => e.kind === "sdk.usage");
   let validRecords = 0;
+  let unknownRecords = 0;
+  let inputTotal = 0;
+  let outputTotal = 0;
+  let totalTotal = 0;
+  const byAgent = new Map<
+    Role,
+    { records: number; input_tokens: number; output_tokens: number; total_tokens: number }
+  >();
+
   for (const event of usageEvents) {
-    const agent = safeRole(event.payload.agent);
-    const inputTokens = safeNonNegativeInteger(event.payload.input_tokens);
-    const outputTokens = safeNonNegativeInteger(event.payload.output_tokens);
-    const totalTokens = safeNonNegativeInteger(event.payload.total_tokens);
-    if (agent === null || inputTokens === null || outputTokens === null || totalTokens === null) {
-      reasons.push("usage_payload_invalid");
-      if (agent !== null) {
-        const existing = byAgent.get(agent) ?? { records: 0, input: 0, output: 0, total: 0, invalid: false };
-        existing.invalid = true;
-        byAgent.set(agent, existing);
-      }
-      continue;
+    const p = event.payload;
+    const agent = typeof p.agent === "string" && ROLE_SET.has(p.agent) ? (p.agent as Role) : null;
+    const input = nonNegativeIntSchema.safeParse(p.input_tokens);
+    const output = nonNegativeIntSchema.safeParse(p.output_tokens);
+    const total = nonNegativeIntSchema.safeParse(p.total_tokens);
+
+    if (agent && input.success && output.success && total.success) {
+      validRecords += 1;
+      inputTotal += input.data;
+      outputTotal += output.data;
+      totalTotal += total.data;
+      const current = byAgent.get(agent) ?? { records: 0, input_tokens: 0, output_tokens: 0, total_tokens: 0 };
+      current.records += 1;
+      current.input_tokens += input.data;
+      current.output_tokens += output.data;
+      current.total_tokens += total.data;
+      byAgent.set(agent, current);
+    } else {
+      unknownRecords += 1;
+      reasons.push("usage_record_malformed");
     }
-    validRecords += 1;
-    input += inputTokens;
-    output += outputTokens;
-    total += totalTokens;
-    const existing = byAgent.get(agent) ?? { records: 0, input: 0, output: 0, total: 0, invalid: false };
-    existing.records += 1;
-    existing.input += inputTokens;
-    existing.output += outputTokens;
-    existing.total += totalTokens;
-    byAgent.set(agent, existing);
   }
-  if (usageEvents.length === 0) reasons.push("usage_missing");
-  const outputValue: RepresentativeCaseUsage = {
-    status: usageEvents.length === 0 ? "unknown" : validRecords === usageEvents.length ? "known" : "partial",
-    records: usageEvents.length,
+
+  const records = usageEvents.length;
+  const status: FactStatus = records === 0 ? "unknown" : unknownRecords === 0 ? "known" : "partial";
+  const output: RepresentativeCaseUsage = {
+    status,
+    records,
     valid_records: validRecords,
-    unknown_records: usageEvents.length - validRecords,
-    input_tokens: validRecords > 0 ? input : null,
-    output_tokens: validRecords > 0 ? output : null,
-    total_tokens: validRecords > 0 ? total : null,
+    unknown_records: unknownRecords,
+    input_tokens: validRecords > 0 ? inputTotal : null,
+    output_tokens: validRecords > 0 ? outputTotal : null,
+    total_tokens: validRecords > 0 ? totalTotal : null,
     by_agent: [...byAgent.entries()]
-      .map(([agent, values]) => ({
-        agent,
-        records: values.records,
-        input_tokens: values.records > 0 ? values.input : null,
-        output_tokens: values.records > 0 ? values.output : null,
-        total_tokens: values.records > 0 ? values.total : null,
-      }))
-      .sort((left, right) => left.agent.localeCompare(right.agent)),
+      .map(([agent, stats]) => ({ agent, ...stats }))
+      .sort((a, b) => a.agent.localeCompare(b.agent)),
     unknown_reasons: unique(reasons),
   };
-  rootReasons.push(...outputValue.unknown_reasons);
-  return outputValue;
+  rootReasons.push(...output.unknown_reasons);
+  return output;
 }
 
 function unknownCase(runId: string | null, generatedAt: string, reason: string): RepresentativeCaseExport {
-  const round = (roundNumber: 1 | 2): RepresentativeCaseRound => ({
-    present: false,
-    phase: "unknown",
-    action: "unknown",
-    raw_artifact_ids: { plan: null, review: null },
-    plan_artifact_id: null,
-    review_artifact_id: null,
-    feedback: { source: "unknown", feedback_source: "unknown", action: "unknown", count: null, artifact_id: null },
-    revision: { from_artifact_id: null, to_artifact_id: null, changed_fields: [] },
-    score: { before: null, after: null, delta: null },
-    cost_tokens: { round: null, delta: null },
-    limitations: { before: null, after: null, delta: null },
-    stop_reason: null,
-    retry_reason: null,
-    rollback_reason: null,
-    public_outputs: { plan: null, review: null },
-    unknown_reasons: [`round${roundNumber}_evaluation_missing`],
-  });
   return {
     format: REPRESENTATIVE_CASE_FORMAT,
     version: REPRESENTATIVE_CASE_VERSION,
     generated_at: generatedAt,
     run_id: runId,
-    run: { science125_id: null, status: "unknown", question: null, error_code: null, final_artifact_id: null },
+    run: {
+      science125_id: null,
+      status: "unknown",
+      question: null,
+      error_code: null,
+      final_artifact_id: null,
+    },
     artifacts: { research: [], hypothesis: [], evidence_review: [], research_plan: [], review: [], unknown: [] },
     public_artifacts: { research: [], hypothesis: [], evidence_review: [] },
-    source_ledger: {
-      status: "unknown",
-      records: [],
-      unknown_records: 0,
-      unknown_reasons: ["source_ledger_unknown"],
+    source_ledger: { status: "unknown", records: [], unknown_records: 0, unknown_reasons: [reason] },
+    rounds: {
+      round1: {
+        present: false,
+        phase: "unknown",
+        action: "unknown",
+        raw_artifact_ids: { plan: null, review: null },
+        plan_artifact_id: null,
+        review_artifact_id: null,
+        feedback: { source: "unknown", feedback_source: "unknown", action: "unknown", count: null, artifact_id: null },
+        revision: { from_artifact_id: null, to_artifact_id: null, changed_fields: [] },
+        score: { before: null, after: null, delta: null },
+        cost_tokens: { round: null, delta: null },
+        limitations: { before: null, after: null, delta: null },
+        stop_reason: null,
+        retry_reason: null,
+        rollback_reason: null,
+        public_outputs: { plan: null, review: null },
+        unknown_reasons: ["round1_evaluation_missing"],
+      },
+      round2: {
+        present: false,
+        phase: "unknown",
+        action: "unknown",
+        raw_artifact_ids: { plan: null, review: null },
+        plan_artifact_id: null,
+        review_artifact_id: null,
+        feedback: { source: "unknown", feedback_source: "unknown", action: "unknown", count: null, artifact_id: null },
+        revision: { from_artifact_id: null, to_artifact_id: null, changed_fields: [] },
+        score: { before: null, after: null, delta: null },
+        cost_tokens: { round: null, delta: null },
+        limitations: { before: null, after: null, delta: null },
+        stop_reason: null,
+        retry_reason: null,
+        rollback_reason: null,
+        public_outputs: { plan: null, review: null },
+        unknown_reasons: ["round2_evaluation_missing"],
+      },
     },
-    rounds: { round1: round(1), round2: round(2) },
     verification: {
       status: "unknown",
       ok: null,
@@ -1674,110 +1696,12 @@ function unknownCase(runId: string | null, generatedAt: string, reason: string):
 }
 
 function lastEvent(events: readonly CaseEvent[], kind: string, round?: number): CaseEvent | null {
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const event = events[index]!;
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i]!;
     if (event.kind !== kind) continue;
     if (round !== undefined && event.payload.round !== round) continue;
     return event;
   }
-  return null;
-}
-
-function safeRunStatus(value: unknown): CaseStatus {
-  return typeof value === "string" && RUN_STATUS_SET.has(value) ? (value as Exclude<CaseStatus, "unknown">) : "unknown";
-}
-
-function safeErrorCode(value: unknown, reasons: string[]): string | null {
-  if (value === null || value === undefined) return null;
-  if (typeof value === "string" && FAILURE_CODE_SET.has(value)) return value;
-  reasons.push("error_code_unknown");
-  return null;
-}
-
-function safeScience125Id(value: unknown, reasons: string[]): number | null {
-  if (value === null || value === undefined) return null;
-  if (safeNonNegativeInteger(value) !== null && Number(value) >= 1) return Number(value);
-  reasons.push("science125_id_unknown");
-  return null;
-}
-
-function safeFeedbackSource(value: unknown, reasons: string[]): FeedbackSource {
-  if (value === "auto" || value === "human") return value;
-  reasons.push("feedback_source_unknown");
-  return "unknown";
-}
-
-function safeFeedbackActor(value: unknown, reasons: string[]): "model_reviewer" | "human" | "unknown" {
-  if (value === "model_reviewer" || value === "human") return value;
-  reasons.push("feedback_actor_unknown");
-  return "unknown";
-}
-
-function safeAction(value: unknown, reasons: string[]): EvaluationAction {
-  if (value === "accept" || value === "revise" || value === "stop") return value;
-  reasons.push("evaluation_action_unknown");
-  return "unknown";
-}
-
-function safePhase(value: unknown, reasons: string[]): RepresentativeCaseRound["phase"] {
-  if (value === "raw" || value === "revision") return value;
-  reasons.push("evaluation_phase_unknown");
-  return "unknown";
-}
-
-function safeReasonCode(value: unknown, reasons: string[], reason: string): string | null {
-  if (value === null || value === undefined) return null;
-  if (typeof value === "string" && /^[A-Za-z][A-Za-z0-9_.-]{0,100}$/.test(value)) return value;
-  reasons.push(reason);
-  return null;
-}
-
-function parseChangedFields(value: unknown, reasons: string[]): string[] {
-  if (value === null || value === undefined || value === "") return [];
-  if (typeof value !== "string") {
-    reasons.push("changed_fields_unknown");
-    return [];
-  }
-  const fields = value
-    .split(",")
-    .map((field) => field.trim())
-    .filter(Boolean);
-  const valid = fields.filter((field) => FIELD_PATTERN.test(field));
-  if (valid.length !== fields.length) reasons.push("changed_fields_unknown");
-  return [...new Set(valid)].sort();
-}
-
-function safeRole(value: unknown): Role | null {
-  return typeof value === "string" && ROLE_SET.has(value) ? (value as Role) : null;
-}
-
-function safeId(value: unknown): string | null {
-  return typeof value === "string" && ID_PATTERN.test(value) ? value : null;
-}
-
-function safeNullableId(value: unknown): string | null {
-  return value === null || value === undefined ? null : safeId(value);
-}
-
-function safeText(value: unknown): string | null {
-  return typeof value === "string" && value.length <= 4_000 ? value : null;
-}
-
-function safeNonNegativeInteger(value: unknown): number | null {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
-}
-
-function safeNullableNonNegativeInteger(value: unknown, reasons: string[], reason: string): number | null {
-  if (value === null || value === undefined) return null;
-  const parsed = safeNonNegativeInteger(value);
-  if (parsed === null) reasons.push(reason);
-  return parsed;
-}
-
-function safeNullableInteger(value: unknown, reasons: string[], reason: string): number | null {
-  if (value === null || value === undefined) return null;
-  if (typeof value === "number" && Number.isSafeInteger(value)) return value;
-  reasons.push(reason);
   return null;
 }
 
@@ -1790,20 +1714,25 @@ function redactSensitiveText(value: string | null): string | null {
 }
 
 function sanitizePublic<T>(value: T): T {
-  if (typeof value === "string") return redactSensitiveText(value) as T;
-  if (Array.isArray(value)) return value.map((item) => sanitizePublic(item)) as T;
+  if (typeof value === "string") return redactSensitiveText(value) as unknown as T;
+  if (Array.isArray(value)) return value.map((item) => sanitizePublic(item)) as unknown as T;
   if (isRecord(value)) {
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, sanitizePublic(item)])) as T;
+    const result: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) {
+      if (/prompt|internal_rationale|api_key|token/i.test(k)) continue;
+      result[k] = sanitizePublic(v);
+    }
+    return result as unknown as T;
   }
   return value;
 }
 
-function isRecord(value: unknown): value is UnknownRecord {
+function isRecord(value: unknown): value is Record<string, any> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function unique(values: readonly string[]): string[] {
-  return [...new Set(values)].sort();
+function unique(items: readonly string[]): string[] {
+  return [...new Set(items)].sort();
 }
 
 function display(value: unknown): string {
@@ -1816,22 +1745,9 @@ function escapeMarkdown(value: string): string {
   return value.replaceAll("\\", "\\\\").replaceAll("|", "\\|").replaceAll("\n", " ");
 }
 
-function defaultMarkdownPath(jsonPath: string): string {
-  return extname(jsonPath).toLowerCase() === ".json" ? `${jsonPath.slice(0, -5)}.md` : `${jsonPath}.md`;
-}
-
-function writeJson(path: string, value: RepresentativeCaseExport): void {
-  mkdirSync(dirname(resolve(path)), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-}
-
-function writeText(path: string, value: string): void {
-  mkdirSync(dirname(resolve(path)), { recursive: true });
-  writeFileSync(path, value, "utf8");
-}
-
-function describe(error: unknown): string {
-  return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+function writeText(filePath: string, content: string): void {
+  mkdirSync(dirname(resolve(filePath)), { recursive: true });
+  writeFileSync(filePath, content, "utf8");
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === import.meta.filename) {

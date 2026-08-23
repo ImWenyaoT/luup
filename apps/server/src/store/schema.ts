@@ -1,4 +1,4 @@
-import type { Database } from "bun:sqlite";
+import type { DatabaseSync } from "node:sqlite";
 
 export const RUN_STATUSES = ["running", "completed", "review_rejected", "failed"] as const;
 export const ATTEMPT_STATUSES = ["running", "completed", "failed"] as const;
@@ -121,7 +121,7 @@ const ADDED_RUN_COLUMNS: ReadonlyArray<[string, string]> = [
   ["memory_arm", "TEXT"],
 ];
 
-export function createSchema(db: Database): void {
+export function createSchema(db: DatabaseSync): void {
   db.exec(DDL);
   // 只补列、不改列、不删列：批跑要能接着跑迁移期已经建好的库，
   // 而 runs 里已经落盘的事实不因为加了两列就重写。

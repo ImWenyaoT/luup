@@ -13,7 +13,7 @@ import {
 import type { StageUsage } from "./executor.ts";
 import { runTask, type StageExecutor } from "./roles.ts";
 import type { CampaignMemoryPort, RunStore, Verifier } from "./seams/index.ts";
-import type { StoredInput, TaskContext, UsageFacts } from "./store/contracts.ts";
+import type { StoredInput, TaskContext, UsageFacts } from "./agent/contracts.ts";
 import type { StoredArtifact } from "./store/store.ts";
 import { createReferenceVerifier, verificationFailureCode } from "./verify/verifier.ts";
 

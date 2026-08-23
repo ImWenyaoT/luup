@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { afterEach, beforeEach, onTestFinished, test } from "bun:test";
+import { afterEach, beforeEach, onTestFinished, test } from "vitest";
 
 import { Harness } from "../src/harness.ts";
 import {
@@ -60,12 +60,13 @@ test("配置版本随每次写入递增——executor 靠它决定重建 Runner"
   assert.equal(modelConfigVersion(), before + 2);
 });
 
-function app(t: { onTestFinished: (fn: () => void | Promise<unknown>) => void }) {
+async function app(t: { onTestFinished: typeof onTestFinished }) {
   const store = new SqliteStore(":memory:");
   const harness = new Harness(store, async () => {
     throw new Error("unused");
   });
   const server = createApp({ store, harness, runtime: "deterministic" });
+  await server.ready;
   t.onTestFinished(async () => {
     await server.stop(true);
     store.close();
@@ -76,7 +77,7 @@ function app(t: { onTestFinished: (fn: () => void | Promise<unknown>) => void })
 test("GET /api/config 报状态不报密钥", async () => {
   const t = { onTestFinished };
   process.env.QWEN_API_KEY = "sk-secret-value";
-  const base = app(t);
+  const base = await app(t);
   const res = await fetch(`${base}/api/config`);
   assert.equal(res.status, 200);
   const text = await res.text();
@@ -90,7 +91,7 @@ test("GET /api/config 报状态不报密钥", async () => {
 
 test("PUT /api/config 设置进程内覆盖，响应与后续 GET 都不含 key", async () => {
   const t = { onTestFinished };
-  const base = app(t);
+  const base = await app(t);
   const res = await fetch(`${base}/api/config`, {
     method: "PUT",
     headers: { "content-type": "application/json" },
@@ -108,7 +109,7 @@ test("PUT /api/config 设置进程内覆盖，响应与后续 GET 都不含 key"
 
 test("PUT /api/config 拒绝坏输入：非 JSON 类型、坏 base_url、空 key", async () => {
   const t = { onTestFinished };
-  const base = app(t);
+  const base = await app(t);
   const plain = await fetch(`${base}/api/config`, { method: "PUT", body: "x" });
   assert.equal(plain.status, 415);
   const badUrl = await fetch(`${base}/api/config`, {
@@ -127,7 +128,7 @@ test("PUT /api/config 拒绝坏输入：非 JSON 类型、坏 base_url、空 key
 
 test("PUT /api/config 识别整行环境变量误粘贴与非法字符", async () => {
   const t = { onTestFinished };
-  const base = app(t);
+  const base = await app(t);
   const envLine = await fetch(`${base}/api/config`, {
     method: "PUT",
     headers: { "content-type": "application/json" },

@@ -1,21 +1,4 @@
-// signal.reason 在 lib.dom 里是 any，类型层证不出它是 Error，但它正是取消语义要
-// 传播的那个值（默认是 AbortError DOMException）。换成自造 Error 会把上游的取消
-// 原因抹掉，取消和真错误就分不开了 —— 这里要的就是原样透传。
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) return reject(signal.reason);
-    const timer = setTimeout(done, ms);
-    const abort = () => {
-      clearTimeout(timer);
-      reject(signal!.reason);
-    };
-    function done() {
-      signal?.removeEventListener("abort", abort);
-      resolve();
-    }
-    signal?.addEventListener("abort", abort, { once: true });
-  });
-}
+import { setTimeout as sleep } from "node:timers/promises";
 
 /** 进程级的同源发号闸。
  *
@@ -34,7 +17,7 @@ export function createRateLimiter(defaultIntervalMs: number) {
     const turn = queue.then(async () => {
       signal?.throwIfAborted();
       const waiting = intervalMs - (Date.now() - lastCallAt);
-      if (waiting > 0) await sleep(waiting, signal);
+      if (waiting > 0) await sleep(waiting, undefined, { signal });
       signal?.throwIfAborted();
       lastCallAt = Date.now();
     });

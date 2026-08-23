@@ -10,7 +10,7 @@
 - `Agent = Model + Harness`；工具、状态、预算、证据与确定性验证由 Harness 拥有。
 - 五阶段固定串行，两条上界（补证 ≤2 轮、修订 ≤2 轮）写在 `apps/server/src/harness.ts` 的控制流里，
   不交给任务依赖图算。
-- 运行事实存 `bun:sqlite` 单文件；战役记忆 `memory/` 维持文件制，append-only。
+- 运行事实存 `node:sqlite` 单文件；战役记忆 `memory/` 维持文件制，append-only。
 - 公开运行状态固定为 `running → completed | review_rejected | failed`（`apps/server/src/store/schema.ts`）。
 - Reviewer 必须检索到上游未见的新信息；无法证明即失败。
 
@@ -18,24 +18,23 @@
 
 ```text
 apps/server/  后端 @luup/server：harness 本体、领域、工具、评估 + 用例
-apps/web/     Vite/React 交付面 @luup/frontend，产物由同一个 Bun 进程托管
+apps/web/     Vite/React 交付面 @luup/frontend，产物由同一个 Node 进程托管
 data/         science125.json，冻结题库
 docs/         产品契约、架构、验收标准、ADR、赛题与报告材料
 memory/       跨 run 的战役记忆（事实数据）
-spikes/dsh/   deepseek-harness 参考学习件（ADR-0005），独立 workspace
 ```
 
 历史批次证据在 git tag `archive/phase-a-evidence-20260816`（协议修订 #6）。
 
 ## 快速开始
 
-需要 Bun 1.4.0（版本由 `packageManager` 与 `engines.bun` 共同固定）。
+需要 Node.js >= 22 与 pnpm 10（单体工作区由 Turborepo 编排）。
 
 ```sh
-bun install --frozen-lockfile
+pnpm install --frozen-lockfile
 ```
 
-凭据二选一。写进仓根 `.env`（Bun 从仓根自动加载，无需 export）：
+凭据二选一。写进仓根 `.env`：
 
 ```sh
 cp .env.example .env   # 填 QWEN_API_KEY / QWEN_BASE_URL
@@ -52,22 +51,22 @@ export QWEN_BASE_URL='your-openai-compatible-base-url'
 
 ### 起服务
 
-单进程交付：一个 Bun 进程同端口给出 API 与页面，静态产物从 `apps/web/dist` 读。
+单进程交付：一个 Node 进程同端口给出 API 与页面，静态产物从 `apps/web/dist` 读。
 **先 build 再起**——`dist` 不存在时 `/` 是 404（`/api` 不受影响）。
 
 ```sh
-bun run build     # → apps/web/dist
-bun run start     # http://127.0.0.1:8000，build 也会被它再跑一遍
+pnpm run build     # → apps/web/dist
+pnpm run start     # http://127.0.0.1:8000
 ```
 
 开发用一条命令，前后端一起起（vite 热更新 + `/api` 代理到 8000）：
 
 ```sh
-bun run dev       # 前端 http://127.0.0.1:5173 + API :8000（确定性 runtime，不花钱）
+pnpm run dev       # 前端 http://127.0.0.1:5173 + API :8000（确定性 runtime，不花钱）
 ```
 
-也可分开起：`bun run dev:api`（仅后端）、`bun run dev:web`（仅前端）。
-`bun run dev:api:live` 是后端的 live 版本，会真的调 Qwen。
+也可分开起：`pnpm run dev:api`（仅后端）、`pnpm run dev:web`（仅前端）。
+`pnpm run dev:api:live` 是后端的 live 版本，会真的调 Qwen。
 
 ### API 合同与示例
 
@@ -131,11 +130,11 @@ curl -sS -X POST "$BASE/api/runs/<run_id>/feedback" \
 运行事实库必须用 SQLite 一致性快照操作，不能只复制主 `.db` 文件：
 
 ```sh
-bun run db:verify -- --source outputs/runtime/typescript-runs.db
-bun run db:backup -- \
+pnpm run db:verify -- --source outputs/runtime/typescript-runs.db
+pnpm run db:backup -- \
   --source outputs/runtime/typescript-runs.db \
   --target outputs/backups/typescript-runs-$(date +%Y%m%d-%H%M%S).db
-bun run db:restore -- \
+pnpm run db:restore -- \
   --source outputs/backups/typescript-runs-<timestamp>.db \
   --target outputs/restore/typescript-runs.db
 ```
@@ -146,54 +145,54 @@ bun run db:restore -- \
 
 ### 跑题
 
-正式 live 批跑要求 Bun 1.4.0；启动前会拒绝其他版本。`--dry-run` 只做规划，不受版本门限制。
+正式 live 批跑要求 Node.js >= 22；启动前会校验版本。`--dry-run` 只做规划，不受版本门限制。
 
 ```sh
-bun run canary                              # 单题冒烟，走 live 模型并持久化证据
-bun run batch --ids 1-125 --dry-run         # 先看计划，零执行
-bun run batch --ids 1-125 --preflight --confirm-science125 --release-commit <40hex> \
+pnpm run canary                              # 单题冒烟，走 live 模型并持久化证据
+pnpm run batch --ids 1-125 --dry-run         # 先看计划，零执行
+pnpm run batch --ids 1-125 --preflight --confirm-science125 --release-commit <40hex> \
   --db outputs/runtime/science125-formal.db  # 正式 Phase A 零费用就绪检查；不建库、不建 manifest
-bun run batch --ids 3,54,61                 # 断点续跑：已交付的题自动跳过
-bun run batch --ids 1-125 --confirm-science125 --release-commit <40hex> \
+pnpm run batch --ids 3,54,61                 # 断点续跑：已交付的题自动跳过
+pnpm run batch --ids 1-125 --confirm-science125 --release-commit <40hex> \
   --db outputs/runtime/science125-formal.db --concurrency 3  # 正式全量首次开跑
-bun run batch --manifest-id <id> --confirm-science125 --release-commit <40hex> \
+pnpm run batch --manifest-id <id> --confirm-science125 --release-commit <40hex> \
   --db outputs/runtime/science125-formal.db  # 正式全量续跑；只处理遗漏/未通过 durable gate 的题
-bun run batch --ids 1,8,12,16,17,19,27,28,32,35,40,46,49,50,55,64,72,77,79,86,90,91,95,100,102,107,110,117,120,121 \
+pnpm run batch --ids 1,8,12,16,17,19,27,28,32,35,40,46,49,50,55,64,72,77,79,86,90,91,95,100,102,107,110,117,120,121 \
   --no-memory --confirm-memory-ablation --release-commit <40hex> \
   --db outputs/runtime/science125-formal.db --concurrency 3  # 预注册 Phase B 记忆消融臂；与 Phase A 配对
-bun run batch:export --manifest-id <id> \
+pnpm run batch:export --manifest-id <id> \
   --db outputs/runtime/typescript-runs.db \
   --out outputs/submission/science125-index.json  # 只导出逐题索引，不复制正文
-bun run batch:export --manifest-id <id> \
+pnpm run batch:export --manifest-id <id> \
   --db outputs/runtime/science125-formal.db \
   --out outputs/submission/science125-index.json \
   --require-science125  # 严格要求完整的 1–125；失败仍写诊断索引
-bun run usage:export -- \
+pnpm run usage:export -- \
   --db outputs/runtime/typescript-runs.db \
   --out outputs/submission/usage.jsonl \
   --markdown outputs/submission/usage.md  # 无价格配置时成本保持 N/A
-bun run usage:export -- \
+pnpm run usage:export -- \
   --db outputs/runtime/science125-formal.db --manifest-id <id> \
   --out outputs/submission/science125-usage.jsonl \
   --markdown outputs/submission/science125-usage.md  # 只读该 manifest 的有效 Run
-bun run usage:export -- \
+pnpm run usage:export -- \
   --db outputs/runtime/typescript-runs.db \
   --out outputs/submission/usage.jsonl \
   --input-price-per-million <input单价> \
   --output-price-per-million <output单价> \
   --currency CNY --model <Qwen模型> \
   --price-source '<官方价目表/控制台凭证>'
-bun run eval --db outputs/runtime/typescript-runs.db   # 全库离线指标，不调模型
-bun run eval --db outputs/runtime/science125-formal.db --manifest-id <id> \
+pnpm run eval --db outputs/runtime/typescript-runs.db   # 全库离线指标，不调模型
+pnpm run eval --db outputs/runtime/science125-formal.db --manifest-id <id> \
   --out outputs/submission/science125-metrics.md      # 只读该 manifest 的有效 Run
-bun run score --db outputs/runtime/typescript-runs.db --out outputs/scoring.md
-bun run score --db outputs/runtime/science125-formal.db --manifest-id <id> \
+pnpm run score --db outputs/runtime/typescript-runs.db --out outputs/scoring.md
+pnpm run score --db outputs/runtime/science125-formal.db --manifest-id <id> \
   --out outputs/submission/science125-scoring.md       # 只读该 manifest 的有效 Run
-bun run submission:check -- outputs/submission/编号-学校-申报人姓名-作品名称.pdf
-bun run submission:case -- --db /private/tmp/luup-science125-canary-final-20260822.db \
+pnpm run submission:check -- outputs/submission/编号-学校-申报人姓名-作品名称.pdf
+pnpm run submission:case -- --db /private/tmp/luup-science125-canary-final-20260822.db \
   --run-id <run_id> --out outputs/submission/science125-representative-case.json \
   --strict  # 严格要求冻结题号、completed、两轮反馈/修订、B1–B4 和用量事实
-bun run submission:ready -- \
+pnpm run submission:ready -- \
   --db outputs/runtime/science125-formal.db \
   --manifest-id <phase_a_manifest_id> \
   --representative-run-id <run_id> \
@@ -210,7 +209,7 @@ Canary 默认写 `outputs/runtime/canary.db`，并在 stdout 返回 `database` �
 `LUUP_DATABASE` 改写位置。除非只做临时诊断，不要把 live canary 指到 `:memory:`。
 每次 live 批跑都会在执行前输出 durable `manifestId`；纯 `--ids ... --dry-run` 使用内存规划且不创建
 SQLite 或 manifest。使用 `--manifest-id` 时可省略 `--ids`，若同时提供则必须与原 manifest 的题集完全一致。
-`--preflight` 复用正式付费启动门，额外检查 Bun 1.4.0、题库、确认参数、Qwen 凭据、clean release commit
+`--preflight` 复用正式付费启动门，额外检查 Node.js >= 22、题库、确认参数、Qwen 凭据、clean release commit
 以及 Phase A 的 fresh DB/sidecar（Phase B 则核对预注册 30 题），输出结构化 admitted plan 后退出；它不会打开
 SQLite、创建 manifest、构造 executor 或调用模型。它不能与 `--dry-run` 或 `--manifest-id` 混用：resume 的
 source/arm/terminal 一致性必须开库核对，不能伪装成零副作用检查。
@@ -262,8 +261,8 @@ Science-125 逐题索引、manifest-scoped 指标、评分、usage JSONL/Markdow
 ## 验证
 
 ```sh
-bun run ci            # typecheck → lint → format:check → knip → build → test:coverage，与 CI 同序
-bun run test:e2e      # Playwright；首次先 bunx playwright install chromium
+pnpm run ci            # typecheck → lint → format:check → knip → build → test:coverage，与 CI 同序
+pnpm run test:e2e      # Playwright；首次先 pnpm --filter @luup/frontend exec playwright install chromium
 ```
 
 各门单跑与 seam 纪律见 `AGENTS.md`。

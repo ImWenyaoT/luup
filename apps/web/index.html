@@ -2,11 +2,82 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
-    <title>luup · AI Scientist</title>
-    <meta name="description" content="以 Qwen 与可追踪 Harness 驱动的 AI Scientist" />
+    <title>luup · AI Scientist 面向《Science》125 前沿科学问题的科研 Agent</title>
+    <meta
+      name="description"
+      content="面向《Science》125 前沿科学问题的科研 Agent：五个角色串行接力检索证据、生成假说、审阅证据、形成研究计划并独立复审，由确定性 Verifier 交付。"
+    />
+    <meta name="application-name" content="Luup" />
+    <meta
+      name="keywords"
+      content="AI Scientist,Science 125,AI agents,research agent,Qwen,MCP,model context protocol,llms.txt"
+    />
+    <meta property="og:title" content="luup · AI Scientist" />
+    <meta property="og:description" content="面向《Science》125 前沿科学问题的科研 Agent 架构" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "name": "Luup Project",
+            "url": "https://github.com/ImWenyaoT/luup"
+          },
+          {
+            "@type": "WebApplication",
+            "name": "Luup AI Scientist",
+            "applicationCategory": "ScientificResearch",
+            "operatingSystem": "Any",
+            "description": "面向《Science》125 前沿科学问题的科研 Agent：五个角色串行接力检索证据、生成假说、审阅证据、形成研究计划并独立复审，最后由确定性 Verifier 决定是否交付。",
+            "offers": {
+              "@type": "Offer",
+              "price": "0"
+            }
+          }
+        ]
+      }
+    </script>
   </head>
-  <body>
+  <body class="bg-background text-foreground antialiased">
+    <noscript>
+      <header style="padding: 2rem 1rem; border-bottom: 1px solid #e5e7eb">
+        <h1>luup · 面向 Science 125 的科研 Agent</h1>
+        <p>
+          基于 Qwen 与可追踪 Harness 驱动的自主科学研究系统。五个角色接力构建具备公式推导与预测分支的可执行研究计划。
+        </p>
+      </header>
+      <main style="max-width: 800px; margin: 2rem auto; padding: 0 1rem; line-height: 1.6">
+        <section>
+          <h2>核心功能与架构特性</h2>
+          <ul>
+            <li>
+              <strong>五阶段角色接力</strong>：检索 (Researcher) → 假说 (Proposer) → 审阅 (Reviewer) → 计划 (Planner) →
+              复审 (Independent Reviewer)。
+            </li>
+            <li><strong>双有界重试控制</strong>：补证轮次 ≤ 2 轮，修订轮次 ≤ 2 轮，杜绝无意义死循环。</li>
+            <li><strong>确定性引用反查</strong>：B1–B4 规则校验与真实 arXiv/DOI 交叉核验，阻断幻觉引用。</li>
+            <li>
+              <strong>原生 Agent 支持</strong>：提供 Model Context Protocol (MCP) 端点、OpenAPI 3.1.0 契约与 llms.txt
+              机器指南。
+            </li>
+          </ul>
+        </section>
+        <nav aria-label="机器与开发者导航" style="margin-top: 2rem">
+          <h2>智能体接口与机器导航</h2>
+          <ul>
+            <li><a href="/llms.txt">/llms.txt (机器可读指南)</a></li>
+            <li><a href="/openapi.json">/openapi.json (OpenAPI 3.1.0 契约)</a></li>
+            <li><a href="/mcp">/mcp (Model Context Protocol Streamable HTTP 端点)</a></li>
+            <li><a href="/sitemap.xml">/sitemap.xml (站点地图)</a></li>
+            <li><a href="/404.md">/404.md (Agent 故障恢复)</a></li>
+          </ul>
+        </nav>
+      </main>
+    </noscript>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

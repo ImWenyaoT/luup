@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "bun:test";
+import { test } from "vitest";
 
 import { ContractError, StageError } from "../src/agent/failures.ts";
 import { EvidenceLedger } from "../src/agent/evidence.ts";
@@ -9,7 +9,7 @@ import { usageOf, type StageUsage } from "../src/executor.ts";
 import { Harness } from "../src/harness.ts";
 import { runTask } from "../src/roles.ts";
 import type { StageExecutor } from "../src/roles.ts";
-import type { TaskContext } from "../src/store/contracts.ts";
+import type { TaskContext } from "../src/agent/contracts.ts";
 import { SqliteStore } from "../src/store/store.ts";
 
 /** SDK 失败时挂在异常上的那份状态：`AgentsError.state`（RunState.usage + _generatedItems）。 */

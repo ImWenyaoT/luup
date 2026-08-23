@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { onTestFinished, test } from "bun:test";
+import { onTestFinished, test } from "vitest";
 
 import { BatchManifest } from "../src/batch/manifest.ts";
 import { exportScoringMarkdown, loadRunScores } from "../src/eval/scoring.ts";
