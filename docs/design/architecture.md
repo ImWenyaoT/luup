@@ -19,7 +19,7 @@ apps/server/src/server.ts ── apps/server/src/harness.ts ── researcher
                       │            └─ reviewer
                       ├─ apps/server/src/agent/tools/  arXiv + Crossref 检索
                       ├─ apps/server/src/verify/       B1–B4 确定性引用验收（零 LLM）
-                      └─ apps/server/src/store/        bun:sqlite 单文件事实存储
+                      └─ apps/server/src/store/        node:sqlite 单文件事实存储
 ```
 
 ## 模块与 seam
@@ -44,16 +44,16 @@ store 只记账，不参与决定顺序。
 可替换的东西全在 `apps/server/src/seams/index.ts` 点名，只有类型与一个工厂——每个接缝目前只有
 一个生产实现加一个离线替身，两个实现撑不起注册表或容器。四个接缝：
 
-| 接缝 | 生产实现 | 换实现的约定 |
-|---|---|---|
-| 模型接线 `seams/model.ts` | `qwenModelProvider()` | `QWEN_*` / `LUUP_MODEL_ID` 的唯一读取点；缺凭据抛 `missing_credential` |
-| 验收器 `Verifier` | `createReferenceVerifier()` | 不问模型；反查不通标 `infraError`，不扣造假帽子 |
-| Run 记账面 `RunStore` | `SqliteStore` | 运行中 append-only、终态后不可变；事件序号单调；失败 Attempt 也留证据与用量 |
-| 记忆通道 `CampaignMemoryPort` | `CampaignMemory` | 读确定性、写幂等追加；目录缺失即停用该通道，不打死 run |
+| 接缝                          | 生产实现                    | 换实现的约定                                                                |
+| ----------------------------- | --------------------------- | --------------------------------------------------------------------------- |
+| 模型接线 `seams/model.ts`     | `qwenModelProvider()`       | `QWEN_*` / `LUUP_MODEL_ID` 的唯一读取点；缺凭据抛 `missing_credential`      |
+| 验收器 `Verifier`             | `createReferenceVerifier()` | 不问模型；反查不通标 `infraError`，不扣造假帽子                             |
+| Run 记账面 `RunStore`         | `SqliteStore`               | 运行中 append-only、终态后不可变；事件序号单调；失败 Attempt 也留证据与用量 |
+| 记忆通道 `CampaignMemoryPort` | `CampaignMemory`            | 读确定性、写幂等追加；目录缺失即停用该通道，不打死 run                      |
 
 ### HTTP adapter
 
-`apps/server/src/server.ts` 使用 `Bun.serve`，同时做四件事：输入防护、两槽并发闸、
+`apps/server/src/server.ts` 基于 Elysia / Node HTTP，同时做四件事：输入防护、两槽并发闸、
 只读投影、静态产物托管。它不拥有第二套业务状态——SQLite 才是事实源。
 
 - `POST /api/runs` 只建 run 并返回 202，执行在后台队列推进；

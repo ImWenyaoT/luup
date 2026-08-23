@@ -171,7 +171,7 @@ export function createElysiaApp(options: ServerOptions) {
             const events = store.eventsAfter(runId, cursor);
             if (events.length > 0) {
               for (const event of events) {
-                const frame = projectSseFrame(event as any);
+                const frame = projectSseFrame(event);
                 if (frame !== null) controller.enqueue(encoder.encode(frame));
               }
               cursor = Number(events.at(-1)!.version);

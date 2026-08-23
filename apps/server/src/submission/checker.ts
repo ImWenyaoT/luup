@@ -262,7 +262,7 @@ export function checkSubmissionFile(path: string): SubmissionReport {
 function main(): void {
   const path = process.argv[2];
   if (!path) {
-    process.stderr.write("用法：bun run submission:check -- <作品.pdf|演示.mp4>\n");
+    process.stderr.write("用法：pnpm run submission:check -- <作品.pdf|演示.mp4>\n");
     process.exit(2);
   }
   const report = checkSubmissionFile(path);

@@ -31,7 +31,7 @@ export type Verifier = ReferenceVerifier;
 
 /** Run 记账面。Harness 用到的全部方法就是下面这些，接缝宽度即此。
  *
- * 现有 provider：`SqliteStore`（bun:sqlite，单写者锁，重开即判 interrupted）。
+ * 现有 provider：`SqliteStore`（node:sqlite，单写者锁，重开即判 interrupted）。
  * 换实现要满足：运行中 append-only、终态后不可变；事件序号单调递增；
  * 失败的 Attempt 也要留下它查过的证据与烧掉的用量。
  */

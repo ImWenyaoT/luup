@@ -24,8 +24,8 @@ coverage/
 # `outputs/` 整个是派生物——批跑与 e2e 的 sqlite、playwright 结果、评估导出的 markdown
 # （`apps/server/src/eval/scoring.ts --out`）、停批欠账便签。欠账的权威在 sqlite
 # （`runs.science125_id + status`），便签只是给人复制 `--ids` 用，删掉重跑一次就有。
-outputs/
-*.db
+/outputs/
+/*.db
 
 # SQLite 边车。主件是证据要入库（批证据 db 入 `runs-ts/` 跟踪），边车只在进程活着时有意义，
 # 所以按后缀精确匹配——不写 `*.db*`，那会连主件一起吞掉。

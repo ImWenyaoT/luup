@@ -16,7 +16,7 @@
  * | 流程完整性 | 1 | 五阶段 artifact 齐全且 review accepted |
  * | **Grounding** | **veto** | 计划里出现任何不在冻结证据白名单内的 URL / evidence_id → 总分归零 |
  *
- *     bun src/eval/scoring.ts \
+ *     pnpm run score -- \
  *       --db outputs/science-125-06-q96/attempt-5-passed.db --out outputs/scoring.md
  */
 

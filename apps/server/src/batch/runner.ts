@@ -1,4 +1,4 @@
-/** 批跑：`bun run batch --ids 1-125 --concurrency 3`。
+/** 批跑：`pnpm run batch -- --ids 1-125 --concurrency 3`。
  *
  * 交付要求是「整套 Science-125 且可断点续跑」。那是围着既有组合根转的一个循环，
  * 不是第二条流水线：每道题都走同一个 Harness，批跑产出的 Run 与单跑逐字段同构。
@@ -265,9 +265,9 @@ export function parseConcurrency(spec: string | undefined): number {
  *
  * ## 为什么并发是安全的
  *
- * 并发只在**一个 Bun 进程、一条 JS 线程**内发生。三处共享状态各自成立：
+ * 并发只在**一个 Node 进程、一条 JS 线程**内发生。三处共享状态各自成立：
  *
- * 1. **SQLite**：`store/store.ts` 用 `bun:sqlite` 的 `Database`，写路径是
+ * 1. **SQLite**：`store/store.ts` 用 `node:sqlite` 的 `DatabaseSync`，写路径是
  *    `BEGIN IMMEDIATE` → 同步回调 → `COMMIT`，中间没有 `await`。单线程 JS 下没有
  *    第二个执行流能挤进这段，事务因此天然原子；两道题不可能交错在同一次写里。
  * 2. **检索发号闸**：`agent/rate-limit.ts` 的限流器是**模块级**单例（arXiv 3s、
@@ -702,7 +702,6 @@ export async function main(
   argv: string[] = process.argv.slice(2),
   runtime: {
     nodeVersion?: string;
-    bunVersion?: string;
     modelCredential?: boolean;
     sourceFact?: typeof readSourceIdentity;
     run?: RunQuestion;

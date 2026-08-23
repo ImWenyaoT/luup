@@ -210,23 +210,23 @@ export function App() {
       )}
 
       {/* 右侧主工作区 */}
-      <div className="flex flex-1 flex-col h-full overflow-hidden">
+      <div className="relative flex flex-1 flex-col h-full overflow-hidden">
+        {/* 折叠态左侧边缘展开手柄 */}
+        {!isSidebarOpen && (
+          <button
+            type="button"
+            onClick={() => setIsSidebarOpen(true)}
+            title="展开 Science 125 题库"
+            className="absolute left-0 top-2.5 z-30 flex h-7 items-center gap-1.5 rounded-r-md border border-l-0 border-border/80 bg-card/95 px-2 font-mono text-xs font-medium text-foreground shadow-sm backdrop-blur-md transition-all hover:bg-card hover:text-primary hover:border-primary/50 hover:pl-2.5 cursor-pointer"
+          >
+            <span className="text-[10px]">▶</span>
+            <span className="font-sans text-[11px] font-medium">题库选题</span>
+          </button>
+        )}
+
         {/* 顶部状态与设置条 */}
         <header className="flex h-12 items-center justify-between border-b border-border/40 px-4 sm:px-6 backdrop-blur-md shrink-0">
           <div className="flex items-center gap-2.5">
-            {!isSidebarOpen && (
-              <Button
-                type="button"
-                variant="outline"
-                size="xs"
-                onClick={() => setIsSidebarOpen(true)}
-                title="展开题库与侧边栏"
-                className="h-7 gap-1.5 px-2 text-xs font-medium cursor-pointer"
-              >
-                <span>☰</span>
-                <span className="hidden sm:inline">题库选题</span>
-              </Button>
-            )}
             <div className="flex items-center gap-1.5 font-mono text-xs font-semibold text-muted-foreground">
               <span>Luup</span>
               <span>·</span>

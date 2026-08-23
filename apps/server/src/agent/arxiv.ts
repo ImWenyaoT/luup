@@ -57,15 +57,17 @@ function textOf(value: unknown): string {
 }
 
 /** 把一个 Atom entry 变成可引用记录；缺关键字段就返回 null，由调用方计入 partial。 */
-function toRecord(entry: any): ArxivRecord | null {
-  const rawId = textOf(entry?.id);
-  const title = textOf(entry?.title);
+function toRecord(entry: Record<string, unknown> | null | undefined): ArxivRecord | null {
+  if (!entry || typeof entry !== "object") return null;
+  const rawId = textOf(entry.id);
+  const title = textOf(entry.title);
   if (!rawId || !title) return null;
   // id 形如 http://arxiv.org/abs/2301.12345v2
   const match = /arxiv\.org\/abs\/(.+)$/.exec(rawId);
   if (!match) return null;
   const arxivId = match[1]!;
-  const authors = (Array.isArray(entry?.author) ? entry.author : [entry?.author])
+  const rawAuthors = Array.isArray(entry.author) ? entry.author : [entry.author];
+  const authors = rawAuthors
     .map((item: unknown) => textOf((item as { name?: unknown })?.name))
     .filter((name: string) => name.length > 0);
   return {
@@ -73,9 +75,9 @@ function toRecord(entry: any): ArxivRecord | null {
     title,
     // 统一用 https 的 abs 链接，别原样透传 arXiv 返回的 http。
     url: `https://arxiv.org/abs/${arxivId}`,
-    summary: textOf(entry?.summary),
+    summary: textOf(entry.summary),
     authors,
-    published: textOf(entry?.published),
+    published: textOf(entry.published),
   };
 }
 

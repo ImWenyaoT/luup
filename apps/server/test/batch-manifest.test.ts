@@ -271,7 +271,7 @@ test("CLI can reopen a manifest without repeating --ids", async () => {
   const manifestId = value.id;
   first.close();
   try {
-    assert.equal(await main(["--manifest-id", manifestId, "--dry-run", "--db", path], { bunVersion: "1.4.0" }), 0);
+    assert.equal(await main(["--manifest-id", manifestId, "--dry-run", "--db", path], { nodeVersion: "v22.0.0" }), 0);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

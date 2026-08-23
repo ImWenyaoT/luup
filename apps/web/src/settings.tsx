@@ -66,7 +66,7 @@ export function Settings() {
   if (status === "unreachable") {
     return (
       <span className="text-xs text-destructive px-2">
-        设置读取失败：后端不可达。请运行 <code className="font-mono">bun run dev</code>。
+        设置读取失败：后端不可达。请运行 <code className="font-mono">pnpm run dev</code>。
       </span>
     );
   }

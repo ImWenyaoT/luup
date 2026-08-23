@@ -654,7 +654,7 @@ export function main(argv: string[] = process.argv.slice(2)): number {
   }
   if (!values.db || !values["manifest-id"] || !values["representative-run-id"] || !values.out) {
     process.stderr.write(
-      "用法：bun run submission:ready -- --db <runs.db> --manifest-id <id> --representative-run-id <id> --out <new-dir> " +
+      "用法：pnpm run submission:ready -- --db <runs.db> --manifest-id <id> --representative-run-id <id> --out <new-dir> " +
         "[--input-price-per-million <n> --output-price-per-million <n> --currency <code> --model <id> --price-source <text>] " +
         "[--submission-file <作品.pdf>] [--registration <截图目录>] [--qwen-evidence <凭证>] [--public-api <url>] [--public-webui <url>]\n",
     );

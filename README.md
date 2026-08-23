@@ -119,7 +119,7 @@ curl -sS -X POST "$BASE/api/runs/<run_id>/feedback" \
 ```
 
 进程内同时执行/排队的 Run 默认最多 8 个（`LUUP_MAX_QUEUED_RUNS` 可调），满载返回 `429`；这只是
-最后一道费用闸，不是公网身份系统或计费系统。当前 `main.ts` 仍默认绑定 loopback，Bun SQLite 也不能
+最后一道费用闸，不是公网身份系统或计费系统。当前 `main.ts` 仍默认绑定 loopback，SQLite 单文件存储也不能
 直接作为 Cloudflare Worker 的持久化层；因此本仓此阶段不宣称已经完成公网部署，正式 API 地址、反向
 代理/TLS、外部鉴权、持久化适配和限流策略仍是部署 blocker。
 

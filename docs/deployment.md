@@ -9,12 +9,12 @@
 ```text
 浏览器 → Cloudflare DNS/Access/TLS → Cloudflare Tunnel → 127.0.0.1:8000
                                                      ↓
-                                             Bun 1.4 + Bun.serve
+                                             Node.js 22 + Elysia
                                                      ↓
                                   持久磁盘上的 SQLite + memory/ 文件
 ```
 
-Tunnel 只负责把 HTTP 流量送到已经运行的 Bun origin；它不把本项目转换成 Worker，
+Tunnel 只负责把 HTTP 流量送到已经运行的 Node origin；它不把本项目转换成 Worker，
 也不解决应用鉴权、费用控制或 SQLite 备份。当前服务同源托管 Vite 静态产物和 `/api`，
 因此 Tunnel 方案不需要跨域配置，也不会引入第二套前端 API 地址。
 
@@ -22,14 +22,14 @@ Tunnel 只负责把 HTTP 流量送到已经运行的 Bun origin；它不把本�
 
 当前 `apps/server/src/server.ts` 和 `apps/server/src/store/store.ts` 明确使用：
 
-- `Bun.serve`、`bun:sqlite` 和进程内后台执行队列；
+- Node HTTP / Elysia、`node:sqlite` 和进程内后台执行队列；
 - `node:fs` / `node:path` 读取 Vite 构建产物；
 - 长生命周期 SQLite 单写者锁、WAL 文件和 `memory/` append-only 文件；
 - SSE 长连接与同一进程内的 Run 调度。
 
 这些不是一个 `wrangler.jsonc` 就能替换的 Worker 适配。若未来选择 Workers，必须另做 HTTP
 adapter，并把事实存储、队列、长任务、密钥和恢复语义分别迁移到 Cloudflare 对应服务；在此之前
-不得把当前 Bun 服务伪装成可部署 Worker，也不要把 `bun:sqlite` 文件放到临时文件系统。
+不得把当前服务伪装成可部署 Worker，也不要把 SQLite 文件放到临时文件系统。
 
 Cloudflare Pages 只托管静态前端也不是当前的即插即用路径：前端 API 使用同源相对路径，
 当前服务没有可配置的跨域 allowlist；拆分后还需要显式 API origin、精确 CORS、SSE 代理和独立 API
@@ -41,10 +41,10 @@ Cloudflare Pages 只托管静态前端也不是当前的即插即用路径：前
 
 ```sh
 cd /path/to/luup
-bun --version                         # 必须是 1.4.0
-bun install --frozen-lockfile
-bun run ci
-bun run build
+node --version                         # 必须 >= 22.0.0
+pnpm install --frozen-lockfile
+pnpm run ci
+pnpm run build
 ```
 
 创建只存在于 origin 主机的环境变量或 secret manager 注入项。不要把 `.env`、Qwen key、
@@ -59,7 +59,7 @@ export LUUP_API_TOKEN='use-a-long-random-value'
 export LUUP_DATABASE='/var/lib/luup/typescript-runs.db'
 export LUUP_HOSTNAME='127.0.0.1'
 export PORT=8000
-bun apps/server/src/main.ts
+pnpm run start
 ```
 
 `LUUP_API_TOKEN` 在 live 公网场景是必填的纵深防线；Cloudflare Access 不能替代应用层 token。
@@ -78,7 +78,7 @@ export LUUP_MAX_QUEUED_RUNS=2
 ### SQLite 一致性备份与恢复
 
 不要用 `cp typescript-runs.db` 代替备份：运行中的 SQLite 可能把已提交事实留在同名 WAL 中。
-仓库提供三个 Bun CLI，均只接受文件路径，不会把缺失参数解析成默认数据库：
+仓库提供三个 CLI，均只接受文件路径，不会把缺失参数解析成默认数据库：
 
 ```sh
 DB=/var/lib/luup/typescript-runs.db
@@ -86,11 +86,11 @@ STAMP=$(date +%Y%m%d-%H%M%S)
 BACKUP=/var/lib/luup/backups/typescript-runs-$STAMP.db
 RESTORE=/var/lib/luup/restore/typescript-runs-$STAMP.db
 
-bun run db:verify -- --source "$DB"
-bun run db:backup -- --source "$DB" --target "$BACKUP"
-bun run db:verify -- --source "$BACKUP"
-bun run db:restore -- --source "$BACKUP" --target "$RESTORE"
-bun run db:verify -- --source "$RESTORE"
+pnpm run db:verify -- --source "$DB"
+pnpm run db:backup -- --source "$DB" --target "$BACKUP"
+pnpm run db:verify -- --source "$BACKUP"
+pnpm run db:restore -- --source "$BACKUP" --target "$RESTORE"
+pnpm run db:verify -- --source "$RESTORE"
 ```
 
 `db:backup` 和 `db:restore` 使用 SQLite `VACUUM INTO` 生成新的事务一致快照，覆盖 WAL
@@ -183,5 +183,5 @@ SSE 验收必须确认响应包含 `text/event-stream`、`cache-control: no-cach
 5. Worker/D1/Queues/Workflow 迁移（若不采用 Tunnel）；
 6. 公开 API 的真实端到端 canary 与评审访问验收。
 
-因此交付材料中可以准确写“支持在持久化 Bun origin 前接 Cloudflare Tunnel 的部署方法”，
+因此交付材料中可以准确写“支持在持久化 Node origin 前接 Cloudflare Tunnel 的部署方法”，
 但不能写“已部署 Cloudflare”或提供虚构的测试 API 地址。

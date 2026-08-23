@@ -16,6 +16,14 @@ import { createSchema, nowIso, type RunStatus } from "./schema.ts";
 
 type Row = Record<string, any>;
 
+export type StoredEvent = {
+  id: number;
+  version: number;
+  kind: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+};
+
 export type StoredArtifact = {
   id: string;
   type: DomainArtifact["artifact_type"];
@@ -100,7 +108,7 @@ export class SqliteStore {
   /**
    * Read-only process readiness probe.
    *
-   * Liveness only proves that Bun is answering HTTP. Deployment health checks
+   * Liveness only proves that the server is answering HTTP. Deployment health checks
    * also need to distinguish a closed/corrupt SQLite handle from a live
    * process, without creating a Run or mutating the fact store.
    */
@@ -676,18 +684,18 @@ export class SqliteStore {
   }
 
   /** SSE 的数据源。游标是 per-run 的 version，开区间。 */
-  eventsAfter(runId: string, after: number): Row[] {
+  eventsAfter(runId: string, after: number): StoredEvent[] {
     return this.#all(
       "SELECT id, version, kind, payload_json, created_at FROM events " +
         "WHERE run_id = ? AND version > ? ORDER BY version",
       runId,
       after,
     ).map((row) => ({
-      id: row.id,
-      version: row.version,
-      kind: row.kind,
-      payload: JSON.parse(row.payload_json),
-      created_at: row.created_at,
+      id: Number(row.id),
+      version: Number(row.version),
+      kind: String(row.kind),
+      payload: JSON.parse(String(row.payload_json)) as Record<string, unknown>,
+      created_at: String(row.created_at),
     }));
   }
 

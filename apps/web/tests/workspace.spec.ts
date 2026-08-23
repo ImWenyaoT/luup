@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("completes a deterministic research run through the Bun server", async ({ page }) => {
+test("completes a deterministic research run through the server", async ({ page }) => {
   await page.goto("/");
 
   await expect(page.getByRole("heading", { name: "Luup" })).toBeVisible();

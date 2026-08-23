@@ -14,7 +14,7 @@
  * 这里做的是跨 Run 的率与配对比较。两份文件各自重写 URL 归一化之类的小工具，
  * 理由同 scoring.ts 顶部所述 —— 评估口径必须比被评的代码更稳定。
  *
- *     bun run eval --db outputs/runtime/typescript-runs.db
+ *     pnpm run eval -- --db outputs/runtime/typescript-runs.db
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";

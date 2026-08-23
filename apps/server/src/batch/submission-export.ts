@@ -243,7 +243,7 @@ export function main(argv: string[] = process.argv.slice(2)): number {
   }
   if (!values["manifest-id"] || !values.out) {
     process.stderr.write(
-      "用法：bun run batch:export --manifest-id <id> --out <index.json> [--db <runs.db>] [--require-science125]\n",
+      "用法：pnpm run batch:export -- --manifest-id <id> --out <index.json> [--db <runs.db>] [--require-science125]\n",
     );
     return 2;
   }

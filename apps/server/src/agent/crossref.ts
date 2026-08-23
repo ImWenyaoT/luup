@@ -40,22 +40,33 @@ function textOf(value: unknown): string {
   return "";
 }
 
-function toRecord(item: any): CrossrefRecord | null {
-  const doi = textOf(item?.DOI);
-  const title = textOf(item?.title);
+function toRecord(item: unknown): CrossrefRecord | null {
+  if (!item || typeof item !== "object") return null;
+  const recordItem = item as Record<string, unknown>;
+  const doi = textOf(recordItem.DOI);
+  const title = textOf(recordItem.title);
   // 没有 DOI 就没有稳定标识，引用无从核验，宁可丢掉也不放进证据。
   if (!doi || !title) return null;
-  const authors = (Array.isArray(item?.author) ? item.author : [])
-    .map((author: any) => [textOf(author?.given), textOf(author?.family)].filter(Boolean).join(" "))
+  const rawAuthors = Array.isArray(recordItem.author) ? recordItem.author : [];
+  const authors = rawAuthors
+    .map((author: unknown) => {
+      if (author && typeof author === "object") {
+        const authRecord = author as Record<string, unknown>;
+        return [textOf(authRecord.given), textOf(authRecord.family)].filter(Boolean).join(" ");
+      }
+      return "";
+    })
     .filter((name: string) => name.length > 0);
-  const parts = item?.issued?.["date-parts"]?.[0];
+  const issued =
+    recordItem.issued && typeof recordItem.issued === "object" ? (recordItem.issued as Record<string, unknown>) : null;
+  const parts = Array.isArray(issued?.["date-parts"]) ? issued?.["date-parts"]?.[0] : null;
   return {
     doi,
     title,
     url: `https://doi.org/${doi}`,
     authors,
     published: Array.isArray(parts) ? parts.filter(Boolean).join("-") : "",
-    container: textOf(item?.["container-title"]),
+    container: textOf(recordItem["container-title"]),
   };
 }
 
@@ -127,10 +138,10 @@ export async function searchCrossref(
     );
   }
 
-  let items: any[];
+  let items: unknown[];
   try {
-    items = ((await response.json()) as any)?.message?.items ?? [];
-    if (!Array.isArray(items)) items = [];
+    const json = (await response.json()) as { message?: { items?: unknown[] } } | null;
+    items = Array.isArray(json?.message?.items) ? json.message.items : [];
   } catch (error) {
     return failure(query, "failed", "Crossref returned unparsable JSON", {
       ...execution,
@@ -138,7 +149,10 @@ export async function searchCrossref(
     });
   }
 
-  const records = items.map(toRecord).filter((item): item is CrossrefRecord => item !== null);
+  const records = items
+    .filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null)
+    .map(toRecord)
+    .filter((item): item is CrossrefRecord => item !== null);
   if (records.length === 0) {
     return { query, status: "empty", resultSummary: "Crossref returned no citable records", records, execution };
   }
