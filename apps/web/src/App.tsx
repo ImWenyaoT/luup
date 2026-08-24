@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +15,7 @@ import { Settings } from "./settings";
 import { Sidebar } from "./sidebar";
 import { SubagentLineage } from "./subagent-lineage";
 import { Trajectory } from "./trajectory";
-import { TERMINAL, type Artifact, type Science125Data, type Science125Question, type Snapshot } from "./types";
+import { TERMINAL, type Science125Question, type Snapshot } from "./types";
 
 const STATUS_LABEL: Record<string, string> = {
   running: "进行中",
@@ -31,143 +32,115 @@ const SUGGESTIONS = [
 ];
 
 export function App() {
+  const queryClient = useQueryClient();
   const [question, setQuestion] = useState("");
-  const [scienceData, setScienceData] = useState<Science125Data | null>(null);
   const [selectedQuestion, setSelectedQuestion] = useState<Science125Question | null>(null);
-  const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
-  const [artifact, setArtifact] = useState<Artifact | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [artifactError, setArtifactError] = useState<string | null>(null);
-  const [refreshError, setRefreshError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
+  const [creationError, setCreationError] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-  const version = useRef(0);
-  const activeRun = useRef<string | null>(null);
-  const artifactRequest = useRef(0);
-  const refreshInFlight = useRef<Promise<void> | null>(null);
-  const refreshPending = useRef(false);
-  const recoveryTimer = useRef<number | null>(null);
-
-  // 预载 Science 125 题库
-  useEffect(() => {
-    void fetchScience125()
-      .then(setScienceData)
-      .catch(() => null);
-  }, []);
-
-  const refresh: (runId: string) => Promise<void> = useCallback((runId: string) => {
-    if (activeRun.current !== runId) return Promise.resolve();
-    if (refreshInFlight.current) {
-      // 进行中的请求可能拿到较早快照；记住这次 tick，结束后最多补拉一次。
-      refreshPending.current = true;
-      return refreshInFlight.current;
-    }
-
-    const task: Promise<void> = (async () => {
-      let lastError: unknown;
-      // 最后一帧后 SSE 会关闭；快照请求若刚好抖一下，就原地重试，不等一条不会再来的事件。
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        try {
-          const next = await fetchRun(runId);
-          if (activeRun.current !== runId) return;
-          if (next.version < version.current) return;
-          version.current = next.version;
-          setSnapshot(next);
-          setRefreshError(null);
-          if (recoveryTimer.current !== null) window.clearTimeout(recoveryTimer.current);
-          recoveryTimer.current = null;
-          return;
-        } catch (cause) {
-          lastError = cause;
-          if (activeRun.current !== runId) return;
-          if (cause instanceof ApiError && cause.status >= 400 && cause.status < 500) {
-            setRefreshError(cause.message);
-            return;
-          }
-          if (attempt < 2) await new Promise((done) => setTimeout(done, 500));
-        }
-      }
-      setRefreshError(lastError instanceof Error ? lastError.message : String(lastError));
-      if (recoveryTimer.current === null) {
-        recoveryTimer.current = window.setTimeout(() => {
-          recoveryTimer.current = null;
-          if (activeRun.current === runId) void refresh(runId);
-        }, 5_000);
-      }
-    })().finally(() => {
-      if (refreshInFlight.current !== task) return;
-      refreshInFlight.current = null;
-      if (refreshPending.current) {
-        refreshPending.current = false;
-        if (activeRun.current === runId) void refresh(runId);
-      }
-    });
-    refreshInFlight.current = task;
-    return task;
-  }, []);
+  const [activeRunId, setActiveRunId] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return new URLSearchParams(window.location.search).get("run");
+  });
 
   useEffect(() => {
-    // Run 在 SQLite 里继续执行，页面刷新不能把入口弄丢。URL 也方便直接分享和排障。
-    const runId = new URLSearchParams(window.location.search).get("run");
-    if (!runId) return;
-    activeRun.current = runId;
-    version.current = 0;
-    void refresh(runId);
-  }, [refresh]);
+    const handlePopState = () => {
+      const run = new URLSearchParams(window.location.search).get("run");
+      setActiveRunId(run);
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
+  const versionRef = useRef(0);
+
+  // 1. 预载 Science 125 题库
+  const { data: scienceData = null } = useQuery({
+    queryKey: ["science125"],
+    queryFn: fetchScience125,
+    staleTime: Infinity,
+  });
+
+  // 2. 当前活动 Run 状态查询与版本保护
+  const {
+    data: snapshot = null,
+    error: runError,
+    refetch: refetchRun,
+  } = useQuery({
+    queryKey: ["run", activeRunId],
+    queryFn: async () => {
+      const next = await fetchRun(activeRunId!);
+      if (next.version >= versionRef.current) {
+        versionRef.current = next.version;
+      }
+      return next;
+    },
+    enabled: Boolean(activeRunId),
+    retry: (failureCount, error) => {
+      if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
+        return false;
+      }
+      return failureCount < 2;
+    },
+    retryDelay: 500,
+    refetchInterval: (query) => {
+      if (
+        query.state.status === "error" &&
+        !(query.state.error instanceof ApiError && query.state.error.status >= 400 && query.state.error.status < 500)
+      ) {
+        return 5000;
+      }
+      return false;
+    },
+  });
+
+  // 3. 当前查看的科研产物 (Artifact) 查询
+  const { data: artifact = null, error: artifactError } = useQuery({
+    queryKey: ["artifact", selectedArtifactId],
+    queryFn: () => fetchArtifact(selectedArtifactId!),
+    enabled: Boolean(selectedArtifactId),
+    retry: false,
+  });
+
+  // 4. SSE 事件同步：事件到达时触发 TanStack Query 重新拉取
   useEffect(() => {
     if (!snapshot || TERMINAL.has(snapshot.status)) return;
-    return subscribe(snapshot.id, version.current, () => void refresh(snapshot.id));
-  }, [snapshot?.id, snapshot?.status, refresh]);
+    return subscribe(snapshot.id, versionRef.current, () => {
+      void refetchRun();
+    });
+  }, [snapshot?.id, snapshot?.status, refetchRun]);
 
-  async function start(overrideQuestion?: string) {
-    const targetQuestion = (overrideQuestion ?? question).trim();
-    if (!targetQuestion) return;
-
-    setBusy(true);
-    setError(null);
-    try {
-      const created = await createRun(targetQuestion);
-      // 请求失败时旧 Run 还在后台推进，不能提前切断它的 refresh/SSE。
-      artifactRequest.current += 1;
-      setArtifact(null);
-      setArtifactError(null);
-      // 等待创建期间，旧 Artifact 请求可能刚好失败；切换时一并清掉旧 Run 的错误。
-      setError(null);
-      setRefreshError(null);
-      if (recoveryTimer.current !== null) window.clearTimeout(recoveryTimer.current);
-      recoveryTimer.current = null;
-      refreshInFlight.current = null;
-      refreshPending.current = false;
-      activeRun.current = created.id;
-      version.current = created.version;
+  // 5. 新建 Run Mutation
+  const createRunMutation = useMutation({
+    mutationFn: createRun,
+    onSuccess: (created) => {
+      versionRef.current = created.version;
+      queryClient.setQueryData(["run", created.id], created);
+      setActiveRunId(created.id);
+      setSelectedArtifactId(null);
+      setCreationError(null);
       const url = new URL(window.location.href);
       url.searchParams.set("run", created.id);
       window.history.replaceState(null, "", url);
-      setSnapshot(created);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(false);
-    }
+    },
+    onError: (cause) => {
+      setCreationError(cause instanceof Error ? cause.message : String(cause));
+    },
+  });
+
+  const busy = createRunMutation.isPending;
+
+  function start(overrideQuestion?: string) {
+    const targetQuestion = (overrideQuestion ?? question).trim();
+    if (!targetQuestion) return;
+
+    setCreationError(null);
+    createRunMutation.mutate(targetQuestion);
   }
 
-  async function openArtifact(id: string) {
-    const request = ++artifactRequest.current;
-    const runId = activeRun.current;
-    try {
-      const next = await fetchArtifact(id);
-      // 新 Run 或后一次点击都会让这份旧响应失效。
-      if (request === artifactRequest.current && runId === activeRun.current) {
-        setArtifact(next);
-        setArtifactError(null);
-      }
-    } catch (cause) {
-      if (request === artifactRequest.current) {
-        setArtifactError(cause instanceof Error ? cause.message : String(cause));
-      }
-    }
+  function openArtifact(id: string) {
+    setSelectedArtifactId(id);
   }
 
   const handleSelectQuestion = (q: Science125Question | null) => {
@@ -180,19 +153,21 @@ export function App() {
   };
 
   const handleNewResearch = () => {
-    activeRun.current = null;
-    version.current = 0;
-    setSnapshot(null);
-    setArtifact(null);
-    setError(null);
-    setArtifactError(null);
-    setRefreshError(null);
+    setActiveRunId(null);
+    setSelectedArtifactId(null);
+    versionRef.current = 0;
     setSelectedQuestion(null);
     setQuestion("");
+    setCreationError(null);
     const url = new URL(window.location.href);
     url.searchParams.delete("run");
     window.history.replaceState(null, "", url);
   };
+
+  const displayError =
+    creationError ??
+    (artifactError instanceof Error ? artifactError.message : artifactError ? String(artifactError) : null) ??
+    (runError instanceof Error ? runError.message : runError ? String(runError) : null);
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background font-sans text-foreground">
@@ -202,7 +177,7 @@ export function App() {
           scienceData={scienceData}
           selectedQuestion={selectedQuestion}
           onSelectQuestion={handleSelectQuestion}
-          onDirectRun={(targetText) => void start(targetText)}
+          onDirectRun={(targetText) => start(targetText)}
           onNewResearch={handleNewResearch}
           onToggleCollapse={() => setIsSidebarOpen(false)}
           disabled={busy}
@@ -251,9 +226,9 @@ export function App() {
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           <div className="mx-auto max-w-5xl space-y-6">
             {/* 错误提示 */}
-            {(error ?? artifactError ?? refreshError) !== null && (
+            {displayError !== null && (
               <Alert variant="destructive">
-                <AlertDescription>{error ?? artifactError ?? refreshError}</AlertDescription>
+                <AlertDescription>{displayError}</AlertDescription>
               </Alert>
             )}
 
@@ -277,7 +252,7 @@ export function App() {
                       type="button"
                       onClick={() => {
                         setQuestion(s.text);
-                        void start(s.text);
+                        start(s.text);
                       }}
                       disabled={busy}
                       className="rounded-full border border-border/60 bg-muted/40 px-3 py-1 text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:bg-card hover:text-foreground cursor-pointer"
@@ -315,7 +290,7 @@ export function App() {
                           question.trim() !== ""
                         ) {
                           event.preventDefault();
-                          void start();
+                          start();
                         }
                       }}
                       placeholder="提出一个可以设计实验去检验的研究问题"
@@ -325,7 +300,7 @@ export function App() {
                     />
 
                     <Button
-                      onClick={() => void start()}
+                      onClick={() => start()}
                       disabled={busy || question.trim() === ""}
                       size="sm"
                       className="h-[64px] min-w-[88px] text-xs font-medium shrink-0 shadow-xs cursor-pointer"
@@ -356,13 +331,13 @@ export function App() {
                     <SubagentLineage snapshot={snapshot} />
                     <AuditTrace snapshot={snapshot} />
                     <Trajectory snapshot={snapshot} />
-                    <FeedbackComposer snapshot={snapshot} onSubmitted={() => void refresh(snapshot.id)} />
+                    <FeedbackComposer snapshot={snapshot} onSubmitted={() => void refetchRun()} />
                     <FeedbackHistory snapshot={snapshot} />
                   </div>
 
                   {/* 右侧科研成果展台 */}
                   <div className="space-y-4 lg:col-span-7 lg:sticky lg:top-2">
-                    <Artifacts snapshot={snapshot} onOpen={(id) => void openArtifact(id)} />
+                    <Artifacts snapshot={snapshot} onOpen={(id) => openArtifact(id)} />
                     {artifact !== null ? (
                       <ArtifactView artifact={artifact} />
                     ) : (
@@ -404,7 +379,7 @@ export function App() {
                   onKeyDown={(event) => {
                     if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && !busy && question.trim() !== "") {
                       event.preventDefault();
-                      void start();
+                      start();
                     }
                   }}
                   placeholder="提出一个可以设计实验去检验的研究问题"
@@ -414,7 +389,7 @@ export function App() {
                 />
 
                 <Button
-                  onClick={() => void start()}
+                  onClick={() => start()}
                   disabled={busy || question.trim() === ""}
                   size="sm"
                   className="h-[52px] min-w-[84px] text-xs font-medium shrink-0 shadow-xs cursor-pointer"

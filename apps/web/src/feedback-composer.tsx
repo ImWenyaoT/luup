@@ -1,3 +1,4 @@
+import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -16,7 +17,24 @@ export function FeedbackComposer({ snapshot, onSubmitted }: { snapshot: Snapshot
   const [feedback, setFeedback] = useState("");
   const [apiToken, setApiToken] = useState("");
   const [status, setStatus] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+
+  const feedbackMutation = useMutation({
+    mutationFn: async () => {
+      return submitResearcherFeedback(
+        snapshot.id,
+        { feedback_id: crypto.randomUUID(), feedback },
+        apiToken.trim() || undefined,
+      );
+    },
+    onSuccess: () => {
+      setFeedback("");
+      setStatus({ tone: "ok", text: "人工反馈已排队，将进入下一轮修订。" });
+      onSubmitted();
+    },
+    onError: (cause) => {
+      setStatus({ tone: "error", text: cause instanceof Error ? cause.message : String(cause) });
+    },
+  });
 
   if (!firstReviewerRunning) return null;
   if (alreadyQueued) {
@@ -34,23 +52,11 @@ export function FeedbackComposer({ snapshot, onSubmitted }: { snapshot: Snapshot
   }
 
   async function submit() {
-    setSubmitting(true);
     setStatus(null);
-    try {
-      await submitResearcherFeedback(
-        snapshot.id,
-        { feedback_id: crypto.randomUUID(), feedback },
-        apiToken.trim() || undefined,
-      );
-      setFeedback("");
-      setStatus({ tone: "ok", text: "人工反馈已排队，将进入下一轮修订。" });
-      onSubmitted();
-    } catch (cause) {
-      setStatus({ tone: "error", text: cause instanceof Error ? cause.message : String(cause) });
-    } finally {
-      setSubmitting(false);
-    }
+    feedbackMutation.mutate();
   }
+
+  const submitting = feedbackMutation.isPending;
 
   return (
     <section className="space-y-2" aria-labelledby="researcher-feedback-title">

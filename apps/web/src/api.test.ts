@@ -3,7 +3,6 @@ const mock = vi.fn;
 
 import {
   ApiError,
-  client,
   createRun,
   fetchConfig,
   fetchRun,
@@ -121,12 +120,5 @@ describe("请求形状", () => {
     const data = await fetchScience125Question(61);
     expect(data).toEqual(mockQ);
     expect((spy.mock.calls[0] as unknown[])[0]).toBe("/api/science125/61");
-  });
-
-  test("client (Eden Treaty) provides type-safe endpoints", () => {
-    const c = client as any;
-    expect(typeof c.api.runs.post).toBe("function");
-    expect(typeof c.api.config.get).toBe("function");
-    expect(typeof c.api.science125.get).toBe("function");
   });
 });

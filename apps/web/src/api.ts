@@ -1,9 +1,6 @@
-import { treaty } from "@elysiajs/eden";
 import type { Artifact, Science125Data, Science125Question, Snapshot } from "./types";
 
 const SNAPSHOT_TIMEOUT_MS = 10_000;
-
-export const client = treaty<any>(typeof window !== "undefined" ? window.location.origin : "http://localhost");
 
 export class ApiError extends Error {
   readonly status: number;

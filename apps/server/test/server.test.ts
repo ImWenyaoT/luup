@@ -6,7 +6,7 @@ import { onTestFinished, test } from "vitest";
 
 import { createDeterministicRuntime, createDeterministicVerifier } from "../src/executor-deterministic.ts";
 import { Harness } from "../src/harness.ts";
-import { createApp, runtimeMode, type LuupServer } from "../src/server.ts";
+import { createApp, runtimeMode, timingSafeTokenCompare, type LuupServer } from "../src/server.ts";
 import { SqliteStore } from "../src/store/store.ts";
 
 async function listen(): Promise<{ base: string; server: LuupServer; store: SqliteStore }> {
@@ -287,12 +287,26 @@ test("authenticated researcher feedback is queued once and invalid requests fail
       body: JSON.stringify({ feedback_id: "human-2" }),
     });
     assert.equal(missing.status, 422);
+    const wrongToken = await fetch(endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: "Bearer wrong-token" },
+      body: JSON.stringify({ feedback_id: "human-1", feedback: "无效令牌" }),
+    });
+    assert.equal(wrongToken.status, 401);
   } finally {
     await server.stop(true);
     store.close();
     if (previousToken === undefined) delete process.env.LUUP_API_TOKEN;
     else process.env.LUUP_API_TOKEN = previousToken;
   }
+});
+
+test("timingSafeTokenCompare performs constant-time comparison against tokens", () => {
+  assert.equal(timingSafeTokenCompare("Bearer secret-123", "Bearer secret-123"), true);
+  assert.equal(timingSafeTokenCompare("Bearer secret-123", "Bearer secret-456"), false);
+  assert.equal(timingSafeTokenCompare("Bearer short", "Bearer very-long-secret-key-12345"), false);
+  assert.equal(timingSafeTokenCompare("", "Bearer secret"), false);
+  assert.equal(timingSafeTokenCompare("Bearer secret", ""), false);
 });
 
 test("rejects an unknown runtime instead of silently selecting paid live mode", () => {

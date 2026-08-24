@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize, resolve } from "node:path";
 import { serve, type ServerType } from "@hono/node-server";
@@ -46,6 +47,16 @@ function parseCursor(raw: string | null): number | null {
   if (!/^\d+$/.test(raw.trim())) return null;
   const cursor = Number(raw.trim());
   return Number.isSafeInteger(cursor) ? cursor : null;
+}
+
+/** 恒定时间比对 API Token，抵御时序侧信道攻击（Timing Attack）。
+ * 先对两端分别计算 SHA-256 哈希以规避 timingSafeEqual 对非等长 buffer 抛异常的问题，
+ * 并保证比对时间与输入内容和长度无关。
+ */
+export function timingSafeTokenCompare(provided: string, expected: string): boolean {
+  const hashProvided = createHash("sha256").update(provided).digest();
+  const hashExpected = createHash("sha256").update(expected).digest();
+  return timingSafeEqual(hashProvided, hashExpected);
 }
 
 export type ServerOptions = {
@@ -99,7 +110,9 @@ export function createElysiaApp(options: ServerOptions) {
 
   const authorized = (req: Request): boolean => {
     if (apiToken === null) return mode === "deterministic";
-    return req.headers.get("authorization") === `Bearer ${apiToken}`;
+    const authHeader = req.headers.get("authorization");
+    if (!authHeader) return false;
+    return timingSafeTokenCompare(authHeader, `Bearer ${apiToken}`);
   };
 
   const drain = (): void => {

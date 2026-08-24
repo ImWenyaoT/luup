@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { expect, test } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -35,13 +36,18 @@ function snapshot(status: "running" | "completed" = "running"): Snapshot {
   };
 }
 
+function renderWithClient(ui: React.ReactElement) {
+  const queryClient = new QueryClient();
+  return renderToStaticMarkup(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+}
+
 test("shows the researcher feedback form only while the first reviewer is running", () => {
-  const running = renderToStaticMarkup(<FeedbackComposer snapshot={snapshot()} onSubmitted={() => undefined} />);
+  const running = renderWithClient(<FeedbackComposer snapshot={snapshot()} onSubmitted={() => undefined} />);
   expect(running).toContain("研究者反馈");
   expect(running).toContain("提交人工反馈");
-  expect(
-    renderToStaticMarkup(<FeedbackComposer snapshot={snapshot("completed")} onSubmitted={() => undefined} />),
-  ).toBe("");
+  expect(renderWithClient(<FeedbackComposer snapshot={snapshot("completed")} onSubmitted={() => undefined} />)).toBe(
+    "",
+  );
 });
 
 test("shows a durable queued status instead of accepting a duplicate", () => {
@@ -53,7 +59,7 @@ test("shows a durable queued status instead of accepting a duplicate", () => {
     payload: { feedback_source: "human" },
     created_at: "t",
   });
-  const html = renderToStaticMarkup(<FeedbackComposer snapshot={queued} onSubmitted={() => undefined} />);
+  const html = renderWithClient(<FeedbackComposer snapshot={queued} onSubmitted={() => undefined} />);
   expect(html).toContain("人工反馈已排队，将进入下一轮修订。");
   expect(html).not.toContain("提交人工反馈");
 });

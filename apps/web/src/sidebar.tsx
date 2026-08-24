@@ -1,3 +1,11 @@
+import {
+  createColumnHelper,
+  getCoreRowModel,
+  getFilteredRowModel,
+  getSortedRowModel,
+  useReactTable,
+  type FilterFn,
+} from "@tanstack/react-table";
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,6 +24,30 @@ const DOMAIN_TRANSLATIONS: Record<string, string> = {
   "Energy Science": "能源科学",
   "Materials Science": "材料科学",
   "Genetics & Molecular Biology": "遗传与分子生物",
+};
+
+const columnHelper = createColumnHelper<Science125Question>();
+
+const columns = [
+  columnHelper.accessor("id", {
+    header: "ID",
+  }),
+  columnHelper.accessor("domain", {
+    header: "Domain",
+  }),
+  columnHelper.accessor("question", {
+    header: "Question",
+  }),
+];
+
+const science125GlobalFilter: FilterFn<Science125Question> = (row, _columnId, filterValue: string) => {
+  const q = filterValue.trim().toLowerCase();
+  if (!q) return true;
+  const item = row.original;
+  const idMatch = `#${item.id}` === q || `${item.id}` === q;
+  const textMatch = item.question.toLowerCase().includes(q);
+  const domainMatch = item.domain.toLowerCase().includes(q) || (DOMAIN_TRANSLATIONS[item.domain] ?? "").includes(q);
+  return idMatch || textMatch || domainMatch;
 };
 
 export function Sidebar({
@@ -43,23 +75,26 @@ export function Sidebar({
     return scienceData.domains.flatMap((d) => d.questions).sort((a, b) => a.id - b.id);
   }, [scienceData]);
 
-  const filteredQuestions = useMemo(() => {
-    let list = allQuestions;
-    if (activeDomain !== "all") {
-      list = list.filter((q) => q.domain === activeDomain);
-    }
-    if (searchQuery.trim()) {
-      const q = searchQuery.trim().toLowerCase();
-      list = list.filter((item) => {
-        const idMatch = `#${item.id}` === q || `${item.id}` === q;
-        const textMatch = item.question.toLowerCase().includes(q);
-        const domainMatch =
-          item.domain.toLowerCase().includes(q) || (DOMAIN_TRANSLATIONS[item.domain] ?? "").includes(q);
-        return idMatch || textMatch || domainMatch;
-      });
-    }
-    return list;
-  }, [allQuestions, activeDomain, searchQuery]);
+  const columnFilters = useMemo(() => {
+    if (activeDomain === "all") return [];
+    return [{ id: "domain", value: activeDomain }];
+  }, [activeDomain]);
+
+  const table = useReactTable({
+    data: allQuestions,
+    columns,
+    state: {
+      globalFilter: searchQuery,
+      columnFilters,
+    },
+    onGlobalFilterChange: setSearchQuery,
+    globalFilterFn: science125GlobalFilter,
+    getCoreRowModel: getCoreRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+  });
+
+  const rows = table.getRowModel().rows;
 
   const handleRandomPick = () => {
     if (allQuestions.length === 0) return;
@@ -167,10 +202,11 @@ export function Sidebar({
 
       {/* 125 题题目列表 */}
       <div className="flex-1 overflow-y-auto p-2 space-y-1.5 text-xs">
-        {filteredQuestions.length === 0 ? (
+        {rows.length === 0 ? (
           <div className="py-8 text-center text-xs text-muted-foreground">未找到匹配的问题</div>
         ) : (
-          filteredQuestions.map((q) => {
+          rows.map((row) => {
+            const q = row.original;
             const isSelected = selectedQuestion?.id === q.id;
             return (
               <div

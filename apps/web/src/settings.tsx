@@ -1,3 +1,4 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,25 +18,57 @@ const CREDENTIAL_LABEL: Record<ConfigStatus["credential"], string> = {
   absent: "未配置",
 };
 
-export function Settings() {
-  const [status, setStatus] = useState<ConfigStatus | null | "unreachable">(null);
-  const [isOpen, setIsOpen] = useState(false);
+export function Settings({
+  initialStatus,
+  defaultOpen = false,
+}: {
+  initialStatus?: ConfigStatus;
+  defaultOpen?: boolean;
+} = {}) {
+  const queryClient = useQueryClient();
+  const [isOpen, setIsOpen] = useState(defaultOpen);
   const [apiKey, setApiKey] = useState("");
   const [modelId, setModelId] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [feedback, setFeedback] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
-  const [busy, setBusy] = useState(false);
+
+  const { data: config, isError } = useQuery({
+    queryKey: ["config"],
+    queryFn: fetchConfig,
+    initialData: initialStatus,
+    enabled: initialStatus === undefined,
+  });
+
+  const status: ConfigStatus | null | "unreachable" = isError ? "unreachable" : (config ?? initialStatus ?? null);
 
   useEffect(() => {
-    fetchConfig()
-      .then((cfg) => {
-        setStatus(cfg);
-        if (cfg.credential === "absent" && cfg.runtime === "live") {
-          setIsOpen(true);
-        }
-      })
-      .catch(() => setStatus("unreachable"));
-  }, []);
+    if (config && config.credential === "absent" && config.runtime === "live" && !initialStatus) {
+      setIsOpen(true);
+    }
+  }, [config, initialStatus]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setIsOpen(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isOpen]);
+
+  const saveMutation = useMutation({
+    mutationFn: saveConfig,
+    onSuccess: (updated) => {
+      queryClient.setQueryData(["config"], updated);
+      setApiKey("");
+      setModelId("");
+      setBaseUrl("");
+      setFeedback({ tone: "ok", text: "已保存，下一次运行即生效。" });
+    },
+    onError: (cause) => {
+      setFeedback({ tone: "error", text: cause instanceof Error ? cause.message : String(cause) });
+    },
+  });
 
   async function save() {
     const next: { api_key?: string; model_id?: string; base_url?: string } = {};
@@ -46,20 +79,8 @@ export function Settings() {
       setFeedback({ tone: "error", text: "没有要保存的改动。" });
       return;
     }
-    setBusy(true);
     setFeedback(null);
-    try {
-      const updated = await saveConfig(next);
-      setStatus(updated);
-      setApiKey("");
-      setModelId("");
-      setBaseUrl("");
-      setFeedback({ tone: "ok", text: "已保存，下一次运行即生效。" });
-    } catch (cause) {
-      setFeedback({ tone: "error", text: cause instanceof Error ? cause.message : String(cause) });
-    } finally {
-      setBusy(false);
-    }
+    saveMutation.mutate(next);
   }
 
   if (status === null) return null;
@@ -79,9 +100,14 @@ export function Settings() {
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 rounded-md border border-border/60 bg-background/80 px-2.5 py-1 text-left text-xs transition-colors hover:border-border hover:bg-muted/50 cursor-pointer shadow-xs"
+        aria-haspopup="dialog"
+        aria-expanded={isOpen}
+        aria-label="系统与模型设置"
+        className="flex items-center gap-2 rounded-md border border-border/60 bg-background/80 px-2.5 py-1 text-left text-xs transition-colors hover:border-border hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring cursor-pointer shadow-xs"
       >
-        <span className="text-xs">⚙️</span>
+        <span className="text-xs" aria-hidden="true">
+          ⚙️
+        </span>
         <span className="font-mono text-xs font-semibold text-foreground">设置</span>
         <span className={`text-[11px] font-mono ${missing ? "text-destructive font-medium" : "text-muted-foreground"}`}>
           凭据：{CREDENTIAL_LABEL[status.credential]}
@@ -96,6 +122,9 @@ export function Settings() {
       {/* 模态弹窗 (Settings Modal Dialog) */}
       {isOpen && (
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="settings-dialog-title"
           onClick={(e) => {
             if (e.target === e.currentTarget) setIsOpen(false);
           }}
@@ -105,13 +134,18 @@ export function Settings() {
             {/* 弹窗 Header */}
             <div className="flex items-center justify-between border-b border-border/40 pb-3">
               <div className="flex items-center gap-2">
-                <span className="text-base">⚙️</span>
-                <h3 className="font-mono text-sm font-bold text-foreground">系统与模型设置</h3>
+                <span className="text-base" aria-hidden="true">
+                  ⚙️
+                </span>
+                <h3 id="settings-dialog-title" className="font-mono text-sm font-bold text-foreground">
+                  系统与模型设置
+                </h3>
               </div>
               <button
                 type="button"
+                aria-label="关闭设置"
                 onClick={() => setIsOpen(false)}
-                className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground text-xs"
+                className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring text-xs cursor-pointer"
               >
                 ✕
               </button>
@@ -130,8 +164,11 @@ export function Settings() {
             {/* 表单输入区 */}
             <div className="space-y-3">
               <div className="space-y-1">
-                <label className="font-mono text-[11px] text-muted-foreground">百炼 API Key (只进不出)</label>
+                <label htmlFor="setting-api-key" className="font-mono text-[11px] text-muted-foreground">
+                  百炼 API Key (只进不出)
+                </label>
                 <input
+                  id="setting-api-key"
                   type="password"
                   autoComplete="off"
                   value={apiKey}
@@ -141,27 +178,33 @@ export function Settings() {
                       ? "粘贴百炼 API Key（只存进程内存，不落盘）"
                       : "API Key（留空则沿用当前配置）"
                   }
-                  className="h-8 w-full rounded-md border border-border/60 bg-background px-3 font-mono text-xs outline-none focus:border-primary"
+                  className="h-8 w-full rounded-md border border-border/60 bg-background px-3 font-mono text-xs outline-none focus:border-primary focus-visible:ring-2 focus-visible:ring-ring/40"
                 />
               </div>
 
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <div className="space-y-1">
-                  <label className="font-mono text-[11px] text-muted-foreground">模型 ID</label>
+                  <label htmlFor="setting-model-id" className="font-mono text-[11px] text-muted-foreground">
+                    模型 ID
+                  </label>
                   <input
+                    id="setting-model-id"
                     value={modelId}
                     onChange={(event) => setModelId(event.target.value)}
                     placeholder={`模型 id（当前 ${status.model_id}）`}
-                    className="h-8 w-full rounded-md border border-border/60 bg-background px-3 font-mono text-xs outline-none focus:border-primary"
+                    className="h-8 w-full rounded-md border border-border/60 bg-background px-3 font-mono text-xs outline-none focus:border-primary focus-visible:ring-2 focus-visible:ring-ring/40"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="font-mono text-[11px] text-muted-foreground">Base URL</label>
+                  <label htmlFor="setting-base-url" className="font-mono text-[11px] text-muted-foreground">
+                    Base URL
+                  </label>
                   <input
+                    id="setting-base-url"
                     value={baseUrl}
                     onChange={(event) => setBaseUrl(event.target.value)}
                     placeholder={`端点（当前 ${status.base_url}）`}
-                    className="h-8 w-full rounded-md border border-border/60 bg-background px-3 font-mono text-xs outline-none focus:border-primary"
+                    className="h-8 w-full rounded-md border border-border/60 bg-background px-3 font-mono text-xs outline-none focus:border-primary focus-visible:ring-2 focus-visible:ring-ring/40"
                   />
                 </div>
               </div>
@@ -194,10 +237,10 @@ export function Settings() {
                 variant="default"
                 size="sm"
                 onClick={() => void save()}
-                disabled={busy}
+                disabled={saveMutation.isPending}
                 className="h-8 text-xs"
               >
-                {busy ? "保存中…" : "保存"}
+                {saveMutation.isPending ? "保存中…" : "保存"}
               </Button>
             </div>
           </Card>
