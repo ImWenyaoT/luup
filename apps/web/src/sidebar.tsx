@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { Science125Data, Science125Question } from "./types";
 
-const DOMAIN_TRANSLATIONS: Record<string, string> = {
+export const DOMAIN_TRANSLATIONS: Record<string, string> = {
   "Mathematical Sciences": "数学科学",
   Chemistry: "化学",
   "Medicine & Health": "医学与健康",
@@ -40,7 +40,7 @@ const columns = [
   }),
 ];
 
-const science125GlobalFilter: FilterFn<Science125Question> = (row, _columnId, filterValue: string) => {
+export const science125GlobalFilter: FilterFn<Science125Question> = (row, _columnId, filterValue: string) => {
   const q = filterValue.trim().toLowerCase();
   if (!q) return true;
   const item = row.original;

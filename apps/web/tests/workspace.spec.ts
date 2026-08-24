@@ -164,3 +164,41 @@ test("selects Science 125 benchmark preset question and triggers direct run", as
   await expect(completedBadge).toBeVisible();
   await expect(page.getByText("冻结产物")).toBeVisible();
 });
+
+test("supports sidebar collapse/expand toggle and new research reset workflow", async ({ page }) => {
+  await page.goto("/");
+
+  // 验证侧边栏存在并能收起
+  const collapseButton = page.getByTitle("收起侧边栏");
+  await expect(collapseButton).toBeVisible();
+  await collapseButton.click();
+
+  // 侧边栏收起后，浮现边缘展开手柄
+  const expandHandle = page.getByTitle("展开 Science 125 题库");
+  await expect(expandHandle).toBeVisible();
+  await expandHandle.click();
+
+  // 展开后侧边栏重现
+  await expect(collapseButton).toBeVisible();
+
+  // 点击快捷赛题建议气泡，自动填入并直接开跑
+  const suggestionBtn = page.getByRole("button", { name: "#61 脉冲星形成" });
+  await expect(suggestionBtn).toBeVisible();
+  await suggestionBtn.click();
+
+  const completedBadge = page
+    .locator('[data-slot="badge"]')
+    .filter({ hasText: /^已完成$/ })
+    .first();
+  await expect(completedBadge).toBeVisible();
+  await expect(page).toHaveURL(/\?run=[a-z0-9]+$/);
+
+  // 点击侧边栏「新建研究课题」，重置工作区并清空 URL 运行态
+  const newResearchBtn = page.getByRole("button", { name: "+ 新建研究课题" });
+  await expect(newResearchBtn).toBeVisible();
+  await newResearchBtn.click();
+
+  await expect(completedBadge).not.toBeVisible();
+  await expect(page.getByRole("heading", { name: "AI Scientist" })).toBeVisible();
+  expect(page.url()).not.toContain("?run=");
+});
