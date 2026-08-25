@@ -1,7 +1,7 @@
 # docs/specs — 赛道一 · 方向 1A
 
 本目录只服务 **赛道一 · 方向 1A · 科学假设生成与研究计划设计（Science 125）**。  
-其他赛道 / 方向 2（金乌）材料已移出日常阅读路径，避免错位。
+其他赛道 / 方向 2（金乌）材料已不在工作树，避免错位。日常只看 `1a/` 与本目录顶层权威文件。
 
 ## 权威文件（日常用）
 
@@ -15,8 +15,14 @@
 
 设计契约入口见 [`docs/design/product-contract.md`](../design/product-contract.md)。
 
-## 归档
+## 其他赛道归档（不在工作树）
 
-[`_archive-other-tracks/`](./_archive-other-tracks/) 存放原「多赛道模板包」整目录（含 1B、赛道二三、方向 2 金乌已展开 md/docx、通用提交说明 pptx）。  
-归档原因：降低非本赛道文档的认知负担；需要对照其他赛道时再进去看。  
-归档内仍保留一份 1A docx 原件；**日常以 `1a/` 下副本为准**。
+非 1A 赛道模板包已从工作树删除，收在 annotated tag `archive/specs-other-tracks-20260825`。需要对照时：
+
+```sh
+# 浏览 tag 内路径（不写工作树）
+git show archive/specs-other-tracks-20260825:docs/specs/_archive-other-tracks/
+
+# 或恢复进工作树
+git checkout archive/specs-other-tracks-20260825 -- docs/specs/_archive-other-tracks
+```
