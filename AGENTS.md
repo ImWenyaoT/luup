@@ -63,4 +63,4 @@ CI 是 `.github/workflows/ts.yml` 的 `check` 与 `e2e` 两个 job，门与上�
 - 预注册协议：`docs/design/experiment-protocol.json`（已注册内容不可改，改动必须走 amendment）
 - 已定案、不再重提的决策：`docs/adr/`
 - 领域词汇：`CONTEXT.md`
-- Issue 与领域文档：`docs/agents/`
+- Issue 流程：见本文件验证/锚点节；原 `docs/agents/` 已删（历史可查）
