@@ -9,6 +9,7 @@ import { AppShell } from "../features/shell/AppShell";
 import { QuestionSidebar } from "../features/shell/QuestionSidebar";
 import { RunHeader } from "../features/shell/RunHeader";
 import { WelcomePanel } from "../features/shell/WelcomePanel";
+import { readRunId, writeRunSearchParams } from "../features/shell/url-run";
 import { RunWorkspace } from "../features/workspace/RunWorkspace";
 import { useRunEvents } from "../hooks/useRunEvents";
 import { useApiClient } from "../providers/api";
@@ -106,7 +107,7 @@ export default function Home() {
   const queryClient = useQueryClient();
   const client = useApiClient();
   const [searchParams, setSearchParams] = useSearchParams();
-  const runId = searchParams.get("run");
+  const runId = readRunId(searchParams);
 
   const { state, refetch, createAndNavigate } = useRun(runId);
   const [creationError, setCreationError] = useState<string | null>(null);
@@ -168,11 +169,7 @@ export default function Home() {
 
   const navigateToRun = useCallback(
     (id: string | null) => {
-      if (id) {
-        setSearchParams({ run: id }, { replace: true });
-      } else {
-        setSearchParams({}, { replace: true });
-      }
+      setSearchParams(writeRunSearchParams(id), { replace: true });
     },
     [setSearchParams],
   );

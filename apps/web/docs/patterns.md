@@ -64,9 +64,9 @@ subscribeRunEvents (13 UI kinds)
 **模式**：`?run=<id>` 为单一 run 指针；`history.replaceState` + `popstate` 同步。
 
 ```typescript
-// features/shell/url-run.ts（C3）
+// features/shell/url-run.ts
 readRunId(searchParams): string | null
-writeRunId(id: string | null): void
+writeRunSearchParams(id: string | null): Record<string, string>
 ```
 
 RR8 路由可选升级为 `/run/:runId`；pattern 不变。
