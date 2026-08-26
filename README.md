@@ -261,7 +261,7 @@ Science-125 逐题索引、manifest-scoped 指标、评分、usage JSONL/Markdow
 ## 验证
 
 ```sh
-pnpm run ci            # typecheck → lint → format:check → knip → build → test:coverage，与 CI 同序
+pnpm run ci            # typecheck → lint → format:check → build → server test:coverage → frontend test，与 CI 同序
 pnpm run test:e2e      # Playwright；首次先 pnpm --filter @luup/frontend exec playwright install chromium
 ```
 
