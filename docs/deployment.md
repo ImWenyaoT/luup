@@ -15,7 +15,7 @@
 ```
 
 Tunnel 只负责把 HTTP 流量送到已经运行的 Node origin；它不把本项目转换成 Worker，
-也不解决应用鉴权、费用控制或 SQLite 备份。当前服务同源托管 Vite 静态产物和 `/api`，
+也不解决应用鉴权、费用控制或 SQLite 备份。当前服务同源托管 React Router SPA 静态产物（`apps/web/dist/client`，`LUUP_WEB_DIST` 可覆盖）和 `/api`，
 因此 Tunnel 方案不需要跨域配置，也不会引入第二套前端 API 地址。
 
 ## 为什么不是直接部署成 Worker
@@ -23,7 +23,7 @@ Tunnel 只负责把 HTTP 流量送到已经运行的 Node origin；它不把本�
 当前 `apps/server/src/server.ts` 和 `apps/server/src/store/store.ts` 明确使用：
 
 - Node HTTP / Elysia、`node:sqlite` 和进程内后台执行队列；
-- `node:fs` / `node:path` 读取 Vite 构建产物；
+- `node:fs` / `node:path` 读取前端构建产物（默认 `apps/web/dist/client`）；
 - 长生命周期 SQLite 单写者锁、WAL 文件和 `memory/` append-only 文件；
 - SSE 长连接与同一进程内的 Run 调度。
 

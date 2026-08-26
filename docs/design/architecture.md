@@ -10,7 +10,7 @@ Luup 是一个确定性 Harness 编排五个 LLM 角色的科研 Agent：固定�
 最后由不问模型的 verifier 决定能否交付。
 
 ```text
-apps/web (Vite/React)
+apps/web (React Router 8 SPA)
         ↓ HTTP + SSE
 apps/server/src/server.ts ── apps/server/src/harness.ts ── researcher
    （同进程）          │            ├─ hypothesis-generation
@@ -65,9 +65,9 @@ store 只记账，不参与决定顺序。
 ### Web adapter
 
 `apps/web/` 只通过 HTTP 读 run 快照、事件与 Artifact，不直接推断存储状态。
-wire type 手写在 `apps/web/src/types.ts`，**不从服务端模块导入类型**——这条边界是故意的，
-它让投影的收窄在两侧都是显式的。生产形态下 `dist/` 由 `apps/server/src/server.ts` 同端口托管，
-只有一个进程。
+wire type 手写在 `apps/web/app/lib/types/`，**不从服务端模块导入类型**——这条边界是故意的，
+它让投影的收窄在两侧都是显式的。生产形态下 `apps/web/dist/client`（`LUUP_WEB_DIST` 默认）
+由 `apps/server/src/server.ts` 同端口托管，只有一个进程。
 
 ## Agent 流程
 

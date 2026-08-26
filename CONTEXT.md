@@ -19,4 +19,4 @@
 | **消融臂**           | `--no-memory` 关掉的是记忆**数据通道**本身，不是一个返回空结果的工具                                                                 | `apps/server/src/batch/runner.ts`         |
 | **失败分类**         | 终态失败的权威枚举；`INFRASTRUCTURE_*` 与质量类失败分桶报                                                                            | `apps/server/src/agent/failures.ts`       |
 | **离线评估**         | 从既有 SQLite 库复算 gate、版本选择与 McNemar 配对比较，不调用模型或网络                                                             | `apps/server/src/eval/metrics.ts`         |
-| **HTTP adapter**     | Elysia / Node HTTP 暴露运行接口并同端口托管 `apps/web/dist`；前端只消费 HTTP                                                         | `apps/server/src/server.ts`               |
+| **HTTP adapter**     | Elysia / Node HTTP 暴露运行接口并同端口托管 `apps/web/dist/client`（`LUUP_WEB_DIST` 默认）；前端只消费 HTTP                         | `apps/server/src/server.ts`               |

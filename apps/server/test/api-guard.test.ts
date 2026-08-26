@@ -146,3 +146,24 @@ test("the paid run queue has a finite opt-in bound", async () => {
     restoreRuntime();
   }
 });
+
+test("server attaches defensive HTTP security headers to all responses", async () => {
+  const store = new SqliteStore(":memory:");
+  const harness = {
+    createRun: (question: string) => store.createRun(question),
+    execute: async () => undefined,
+  };
+  const server = createApp({ store, harness: harness as any });
+  await server.ready;
+  try {
+    for (const path of ["/api/health", "/readyz", "/api/nonexistent"]) {
+      const response = await fetch(`${server.url.origin}${path}`);
+      assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+      assert.equal(response.headers.get("x-frame-options"), "DENY");
+      assert.equal(response.headers.get("referrer-policy"), "strict-origin-when-cross-origin");
+    }
+  } finally {
+    await server.stop(true);
+    store.close();
+  }
+});

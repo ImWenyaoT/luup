@@ -13,7 +13,7 @@ Python 栈已于 ADR-0004 退役，只存于 git 历史；源码注释里写着�
 ```text
 apps/server/ 后端 `@luup/server`：src/（harness 本体 + 领域 + 工具 + 评估，按子系统分目录）
              + test/（vitest）+ tsconfig
-apps/web/    Vite/React 交付面（`@luup/frontend`），构建产物由 apps/server/src/server.ts 同端口托管
+apps/web/    React Router 8 SPA（`@luup/frontend`，`ssr: false`），构建产物 `dist/client` 由 apps/server/src/server.ts 同端口托管（`LUUP_WEB_DIST`）
 data/        science125.json，冻结题库，只读
 docs/        产品契约、架构、判据、ADR、赛题与报告材料
 memory/      跨 run 的战役记忆，文件事实源，append-only
@@ -50,7 +50,7 @@ pnpm run lint          # oxlint（含 typeAware 档）
 pnpm run format:check  # oxfmt 格式检查；pnpm run format 原地修复
 pnpm run test          # vitest 全量测试
 pnpm run test:coverage # 覆盖率地板 80%，只许涨不许降
-pnpm run build         # vite build → apps/web/dist
+pnpm run build         # react-router build → apps/web/dist/client
 pnpm run test:e2e      # Playwright；确定性 runtime，零 LLM 调用
 ```
 

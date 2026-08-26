@@ -1,15 +1,14 @@
+import { reactRouter } from "@react-router/dev/vite";
 import tailwindcss from "@tailwindcss/vite";
-import react from "@vitejs/plugin-react";
-import path from "node:path";
 import { defineConfig } from "vite";
 
-// dev server 之外的 API 进程：`pnpm run dev:api`（src/main.ts）默认监听 8000。
+// API process: `pnpm run dev:api` (apps/server/src/main.ts) defaults to port 8000.
 const api = "http://127.0.0.1:8000";
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [tailwindcss(), reactRouter()],
   resolve: {
-    alias: { "@": path.resolve(import.meta.dirname, "src") },
+    tsconfigPaths: true,
   },
   server: {
     host: "127.0.0.1",
@@ -26,7 +25,9 @@ export default defineConfig({
           });
           proxy.on("proxyRes", (proxyRes) => {
             const contentType = proxyRes.headers["content-type"];
-            if (typeof contentType !== "string" || !contentType.includes("text/event-stream")) return;
+            if (typeof contentType !== "string" || !contentType.includes("text/event-stream")) {
+              return;
+            }
             delete proxyRes.headers["content-encoding"];
             delete proxyRes.headers["content-length"];
             proxyRes.headers["cache-control"] = "no-cache, no-transform";

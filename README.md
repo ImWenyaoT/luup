@@ -18,7 +18,7 @@
 
 ```text
 apps/server/  后端 @luup/server：harness 本体、领域、工具、评估 + 用例
-apps/web/     Vite/React 交付面 @luup/frontend，产物由同一个 Node 进程托管
+apps/web/     React Router 8 SPA @luup/frontend，产物由同一个 Node 进程托管
 data/         science125.json，冻结题库
 docs/         产品契约、架构、验收标准、ADR、赛题与报告材料
 memory/       跨 run 的战役记忆（事实数据）
@@ -51,15 +51,15 @@ export QWEN_BASE_URL='your-openai-compatible-base-url'
 
 ### 起服务
 
-单进程交付：一个 Node 进程同端口给出 API 与页面，静态产物从 `apps/web/dist` 读。
-**先 build 再起**——`dist` 不存在时 `/` 是 404（`/api` 不受影响）。
+单进程交付：一个 Node 进程同端口给出 API 与页面，静态产物从 `apps/web/dist/client` 读（`LUUP_WEB_DIST` 可覆盖，默认同路径）。
+**先 build 再起**——`dist/client` 不存在时 `/` 是 404（`/api` 不受影响）。
 
 ```sh
-pnpm run build     # → apps/web/dist
+pnpm run build     # react-router build → apps/web/dist/client
 pnpm run start     # http://127.0.0.1:8000
 ```
 
-开发用一条命令，前后端一起起（vite 热更新 + `/api` 代理到 8000）：
+开发用一条命令，前后端一起起（React Router dev + Vite HMR，`/api` 代理到 8000）：
 
 ```sh
 pnpm run dev       # 前端 http://127.0.0.1:5173 + API :8000（确定性 runtime，不花钱）

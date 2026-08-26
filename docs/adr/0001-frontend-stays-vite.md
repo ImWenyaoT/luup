@@ -2,9 +2,11 @@
 
 ## 状态
 
-已接受，2026-08-12。**结论仍成立，论据的落点已变**（2026-08-15，ADR-0004）：
-下文的 FastAPI 单进程托管与 `backend/app/frontend` 指的是 Python 期的形状，Python 栈已退役；
-现在同端口托管 `apps/web/dist` 的是 `src/server.ts`。「赛期不换 Next、单进程交付」的裁决未变。
+**Superseded by [ADR-0008](0008-frontend-react-router-v8.md)**，2026-08-26。前端已绿field 重写为 React Router 8 SPA；
+下文保留为历史决策记录。
+
+（废止前最后修订，2026-08-15，ADR-0004：Python 栈已退役；同端口托管由 `apps/server/src/server.ts` 承担。
+「不换 Next、单进程交付」的主张由 ADR-0008 继承；TanStack Router 与 `apps/web/dist` 扁平产物路径不再适用。）
 
 ## 背景
 

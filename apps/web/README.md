@@ -1,22 +1,11 @@
-# Luup frontend
+# @luup/frontend
 
-The frontend is a Vite, React, and TypeScript application styled with Tailwind CSS v4 and shadcn/ui (Base UI). Tailwind was removed once before, when it styled five small components while 900 lines of hand-written CSS covered everything else. It is back on the opposite terms: layout and appearance live in utility classes on the components, and `src/index.css` is down to 144 lines that declare theme tokens and nothing else. One system, not two.
-
-- The product UI has one path: turn a research question into a verified research
-  plan.
-- `src/types.ts` defines the narrow HTTP wire types consumed by this UI.
-- `src/api.ts` preserves Luup's SSE and public-projection boundaries without a
-  generated SDK.
-- Playwright tests exercise the real HTTP/SSE and browser boundary without Docker.
-
-## Development
-
-Run commands from the repository root:
+React Router（SPA，`ssr: false`）交付面。构建产物由 `apps/server` 同端口托管。
 
 ```bash
-pnpm run dev
-pnpm --filter @luup/frontend test
-pnpm run test:e2e
+pnpm --filter @luup/frontend dev    # http://127.0.0.1:5173 ，/api 与 /health 代理到 :8000
+pnpm --filter @luup/frontend build  # → dist/client
+pnpm --filter @luup/frontend typecheck
 ```
 
-Read [`CONTEXT.md`](../../CONTEXT.md) before changing frontend behavior.
+静态产物目录：`apps/web/dist/client`（对应 `LUUP_WEB_DIST`）。

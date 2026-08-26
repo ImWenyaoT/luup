@@ -1,0 +1,57 @@
+/** 服务端 projection 公开的全部 SSE event kind（不含 sdk.output_rejected）。 */
+export const RUN_EVENT_KINDS = [
+  "run.created",
+  "tool.evidence_recorded",
+  "tool.evidence_dropped",
+  "artifact.published",
+  "attempt.failed",
+  "run.failed",
+  "run.review_rejected",
+  "run.completed",
+  "attempt.started",
+  "attempt.transition_rejected",
+  "run.transition_rejected",
+  "subagent.started",
+  "subagent.ended",
+  "feedback.received",
+  "revision.applied",
+  "evaluation.round",
+  "verification.references",
+  "campaign.prior_attempts",
+  "campaign.memory_degraded",
+  "artifact.field_overwritten",
+  "sdk.structured_correction",
+  "sdk.usage",
+  "sdk.trace.started",
+  "sdk.trace.agent_started",
+  "sdk.trace.agent_ended",
+  "sdk.trace.tool_started",
+  "sdk.trace.tool_ended",
+  "sdk.trace.ended",
+  "sdk.trace.callback_error",
+] as const;
+
+export type RunEventKind = (typeof RUN_EVENT_KINDS)[number];
+
+/** UI 订阅的 13 种核心 SSE event（与旧 api.ts subscribe 一致）。 */
+export const UI_SSE_EVENT_KINDS = [
+  "run.created",
+  "attempt.started",
+  "subagent.started",
+  "subagent.ended",
+  "feedback.received",
+  "revision.applied",
+  "tool.evidence_recorded",
+  "sdk.structured_correction",
+  "artifact.published",
+  "attempt.failed",
+  "run.completed",
+  "run.review_rejected",
+  "run.failed",
+] as const;
+
+export type UiSseEventKind = (typeof UI_SSE_EVENT_KINDS)[number];
+
+export const TERMINAL_SSE_EVENT_KINDS = ["run.completed", "run.failed", "run.review_rejected"] as const;
+
+export type SseTickHandler = () => void;

@@ -1,0 +1,70 @@
+import { isRouteErrorResponse, Links, Meta, Outlet, Scripts, ScrollRestoration } from "react-router";
+
+import type { Route } from "./+types/root";
+import { ApiProvider } from "./providers/api";
+import { QueryProvider } from "./providers/query";
+import "./app.css";
+
+export function Layout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="zh-CN">
+      <head>
+        <meta charSet="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <Meta />
+        <Links />
+      </head>
+      <body>
+        {children}
+        <ScrollRestoration />
+        <Scripts />
+      </body>
+    </html>
+  );
+}
+
+export function HydrateFallback() {
+  return (
+    <main className="min-h-dvh grid place-items-center p-8">
+      <p className="text-sm text-neutral-500">Loading…</p>
+    </main>
+  );
+}
+
+export default function App() {
+  return (
+    <QueryProvider>
+      <ApiProvider>
+        <Outlet />
+      </ApiProvider>
+    </QueryProvider>
+  );
+}
+
+export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
+  let message = "Oops!";
+  let details = "An unexpected error occurred.";
+  let stack: string | undefined;
+
+  if (isRouteErrorResponse(error)) {
+    message = error.status === 404 ? "404" : "Error";
+    details = error.status === 404 ? "The requested page could not be found." : error.statusText || details;
+  } else if (import.meta.env.DEV && error && error instanceof Error) {
+    details = error.message;
+    stack = error.stack;
+  }
+
+  return (
+    <main className="min-h-dvh grid place-items-center p-8">
+      <div>
+        <h1 className="text-2xl font-semibold">{message}</h1>
+        <p className="mt-2 text-neutral-600">{details}</p>
+        {stack && (
+          <pre className="mt-4 w-full max-w-3xl overflow-x-auto rounded bg-neutral-100 p-4 text-xs">
+            <code>{stack}</code>
+          </pre>
+        )}
+      </div>
+    </main>
+  );
+}

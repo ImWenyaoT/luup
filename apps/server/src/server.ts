@@ -59,6 +59,26 @@ export function timingSafeTokenCompare(provided: string, expected: string): bool
   return timingSafeEqual(hashProvided, hashExpected);
 }
 
+/** 防御性 HTTP 安全响应头。
+ * - x-content-type-options: nosniff（防御 MIME 混淆与嗅探攻击，特别是用户与模型生成的 Markdown/JSON/文本产物）
+ * - x-frame-options: DENY（防御 Clickjacking 点击劫持，禁止第三方 frame 嵌入）
+ * - referrer-policy: strict-origin-when-cross-origin（防止向外部文献服务如 arXiv/Crossref 泄漏内部路径与查询）
+ */
+export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
+  "x-content-type-options": "nosniff",
+  "x-frame-options": "DENY",
+  "referrer-policy": "strict-origin-when-cross-origin",
+};
+
+export function applySecurityHeaders(response: Response): Response {
+  for (const [header, value] of Object.entries(SECURITY_HEADERS)) {
+    if (!response.headers.has(header)) {
+      response.headers.set(header, value);
+    }
+  }
+  return response;
+}
+
 export type ServerOptions = {
   store: SqliteStore;
   harness: Harness;
@@ -655,19 +675,21 @@ export function createApp(options: ServerOptions): LuupServer {
 
   const fetchHandler = async (req: Request): Promise<Response> => {
     try {
-      return await app.fetch(req);
+      return applySecurityHeaders(await app.fetch(req));
     } catch (error) {
       reportError("request failed", error);
       const acceptHeader = req.headers.get("accept") ?? "";
       if (acceptHeader.includes("application/problem+json")) {
-        return problemResponse(500, {
-          code: "internal_error",
-          title: "Internal Server Error",
-          detail: "服务器内部错误。",
-          instance: req.url,
-        });
+        return applySecurityHeaders(
+          problemResponse(500, {
+            code: "internal_error",
+            title: "Internal Server Error",
+            detail: "服务器内部错误。",
+            instance: req.url,
+          }),
+        );
       }
-      return json(500, { detail: "服务器内部错误。" });
+      return applySecurityHeaders(json(500, { detail: "服务器内部错误。" }));
     }
   };
 
@@ -727,7 +749,7 @@ export function createDefaultApp(options: Pick<ServerOptions, "hostname" | "port
     store,
     harness,
     runtime: mode,
-    webDist: process.env.LUUP_WEB_DIST || "apps/web/dist",
+    webDist: process.env.LUUP_WEB_DIST || "apps/web/dist/client",
     hostname: options.hostname,
     port: options.port,
   });

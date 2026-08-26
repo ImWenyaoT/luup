@@ -17,7 +17,7 @@
 | 11 | Science-125 全量结果 | 2 | BatchManifest：125 条逐题终态、omitted=0、success/partial/failure/human-review、重复稳健性与适用边界 |
 | 12 | API、WebUI 与部署 | 1 | 示例请求、可交互界面、run/evidence/round/subagent 状态、部署地址与健康检查 |
 | 13 | Qwen 与 AI 技术说明 | 1 | ≤300 字；模型 ID、百炼 OpenAI-compatible 接线、调用凭证/截图、上下文和结构化约束 |
-| 14 | 可复现性、局限与索引 | 2 | 源码、`bun install --frozen-lockfile`、`bun run ci`、正式命令；研究者审查边界；125 逐题与日志索引 |
+| 14 | 可复现性、局限与索引 | 2 | 源码、`pnpm install --frozen-lockfile`、`pnpm run ci`、正式命令；研究者审查边界；125 逐题与日志索引 |
 
 ## 提交前仍需由真实材料填入
 

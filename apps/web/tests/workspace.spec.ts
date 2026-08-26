@@ -100,9 +100,11 @@ test("completes a deterministic research run through the server", async ({ page 
     }) as unknown as typeof window.fetch;
   });
   await page.getByRole("button", { name: "research-plan", exact: true }).click();
+  await expect(page.getByTestId("artifact-loading")).toBeVisible();
+  await expect(page.getByTestId("artifact-loading")).not.toBeVisible();
   await page.getByPlaceholder("提出一个可以设计实验去检验的研究问题").fill("第二个研究问题");
   await page.getByRole("button", { name: "开始研究" }).click();
-  await expect(page.getByText("旧 Artifact 失败")).toBeVisible();
+  await expect(page.getByRole("alert")).toContainText("旧 Artifact 失败");
   await expect(page.getByText("旧 Artifact 失败")).not.toBeVisible();
   await expect(completedBadge).toBeVisible();
 
