@@ -54,7 +54,7 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
       - name: Install Playwright browsers
-        run: pnpm exec playwright install --with-deps chromium
+        run: pnpm --filter @luup/frontend exec playwright install --with-deps chromium
       - name: Test
         # playwright.config.ts 的 webServer 自己 build 再起 src/main.ts，这里不重复 build。
         run: pnpm run test:e2e
