@@ -251,6 +251,22 @@
       },
       "unchanged": "题集、arms、phase_b_subset、模型与 Artifact 合同、B1–B4、统计设计、双分母、失败桶、熔断阈值、两轮上界和禁止显著性主张全部不变。正式 Phase A 仍须从全新数据库开始。",
       "effect_on_numbers": "只提高付费启动的操作授权强度，并把一次误启动围出正式 cohort；不改变任何科学判据或统计公式。"
+    },
+    {
+      "date": "2026-08-28",
+      "before_phase_a": false,
+      "before_definitive_phase_a": true,
+      "before_any_reading": false,
+      "recorded_when": "**历史 pilot/v2/v3 与 canary 读数均已存在，正式 Phase A 和 Phase B 仍未启动。** 本条只把仓库已落地的执行事实从 Bun 1.4/Bun workspace/bun:sqlite 更新为 Node.js 22.13+、23.4+ 与更高主版本 / pnpm / node:sqlite；不删除或改写修订 #7–#9，也不把任何历史运行并入正式 cohort。",
+      "registered_commit_amended": "33c7d7f70466bede2d7c0786b0743bfdcbc89cb2",
+      "summary": "运行时事实再次变更：ADR-0009 取代 ADR-0007，当前 API、Harness、批跑、评估与测试支持 Node.js 22.13+、23.4+ 与更高主版本，依赖与 workspace 统一由 pnpm 10.5.0 管理。修订 #7–#9 的 Bun 命令继续作为当时的历史坐标保留，不再是当前执行入口。",
+      "changes": {
+        "runtime": "当前根入口为 `pnpm run ...`，TypeScript 源码由 `tsx` 执行；HTTP 走 Node server，SQLite 走 `node:sqlite`，单元测试走 Vitest。`node:sqlite` 在 22 分支到 22.13.0、23 分支到 23.4.0 才无需实验 flag，故正式 live batch 接受 Node.js 22.13+、23.4+ 与更高主版本，拒绝更早或畸形的版本字符串；`package.json#engines.node` 精确写作 `^22.13.0 || >=23.4.0`，`packageManager`、`pnpm-lock.yaml` 与 `pnpm-workspace.yaml` 是安装和 workspace 事实源。",
+        "phase_a_launch": "修订 #9 的 release 绑定、clean tree、全新 DB 与 Science-125 显式确认门保持原义；当前首次正式命令为 `pnpm run batch --ids 1-125 --confirm-science125 --release-commit <40hex> --db <new.db>`，resume 同样使用 pnpm 根入口。",
+        "phase_b_launch": "修订 #8/#9 的 memory-off 显式确认、预注册 30 题精确匹配、release commit 与 arm 隔离保持原义；当前命令通过 `pnpm run batch --ids <phase_b_subset> --no-memory --confirm-memory-ablation --release-commit <40hex> --db <formal.db>` 进入同一 admission gate。"
+      },
+      "unchanged": "题集、arms、phase_b_subset 及其 digest、Artifact 合同、B1–B4、统计设计、双分母、失败桶、熔断阈值、最多两轮补证/修订、release 绑定与禁止显著性主张全部不变。历史 pilot/v2/v3、canary 与误启动仍全部围出正式读数。",
+      "effect_on_numbers": "运行时替换可能改变未来正式批的墙钟、失败分布与 token 用量，方向未知；没有任何历史读数被重写或合并。"
     }
   ],
   "interpretation": "这是对已记录架构取舍的证据，不是普适优越性主张。结论的形状只能是「在这一条 harness commit、这一个题库、这一条串行顺序下，跨 run 记忆让交付率朝某个方向动了多少」，不能读成「记忆机制优于无记忆」或反过来。Do not claim superiority from one successful trace, one direction, or an unpriced token count.",

@@ -1,4 +1,4 @@
-# ADR-0008 · 前端绿field 重写为 React Router 8 SPA
+# ADR-0008 · 前端 greenfield 重写为 React Router 8 SPA
 
 ## 状态
 
@@ -6,7 +6,7 @@
 
 ## 背景
 
-`apps/web` 在 C2–C4 阶段按 **绿field 重写**，不是对旧 TanStack Router 前端的渐进迁移。
+`apps/web` 在 C2–C4 阶段按 **greenfield 重写**，不是对旧 TanStack Router 前端的渐进迁移。
 旧交付面（`apps/web/src/`、TanStack Router 路由树与组件）已整体替换。
 
 下列裁决在 ADR-0001 中仍成立，但落点已变：

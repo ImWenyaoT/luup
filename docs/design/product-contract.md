@@ -24,7 +24,7 @@
 
 1. **Scientific roles**：Researcher 检索并冻结证据；Hypothesis Scientist 生成多个候选并比较筛选；Evidence Reviewer 保留反对证据与知识缺口；Research Planner 形成可执行计划。
 2. **Reviewer**：通过独立检索或确定性工具引入新信息，指出证据、推导和验证设计的缺口。
-3. **Harness**：Bun/TypeScript 控制流拥有顺序、预算、持久化与最终验收；OpenAI Agents SDK 执行 Qwen 角色与工具循环。Agent 的自我宣称不能决定通过。
+3. **Harness**：Node.js/TypeScript 控制流拥有顺序、预算、持久化与最终验收；OpenAI Agents SDK 执行 Qwen 角色与工具循环。Agent 的自我宣称不能决定通过。当前运行时与包管理器边界见 [ADR-0009](../adr/0009-node-pnpm-runtime.md)。
 
 Harness 是确定性控制面，不是另一个 LLM Agent。角色边界必须以独立证据、受限工具面或确定性职责为理由，而不是为了增加 Agent 数量。
 
