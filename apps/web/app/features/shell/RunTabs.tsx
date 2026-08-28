@@ -22,7 +22,9 @@ const Bar = styled.div`
   border-bottom: 1px solid ${colors.border};
   background: ${colors.surface};
   scrollbar-width: thin;
-  @media (max-width: 900px) { padding-left: 48px; }
+  @media (max-width: 900px) {
+    padding-left: 48px;
+  }
 `;
 const Empty = styled.span`
   align-self: center;
@@ -87,10 +89,10 @@ export function RunTabs({ activeRunId, tabs, onSelect, onClose }: RunTabsProps) 
     const adjacent = tabs[index + 1] ?? tabs[index - 1] ?? null;
     const targetId =
       tab.id === activeRunId
-        ? adjacent?.id ?? null
+        ? (adjacent?.id ?? null)
         : tabs.some((item) => item.id === activeRunId)
           ? activeRunId
-          : adjacent?.id ?? null;
+          : (adjacent?.id ?? null);
     onClose(tab.id);
     requestAnimationFrame(() => {
       if (targetId) tabRefs.current.get(targetId)?.focus();
