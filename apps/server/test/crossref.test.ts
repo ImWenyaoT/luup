@@ -106,14 +106,28 @@ test("classifies a missing DOI as absent and Crossref 429/5xx as infrastructure 
 test("drops works without a DOI and reports partial", async () => {
   const result = await searchCrossref("q", {
     fetchImpl: respond({
-      message: { items: [work("10.1/ok", "Usable"), { title: ["No DOI here"] }] },
+      message: {
+        items: [work("10.1234/ok", "Usable"), work("not-a-doi", "Malformed DOI"), { title: ["No DOI here"] }],
+      },
     }),
     minIntervalMs: 0,
   });
-  // 没有 DOI 就无从核验，宁可丢掉也不放进证据
+  // 缺失或格式错误的 DOI 都无从精确反查，宁可丢掉也不放进证据。
   assert.equal(result.status, "partial");
   assert.equal(result.records.length, 1);
-  assert.match(result.resultSummary, /1 unusable/);
+  assert.equal(result.records[0]?.doi, "10.1234/ok");
+  assert.match(result.resultSummary, /2 unusable/);
+});
+
+test("canonicalizes encoded and mixed-case DOIs returned by Crossref", async () => {
+  const result = await searchCrossref("q", {
+    fetchImpl: respond({ message: { items: [work("10.1234%2FABC", "Canonical DOI")] } }),
+    minIntervalMs: 0,
+  });
+
+  assert.equal(result.status, "succeeded");
+  assert.equal(result.records[0]?.doi, "10.1234/abc");
+  assert.equal(result.records[0]?.url, "https://doi.org/10.1234/abc");
 });
 
 test("encodes every Crossref failure as a status instead of throwing", async () => {

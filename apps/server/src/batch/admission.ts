@@ -203,9 +203,12 @@ function sameIds(left: readonly number[], right: readonly number[]): boolean {
   return left.length === right.length && left.every((id, index) => id === right[index]);
 }
 function sameIdSet(left: readonly number[], right: readonly number[]): boolean {
+  if (left.length !== right.length || new Set(left).size !== left.length || new Set(right).size !== right.length) {
+    return false;
+  }
   return sameIds(
-    [...new Set(left)].sort((a, b) => a - b),
-    [...new Set(right)].sort((a, b) => a - b),
+    [...left].sort((a, b) => a - b),
+    [...right].sort((a, b) => a - b),
   );
 }
 function compactIds(ids: readonly number[]): string {
