@@ -1,7 +1,7 @@
 # luup Agent App
 
 Luup 是 TypeScript 全栈：`@openai/agents` 驱动 Qwen，走百炼的 OpenAI-compatible 端点。
-运行时支持 Node.js 22.13+、23.4+ 与更高主版本，包管理器使用 pnpm，单体工作区编排使用 Turborepo。
+运行时要求 Node.js >=24.11.0，包管理器使用 pnpm，单体工作区编排使用 Turborepo。
 修改模型或 Agent 前先查 <https://openai.github.io/openai-agents-js/>，不得回退到默认 OpenAI 客户端。
 
 Python 栈已于 ADR-0004 退役，只存于 git 历史；源码注释里写着「Python 期」的路径都是历史坐标。
