@@ -50,4 +50,52 @@ describe("RunWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "查看执行轨迹" }));
     expect(onInspectorChange).toHaveBeenLastCalledWith("process");
   });
+
+  test.each([
+    ["review_rejected", "评审未通过"],
+    ["failed", "运行失败"],
+  ] as const)("终态 %s 不会伪装成最终研究报告", (status, label) => {
+    render(
+      <RunWorkspace
+        snapshot={{ ...snapshot, status }}
+        onRefetch={vi.fn()}
+        selectedArtifactId={null}
+        onSelectArtifact={vi.fn()}
+        artifact={null}
+        artifactLoading={false}
+      />,
+      { wrapper: createTestWrapper() },
+    );
+
+    expect(screen.getByText(label)).toBeInTheDocument();
+    expect(screen.queryByText("最终研究报告")).not.toBeInTheDocument();
+  });
+
+  test("主画布展示终局引用验收摘要", () => {
+    render(
+      <RunWorkspace
+        snapshot={{
+          ...snapshot,
+          recent_events: [
+            {
+              id: 8,
+              version: 8,
+              kind: "verification.references",
+              created_at: "2026-08-28T00:00:00Z",
+              payload: { ok: true, reference_count: 3, failed_count: 0 },
+            },
+          ],
+        }}
+        onRefetch={vi.fn()}
+        selectedArtifactId={null}
+        onSelectArtifact={vi.fn()}
+        artifact={null}
+        artifactLoading={false}
+      />,
+      { wrapper: createTestWrapper() },
+    );
+
+    expect(screen.getByText("引用验收")).toBeInTheDocument();
+    expect(screen.getByText("通过 · 3 条")).toBeInTheDocument();
+  });
 });

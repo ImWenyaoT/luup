@@ -5,8 +5,10 @@ import { Badge } from "./Badge";
 import {
   buildTraceGroups,
   display,
+  getReferenceVerification,
   listDisplay,
   numberValue,
+  referenceVerificationLabel,
   runStatusLabel,
   statusLabel,
   type TraceGroup,
@@ -222,6 +224,30 @@ function UsageLedger({ events }: { events: readonly Snapshot["recent_events"][nu
     </Ledger>
   );
 }
+function VerificationLedger({ events }: { events: readonly Snapshot["recent_events"][number][] }) {
+  const verification = getReferenceVerification(events);
+  if (verification === null) return null;
+  const variant =
+    verification.infraError || verification.ok === false ? "destructive" : verification.ok ? "default" : "secondary";
+  return (
+    <Ledger>
+      <Heading>
+        <SectionTitle>引用验收 · Verification</SectionTitle>
+        <Badge variant={variant}>{referenceVerificationLabel(verification)}</Badge>
+      </Heading>
+      <Tool>
+        <span>冻结来源 {display(verification.frozenSources)}</span>
+        <Meta>references {display(verification.referenceCount)}</Meta>
+      </Tool>
+      <Tool>
+        <span>
+          arXiv {display(verification.arxivChecked)} · DOI {display(verification.doiChecked)}
+        </span>
+        <Meta>membership_only {display(verification.membershipOnly)}</Meta>
+      </Tool>
+    </Ledger>
+  );
+}
 export function AuditTrace({ snapshot }: { snapshot: Snapshot }) {
   const groups = buildTraceGroups(snapshot.recent_events);
   const usageEvents = snapshot.recent_events.filter((e) => e.kind === "sdk.usage");
@@ -233,6 +259,7 @@ export function AuditTrace({ snapshot }: { snapshot: Snapshot }) {
           {runStatusLabel(snapshot.status)}
         </Badge>
       </Heading>
+      <VerificationLedger events={snapshot.recent_events} />
       {groups.length === 0 ? (
         <Empty>暂无公开 trace · 状态未知</Empty>
       ) : (

@@ -1,5 +1,5 @@
 import styled from "@emotion/styled";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Science125Question } from "../../lib/types/wire";
 import { Button, colors, mono, Surface, Textarea } from "../../styles";
 
@@ -70,6 +70,11 @@ export function WelcomePanel({ onStartResearch, disabled, selectedQuestion }: We
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const busy = submitting || disabled;
+
+  useEffect(() => {
+    if (selectedQuestion) setQuestion(selectedQuestion.question);
+  }, [selectedQuestion]);
+
   const handleSubmit = async (override?: string) => {
     const value = (override ?? question).trim();
     if (!value || busy) return;

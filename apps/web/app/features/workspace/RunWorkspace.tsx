@@ -9,6 +9,7 @@ import { FeedbackComposer } from "./FeedbackComposer";
 import { FeedbackHistory } from "./FeedbackHistory";
 import { SubagentLineage } from "./SubagentLineage";
 import { Trajectory } from "./Trajectory";
+import { getReferenceVerification, referenceVerificationLabel } from "./audit-trace";
 
 export type RunWorkspaceProps = {
   snapshot: Snapshot;
@@ -111,7 +112,7 @@ const Eyebrow = styled.span`
 `;
 const Facts = styled.dl`
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   margin: 32px 0 0;
   div {
@@ -127,6 +128,9 @@ const Facts = styled.dl`
     margin: 4px 0 0;
     font-size: 20px;
     font-weight: 600;
+  }
+  @media (max-width: 760px) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 `;
 const Actions = styled.div`
@@ -180,7 +184,28 @@ function roleState(snapshot: Snapshot, role: (typeof ROLE_ORDER)[number]) {
   return "pending" as const;
 }
 
+const STATUS_COPY: Record<Snapshot["status"], { eyebrow: string; description: string }> = {
+  running: {
+    eyebrow: "研究进行中",
+    description: "研究流水线正在推进。你可以继续浏览题库，或在 Inspector 中查看当前证据与执行细节。",
+  },
+  completed: {
+    eyebrow: "最终研究报告",
+    description: "运行已经完成。研究正文、证据链和审计事实分别收纳在 Inspector 中。",
+  },
+  review_rejected: {
+    eyebrow: "评审未通过",
+    description: "运行已经到达终态，但独立评审未接受当前结果。审计事实与已冻结产物仍可在 Inspector 中查看。",
+  },
+  failed: {
+    eyebrow: "运行失败",
+    description: "运行已经到达失败终态。失败事实与已冻结产物仍可在 Inspector 中查看。",
+  },
+};
+
 export function RunWorkspace({ snapshot, onInspectorChange }: RunWorkspaceProps) {
+  const statusCopy = STATUS_COPY[snapshot.status];
+  const verification = getReferenceVerification(snapshot.recent_events);
   return (
     <Canvas data-testid="run-workspace">
       <Rail aria-label="研究进度">
@@ -195,13 +220,9 @@ export function RunWorkspace({ snapshot, onInspectorChange }: RunWorkspaceProps)
         })}
       </Rail>
       <Hero>
-        <Eyebrow>{snapshot.status === "running" ? "研究进行中" : "最终研究报告"}</Eyebrow>
+        <Eyebrow>{statusCopy.eyebrow}</Eyebrow>
         <h2>{snapshot.question}</h2>
-        <p>
-          {snapshot.status === "running"
-            ? "研究流水线正在推进。你可以继续浏览题库，或在 Inspector 中查看当前证据与执行细节。"
-            : "运行已经到达终态。研究正文、证据链和审计事实分别收纳在 Inspector 中。"}
-        </p>
+        <p>{statusCopy.description}</p>
         <Facts>
           <div>
             <dt>证据</dt>
@@ -214,6 +235,10 @@ export function RunWorkspace({ snapshot, onInspectorChange }: RunWorkspaceProps)
           <div>
             <dt>角色尝试</dt>
             <dd>{snapshot.attempts.length}</dd>
+          </div>
+          <div>
+            <dt>引用验收</dt>
+            <dd>{referenceVerificationLabel(verification)}</dd>
           </div>
         </Facts>
         <Actions>

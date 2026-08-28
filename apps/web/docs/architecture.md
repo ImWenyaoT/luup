@@ -119,10 +119,10 @@ apps/web/
 ## 导航模型
 
 - 左侧是稳定层级：`Science 125` 项目 → `题库` + `Runs`。`Runs` 只来自当前浏览器 localStorage 中已成功打开的 run，不代表服务端历史。
-- 桌面为固定 `288px` 布局预留；整体折叠仅收窄内部 rail，不改变主内容可用宽度。移动端改为 modal drawer，并对被遮挡主区设置 `inert`。
+- 桌面为固定 `288px` 项目导航；整体折叠只收窄内部 rail。移动端改为 modal drawer，并对被遮挡主区设置 `inert`。
 - 水平 tabs 是本机 working set：active tab 与 `?run=<id>` 同步；创建或深链加载成功后加入，关闭 active tab 时切到相邻项，无相邻项则回到空闲态。
 - 桌面没有全局顶栏：品牌、题库搜索与设置归入左侧项目导航，主区从 working-set tabs 直接开始。移动端仅保留打开 drawer 的极简浮动触发器。
-- 过程/产物是 workspace 内部入口，并共享同一个覆盖式 L2 Inspector；桌面打开时不改变 Main 几何，移动端才启用 modal drawer 语义。
+- 过程/产物是 workspace 内部入口，并共享同一个 L2 Inspector：视口 `>=1200px` 时作为稳定 `332px` 证据坞与 Primary 并排；`701–1199px` 时覆盖 Primary；`<=700px` 时使用全宽 modal drawer。
 - 项目层级使用原生 `nav`/`ul`/展开按钮，不声明未完整实现键盘模型的 ARIA tree widget；working-set tabs 使用单一 roving `tabIndex`，支持方向键、Home 与 End。
 
 ## 环境与代理
