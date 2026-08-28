@@ -43,9 +43,9 @@ function textOf(value: unknown): string {
 function toRecord(item: unknown): CrossrefRecord | null {
   if (!item || typeof item !== "object") return null;
   const recordItem = item as Record<string, unknown>;
-  const doi = textOf(recordItem.DOI);
+  const doi = normalizeDoiForLookup(textOf(recordItem.DOI));
   const title = textOf(recordItem.title);
-  // 没有 DOI 就没有稳定标识，引用无从核验，宁可丢掉也不放进证据。
+  // 没有合法 DOI 就没有稳定标识，引用无从核验，宁可丢掉也不放进证据。
   if (!doi || !title) return null;
   const rawAuthors = Array.isArray(recordItem.author) ? recordItem.author : [];
   const authors = rawAuthors

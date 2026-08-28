@@ -9,7 +9,7 @@
 ```text
 浏览器 → Cloudflare DNS/Access/TLS → Cloudflare Tunnel → 127.0.0.1:8000
                                                      ↓
-                                             Node.js 22 + Elysia
+                                     Node.js >=24.11 · Elysia
                                                      ↓
                                   持久磁盘上的 SQLite + memory/ 文件
 ```
@@ -41,7 +41,7 @@ Cloudflare Pages 只托管静态前端也不是当前的即插即用路径：前
 
 ```sh
 cd /path/to/luup
-node --version                         # 必须 >= 22.0.0
+node --version                         # 必须 >= 24.11.0
 pnpm install --frozen-lockfile
 pnpm run ci
 pnpm run build
