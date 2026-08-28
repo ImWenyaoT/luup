@@ -49,10 +49,13 @@ describe("AppShell", () => {
     );
 
     expect(screen.getByRole("list", { name: "Science 125 项目导航层级" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Science 125/ })).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByRole("button", { name: /题库/ })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: "Science 125" })).toHaveAttribute("aria-expanded", "true");
+    const questionBank = screen.getByRole("button", { name: /Science 125 题库/ });
+    expect(questionBank).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(questionBank);
+    expect(screen.getByRole("dialog", { name: "Science 125 题库" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Runs/ })).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByText("仅记录此浏览器打开过的 Run，不是服务端历史。")).toBeInTheDocument();
+    expect(screen.getByText(/项目树保存组织上下文/)).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "第一个研究问题" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("tab", { name: "第二个研究问题" })).toHaveAttribute("aria-selected", "false");
     fireEvent.click(screen.getByRole("tab", { name: "第二个研究问题" }));
@@ -141,7 +144,7 @@ describe("AppShell", () => {
     expect(screen.getAllByTestId("workspace-inspector")).toHaveLength(1);
   });
 
-  test("桌面 Inspector 覆盖主区且打开关闭不改变 Main 布局契约", () => {
+  test("桌面 Inspector 使用稳定二级 dock，关闭后仍保持 Main 布局契约", () => {
     function Harness() {
       const [kind, setKind] = useState<InspectorKind>(null);
       return (
@@ -161,11 +164,11 @@ describe("AppShell", () => {
     renderWithProviders(<Harness />);
     const main = screen.getByTestId("app-main");
     const mainFlex = getComputedStyle(main).flex;
-    expect(main).toHaveAttribute("data-inspector-layout", "overlay");
+    expect(main).toHaveAttribute("data-inspector-layout", "responsive-dock");
     fireEvent.click(screen.getByRole("button", { name: "打开 Inspector" }));
     const inspector = screen.getByTestId("workspace-inspector");
-    expect(getComputedStyle(inspector).position).toBe("absolute");
-    expect(getComputedStyle(inspector).width).toBe("420px");
+    expect(getComputedStyle(inspector).position).toBe("relative");
+    expect(getComputedStyle(inspector).width).toBe("332px");
     expect(getComputedStyle(main).flex).toBe(mainFlex);
     fireEvent.click(screen.getByRole("button", { name: "关闭轨迹、审计与反馈" }));
     expect(screen.queryByTestId("workspace-inspector")).not.toBeInTheDocument();

@@ -2,14 +2,14 @@ import { css } from "@emotion/react";
 import styled from "@emotion/styled";
 
 export const colors = {
-  ink: "#101828",
-  muted: "#667085",
-  faint: "#98a2b3",
-  border: "#e4e7ec",
-  canvas: "#f8fafc",
+  ink: "#1e1e1e",
+  muted: "#757575",
+  faint: "#b3b3b3",
+  border: "#d9d9d9",
+  canvas: "#f5f5f5",
   surface: "#ffffff",
-  accent: "#155eef",
-  accentSoft: "#eff4ff",
+  accent: "#2c2c2c",
+  accentSoft: "#e6e6e6",
   success: "#067647",
   successSoft: "#ecfdf3",
   danger: "#b42318",
@@ -41,7 +41,7 @@ export const globalStyles = css`
   }
   body {
     font-size: 14px;
-    line-height: 1.5;
+    line-height: 1.4;
     -webkit-font-smoothing: antialiased;
   }
   button,
@@ -60,7 +60,7 @@ export const globalStyles = css`
     color: inherit;
   }
   :focus-visible {
-    outline: 3px solid rgba(21, 94, 239, 0.22);
+    outline: 3px solid rgba(44, 44, 44, 0.18);
     outline-offset: 2px;
   }
 `;
@@ -71,7 +71,7 @@ export const Button = styled.button<{ tone?: "primary" | "quiet" | "danger"; com
   min-height: ${({ compact }) => (compact ? "32px" : "40px")};
   border: 1px solid
     ${({ tone }) => (tone === "primary" ? colors.accent : tone === "danger" ? "#fda29b" : colors.border)};
-  border-radius: 9px;
+  border-radius: 8px;
   padding: ${({ compact }) => (compact ? "5px 10px" : "8px 14px")};
   background: ${({ tone }) => (tone === "primary" ? colors.accent : tone === "danger" ? colors.dangerSoft : colors.surface)};
   color: ${({ tone }) => (tone === "primary" ? "white" : tone === "danger" ? colors.danger : colors.ink)};
@@ -80,13 +80,13 @@ export const Button = styled.button<{ tone?: "primary" | "quiet" | "danger"; com
   transition:
     background 0.15s ease,
     border-color 0.15s ease,
-    transform 0.15s ease;
+    color 0.15s ease;
   &:hover:not(:disabled) {
     filter: brightness(0.98);
-    border-color: ${({ tone }) => (tone === "primary" ? "#004eeb" : "#b8c0cc")};
+    border-color: ${({ tone }) => (tone === "primary" ? "#1e1e1e" : "#b3b3b3")};
   }
   &:active:not(:disabled) {
-    transform: translateY(1px);
+    background: ${({ tone }) => (tone === "primary" ? "#1e1e1e" : "#f5f5f5")};
   }
   &:disabled {
     opacity: 0.48;
@@ -105,7 +105,7 @@ export const Input = styled.input`
   width: 100%;
   height: 40px;
   border: 1px solid ${colors.border};
-  border-radius: 9px;
+  border-radius: 8px;
   background: ${colors.surface};
   color: ${colors.ink};
   padding: 0 12px;
@@ -115,7 +115,7 @@ export const Input = styled.input`
   }
   &:focus {
     border-color: ${colors.accent};
-    outline: 3px solid rgba(21, 94, 239, 0.1);
+    outline: 3px solid rgba(44, 44, 44, 0.1);
   }
   &:disabled {
     background: #f2f4f7;
@@ -125,7 +125,7 @@ export const Input = styled.input`
 export const Textarea = styled.textarea`
   width: 100%;
   border: 1px solid ${colors.border};
-  border-radius: 10px;
+  border-radius: 8px;
   background: ${colors.surface};
   color: ${colors.ink};
   padding: 11px 12px;
@@ -137,7 +137,7 @@ export const Textarea = styled.textarea`
   }
   &:focus {
     border-color: ${colors.accent};
-    outline: 3px solid rgba(21, 94, 239, 0.1);
+    outline: 3px solid rgba(44, 44, 44, 0.1);
   }
   &:disabled {
     background: #f2f4f7;
@@ -155,7 +155,6 @@ export const Label = styled.label`
 export const SectionTitle = styled.h2`
   margin: 0;
   color: ${colors.muted};
-  font-family: ${mono};
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -164,7 +163,7 @@ export const SectionTitle = styled.h2`
 
 export const Surface = styled.div`
   border: 1px solid ${colors.border};
-  border-radius: 12px;
+  border-radius: 8px;
   background: ${colors.surface};
 `;
 

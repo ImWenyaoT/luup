@@ -151,6 +151,7 @@ test("completes a deterministic research run through the server", async ({ page 
 
 test("selects Science 125 benchmark preset question and triggers direct run", async ({ page }) => {
   await page.goto("/");
+  await page.getByRole("button", { name: /Science 125 题库/ }).click();
 
   await expect(page.getByText("Science 125 题库选题")).toBeVisible();
   await expect(page.getByText("125 题已冻结")).toBeVisible();
@@ -204,7 +205,7 @@ test("supports sidebar collapse/expand toggle and new research reset workflow", 
   await expect(page).toHaveURL(/\?run=[a-z0-9]+$/);
 
   // 点击侧边栏「新建研究课题」，重置工作区并清空 URL 运行态
-  const newResearchBtn = page.getByRole("button", { name: "+ 新建研究课题" });
+  const newResearchBtn = page.getByRole("button", { name: "＋ 新研究" });
   await expect(newResearchBtn).toBeVisible();
   await newResearchBtn.click();
 

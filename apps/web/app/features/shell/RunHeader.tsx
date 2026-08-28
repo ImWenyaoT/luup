@@ -3,13 +3,13 @@ import type { Snapshot } from "../../lib/types/wire";
 import { colors, mono } from "../../styles";
 import { RunStatusBadge } from "../workspace/RunStatusBadge";
 const Header = styled.header`
+  min-height: 72px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
-  padding: 12px 24px;
-  border-bottom: 1px solid ${colors.border};
-  background: ${colors.surface};
+  padding: 0;
+  background: transparent;
   @media (max-width: 700px) {
     padding: 10px 12px;
   }
@@ -17,7 +17,8 @@ const Header = styled.header`
 const Question = styled.span`
   min-width: 180px;
   flex: 1;
-  font-size: 13px;
+  font-size: 24px;
+  line-height: 1.2;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;

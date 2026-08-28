@@ -13,11 +13,11 @@ type RunTabsProps = {
 };
 
 const Bar = styled.div`
-  min-height: 42px;
+  min-height: 52px;
   flex: none;
   display: flex;
   align-items: stretch;
-  gap: 2px;
+  gap: 0;
   overflow-x: auto;
   border-bottom: 1px solid ${colors.border};
   background: ${colors.surface};
@@ -36,12 +36,12 @@ const Item = styled.div<{ selected: boolean }>`
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  border-bottom: 2px solid ${({ selected }) => (selected ? colors.accent : "transparent")};
-  background: ${({ selected }) => (selected ? colors.accentSoft : "transparent")};
+  border-bottom: 1px solid ${({ selected }) => (selected ? colors.ink : "transparent")};
+  background: transparent;
 `;
 const Tab = styled.button`
   max-width: 220px;
-  min-height: 40px;
+  min-height: 51px;
   border: 0;
   background: transparent;
   padding: 6px 5px 6px 12px;
@@ -49,8 +49,8 @@ const Tab = styled.button`
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 400;
 `;
 const Close = styled.button`
   width: 28px;
@@ -76,7 +76,7 @@ const Local = styled.span`
   margin-left: auto;
   padding: 0 12px;
   color: ${colors.muted};
-  font: 9px ${mono};
+  font: 11px ${mono};
   white-space: nowrap;
 `;
 

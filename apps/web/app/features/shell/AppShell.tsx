@@ -14,6 +14,7 @@ export type AppShellProps = {
   runId: string | null;
   onRunIdChange: (id: string | null) => void;
   onStartResearch: (question: string) => Promise<void>;
+  onNewResearch?: () => void;
   sidebar: ReactNode;
   runs?: RunTab[];
   onCloseRun?: (id: string) => void;
@@ -54,9 +55,9 @@ const Navigation = styled.aside<{ expanded: boolean }>`
   inset: 0 auto 0 0;
   z-index: 35;
   width: ${({ expanded }) => (expanded ? "288px" : "48px")};
-  overflow: hidden;
+  overflow: ${({ expanded }) => (expanded ? "visible" : "hidden")};
   border-right: 1px solid ${colors.border};
-  background: ${colors.surface};
+  background: ${colors.canvas};
   transition: width 140ms ease;
   @media (max-width: 900px) {
     position: fixed;
@@ -97,26 +98,42 @@ const Main = styled.main`
   flex-direction: column;
   overflow: hidden;
 `;
+const WorkArea = styled.div`
+  display: flex;
+  min-height: 0;
+  flex: 1;
+`;
+const Primary = styled.div`
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+`;
 const Scroll = styled.div`
   flex: 1;
   overflow: auto;
   padding: 24px;
+  display: grid;
+  align-content: start;
+  gap: 16px;
   @media (max-width: 700px) {
     padding: 16px 12px 108px;
   }
 `;
 const Inspector = styled.aside`
-  position: absolute;
-  inset: 0 0 0 auto;
+  position: relative;
   z-index: 30;
-  width: 420px;
+  width: 332px;
+  min-width: 332px;
   overflow: hidden;
   border-left: 1px solid ${colors.border};
   background: ${colors.surface};
-  box-shadow: -18px 0 40px rgba(16, 24, 40, 0.1);
-  @media (max-width: 900px) {
+  @media (max-width: 1199px) {
+    position: absolute;
+    inset: 0 0 0 auto;
     z-index: 40;
     width: min(92vw, 420px);
+    min-width: 0;
     box-shadow: -18px 0 40px rgba(16, 24, 40, 0.14);
   }
   @media (max-width: 700px) {
@@ -136,17 +153,28 @@ const Scrim = styled.button`
 `;
 const InspectorScrim = styled(Scrim)`
   z-index: 39;
+  @media (min-width: 901px) and (max-width: 1199px) {
+    display: block;
+    position: absolute;
+    inset: 0;
+    border: 0;
+    background: rgba(16, 24, 40, 0.28);
+  }
+  @media (min-width: 1200px) {
+    display: none;
+  }
 `;
 const InspectorTop = styled.div`
   height: 52px;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 14px;
+  padding: 0 24px;
   border-bottom: 1px solid ${colors.border};
   h2 {
     margin: 0;
-    font-size: 13px;
+    font-size: 16px;
+    font-weight: 600;
   }
 `;
 const InspectorBody = styled.div`
@@ -158,6 +186,7 @@ const inspectorMeta = { artifacts: "证据与冻结产物", process: "轨迹、�
 export function AppShell({
   runId,
   onRunIdChange,
+  onNewResearch,
   sidebar,
   runs = [],
   onCloseRun,
@@ -267,6 +296,7 @@ export function AppShell({
                     if (mobile) setNavigationExpanded(false);
                   }}
                   questionBank={sidebar}
+                  onNewResearch={onNewResearch}
                   settings={<SettingsTrigger onOpen={() => setSettingsOpen(true)} />}
                   onCollapse={toggleNavigation}
                   collapseLabel={mobile ? "关闭项目导航" : "收起侧边栏"}
@@ -288,37 +318,41 @@ export function AppShell({
             </Navigation>
           )}
         </NavigationReserve>
-        <Main inert={mainInert} data-testid="app-main" data-inspector-layout="overlay">
+        <Main inert={mainInert} data-testid="app-main" data-inspector-layout="responsive-dock">
           <RunTabs activeRunId={runId} tabs={runs} onSelect={onRunIdChange} onClose={(id) => onCloseRun?.(id)} />
-          {header}
-          <Scroll>{children}</Scroll>
-          {footer}
+          <WorkArea>
+            <Primary>
+              <Scroll>
+                {header}
+                {children}
+              </Scroll>
+              {footer}
+            </Primary>
+            {activeInspector && meta && (
+              <Inspector
+                ref={inspectorRef}
+                role={mobile ? "dialog" : undefined}
+                aria-modal={mobile ? "true" : undefined}
+                aria-labelledby="inspector-title"
+                data-testid="workspace-inspector"
+              >
+                <InspectorTop>
+                  <h2 id="inspector-title">{meta}</h2>
+                  <IconButton
+                    compact
+                    aria-label={`关闭${meta}`}
+                    onClick={() => setInspector(null)}
+                    style={{ marginLeft: "auto" }}
+                  >
+                    <CloseIcon />
+                  </IconButton>
+                </InspectorTop>
+                <InspectorBody>{inspectorContent}</InspectorBody>
+              </Inspector>
+            )}
+          </WorkArea>
         </Main>
-        {activeInspector && meta && (
-          <>
-            <InspectorScrim aria-label="关闭 Inspector" onClick={() => setInspector(null)} />
-            <Inspector
-              ref={inspectorRef}
-              role={mobile ? "dialog" : undefined}
-              aria-modal={mobile ? "true" : undefined}
-              aria-labelledby="inspector-title"
-              data-testid="workspace-inspector"
-            >
-              <InspectorTop>
-                <h2 id="inspector-title">{meta}</h2>
-                <IconButton
-                  compact
-                  aria-label={`关闭${meta}`}
-                  onClick={() => setInspector(null)}
-                  style={{ marginLeft: "auto" }}
-                >
-                  <CloseIcon />
-                </IconButton>
-              </InspectorTop>
-              <InspectorBody>{inspectorContent}</InspectorBody>
-            </Inspector>
-          </>
-        )}
+        {activeInspector && <InspectorScrim aria-label="关闭 Inspector" onClick={() => setInspector(null)} />}
       </Body>
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </Shell>

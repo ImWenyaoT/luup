@@ -118,6 +118,7 @@ export default function Home() {
   const [selectedQuestion, setSelectedQuestion] = useState<Science125Question | null>(null);
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
   const [inspector, setInspector] = useState<InspectorKind>(null);
+  const inspectorRunRef = useRef<string | null>(null);
   const { tabs: runTabs, openRun, closeRun } = useRunWorkingSet();
   const [stickyArtifactError, setStickyArtifactError] = useState<string | null>(null);
   const stickyArtifactRunRef = useRef<string | null>(null);
@@ -341,11 +342,20 @@ export default function Home() {
 
   const { connected: sseConnected } = useRunEvents(snapshot?.id ?? null, snapshot ?? null, () => void refetch());
 
+  useEffect(() => {
+    if (!snapshot || inspectorRunRef.current === snapshot.id) return;
+    inspectorRunRef.current = snapshot.id;
+    if (typeof window.matchMedia === "function" && window.matchMedia("(min-width: 1200px)").matches) {
+      setInspector("artifacts");
+    }
+  }, [snapshot?.id]);
+
   return (
     <AppShell
       runId={runId}
       onRunIdChange={navigateToRun}
       onStartResearch={startResearch}
+      onNewResearch={handleNewResearch}
       runs={runTabs}
       onCloseRun={handleCloseRun}
       sidebar={
@@ -353,7 +363,6 @@ export default function Home() {
           selectedQuestion={selectedQuestion}
           onSelect={setSelectedQuestion}
           onStartRun={(q) => void startResearch(q.question)}
-          onNewResearch={handleNewResearch}
           disabled={state.status === "loading"}
         />
       }

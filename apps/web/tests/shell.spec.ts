@@ -5,9 +5,11 @@ test("shell layout shows sidebar and question input", async ({ page }) => {
   await expect(page.getByTestId("app-shell")).toBeVisible();
   await expect(page.getByTestId("question-sidebar-panel")).toBeVisible();
   await expect(page.getByRole("list", { name: "Science 125 项目导航层级" })).toBeVisible();
-  await expect(page.getByRole("button", { name: /题库/ })).toHaveAttribute("aria-expanded", "true");
+  const questionBank = page.getByRole("button", { name: /Science 125 题库/ });
+  await expect(questionBank).toHaveAttribute("aria-expanded", "false");
   await expect(page.getByRole("button", { name: /Runs/ })).toHaveAttribute("aria-expanded", "true");
   await expect(page.getByTestId("welcome-question-input")).toBeVisible();
+  await questionBank.click();
   await expect(page.getByTestId("question-search")).toBeVisible();
 });
 
@@ -48,7 +50,7 @@ test("mobile uses a full-width question drawer and restores the primary task", a
   await expect(page.getByRole("dialog", { name: "系统与模型设置" })).toBeVisible();
 });
 
-test("inspector overlays Main without geometry changes at desktop breakpoints", async ({ page }) => {
+test("inspector uses overlay below 1200px and a fixed dock on wide desktop", async ({ page }) => {
   await page.setViewportSize({ width: 901, height: 844 });
   await page.goto("/");
   await page.getByTestId("welcome-question-input").fill("Inspector geometry test");
@@ -59,7 +61,9 @@ test("inspector overlays Main without geometry changes at desktop breakpoints", 
     await page.setViewportSize({ width, height: 844 });
     const main = page.getByTestId("app-main");
     const before = await main.boundingBox();
-    await page.getByRole("button", { name: "查看冻结产物" }).click();
+    if (!(await page.getByTestId("workspace-inspector").isVisible())) {
+      await page.getByRole("button", { name: "查看冻结产物" }).click();
+    }
     await expect(page.getByTestId("workspace-inspector")).toBeVisible();
     const after = await main.boundingBox();
     expect(after).toEqual(before);
