@@ -1,1 +1,1 @@
-export type InspectorKind = "questions" | "artifacts" | "process" | null;
+export type InspectorKind = "artifacts" | "process" | null;

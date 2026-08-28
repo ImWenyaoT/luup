@@ -67,7 +67,7 @@ flowchart TB
 | `lib/api/`            | HTTP 封装、JSON 解析、`ApiError`、Bearer 注入 | DOM、React state  |
 | `lib/sse/`            | EventSource 生命周期、13 种 UI 事件注册、游标 | snapshot 合并逻辑 |
 | `hooks/`              | 编排 api+sse、缓存、refetch 策略              | JSX               |
-| `features/shell/`     | 布局、侧边栏、URL `?run=` 同步                | artifact 渲染细节 |
+| `features/shell/`     | 布局、项目树、本机 Run tabs、URL `?run=` 同步 | artifact 渲染细节 |
 | `features/workspace/` | 轨迹、产物、反馈 composer                     | 全局设置          |
 | `features/settings/`  | 凭据/模型配置弹窗                             | run 状态机        |
 
@@ -87,7 +87,8 @@ apps/web/
 │   │   ├── useRun.ts
 │   │   ├── useRunEvents.ts
 │   │   ├── useScience125.ts
-│   │   └── useConfig.ts
+│   │   ├── useConfig.ts
+│   │   └── useRunWorkingSet.ts  # localStorage，仅本机 working set
 │   └── lib/
 │       ├── api/
 │       │   ├── client.ts
@@ -114,6 +115,15 @@ apps/web/
      → 任一 UI 事件 → refetchRun → 合并 snapshot
      → status ∈ TERMINAL → 关闭 SSE，展示终态 + final artifact
 ```
+
+## 导航模型
+
+- 左侧是稳定层级：`Science 125` 项目 → `题库` + `Runs`。`Runs` 只来自当前浏览器 localStorage 中已成功打开的 run，不代表服务端历史。
+- 桌面为固定 `288px` 布局预留；整体折叠仅收窄内部 rail，不改变主内容可用宽度。移动端改为 modal drawer，并对被遮挡主区设置 `inert`。
+- 水平 tabs 是本机 working set：active tab 与 `?run=<id>` 同步；创建或深链加载成功后加入，关闭 active tab 时切到相邻项，无相邻项则回到空闲态。
+- 桌面没有全局顶栏：品牌、题库搜索与设置归入左侧项目导航，主区从 working-set tabs 直接开始。移动端仅保留打开 drawer 的极简浮动触发器。
+- 过程/产物是 workspace 内部入口，并共享同一个覆盖式 L2 Inspector；桌面打开时不改变 Main 几何，移动端才启用 modal drawer 语义。
+- 项目层级使用原生 `nav`/`ul`/展开按钮，不声明未完整实现键盘模型的 ARIA tree widget；working-set tabs 使用单一 roving `tabIndex`，支持方向键、Home 与 End。
 
 ## 环境与代理
 

@@ -93,7 +93,7 @@ export function SettingsTrigger({ onOpen }: { onOpen: () => void }) {
   const { config } = useConfig();
   if (!config) return null;
   return (
-    <Button compact data-testid="open-settings" onClick={onOpen}>
+    <Button compact data-testid="open-settings" aria-label="设置" title="设置" onClick={onOpen}>
       <GearIcon />
       <span>设置</span>
       <CredentialText>凭据：{CREDENTIAL_LABEL[config.credential]}</CredentialText>

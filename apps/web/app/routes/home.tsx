@@ -14,6 +14,7 @@ import { readRunId, writeRunSearchParams } from "../features/shell/url-run";
 import { RunInspector, RunWorkspace } from "../features/workspace/RunWorkspace";
 import { Button, colors, mono, Textarea } from "../styles";
 import { useRunEvents } from "../hooks/useRunEvents";
+import { useRunWorkingSet } from "../hooks/useRunWorkingSet";
 import { useApiClient } from "../providers/api";
 import { TERMINAL_STATUSES } from "../lib/types/constants";
 import type { InspectorKind } from "../lib/types/inspector";
@@ -116,11 +117,13 @@ export default function Home() {
   const [dismissedRunError, setDismissedRunError] = useState(false);
   const [selectedQuestion, setSelectedQuestion] = useState<Science125Question | null>(null);
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
-  const [inspector, setInspector] = useState<InspectorKind>("questions");
+  const [inspector, setInspector] = useState<InspectorKind>(null);
+  const { tabs: runTabs, openRun, closeRun } = useRunWorkingSet();
   const [stickyArtifactError, setStickyArtifactError] = useState<string | null>(null);
   const stickyArtifactRunRef = useRef<string | null>(null);
   const artifactRunByIdRef = useRef<Map<string, string>>(new Map());
   const pendingArtifactSelectionRef = useRef<string | null>(null);
+  const runScopeRef = useRef(runId);
 
   const applyStickyArtifactError = useCallback((message: string, originRunId: string) => {
     setStickyArtifactError(message);
@@ -170,12 +173,38 @@ export default function Home() {
     [fetchArtifactQuery, queryClient, rememberArtifactRun, runId],
   );
 
+  const resetRunScopedState = useCallback(() => {
+    pendingArtifactSelectionRef.current = null;
+    setSelectedArtifactId(null);
+    setStickyArtifactError(null);
+    stickyArtifactRunRef.current = null;
+    artifactRunByIdRef.current.clear();
+    setDismissedRunError(false);
+    setInspector(null);
+  }, []);
+
   const navigateToRun = useCallback(
     (id: string | null) => {
+      if (id === runId) return;
+      resetRunScopedState();
       setSearchParams(writeRunSearchParams(id), { replace: true });
     },
-    [setSearchParams],
+    [resetRunScopedState, runId, setSearchParams],
   );
+
+  const handleCloseRun = useCallback(
+    (id: string) => {
+      const nextRunId = closeRun(id, runId);
+      if (id === runId) navigateToRun(nextRunId);
+    },
+    [closeRun, navigateToRun, runId],
+  );
+
+  useEffect(() => {
+    if (runScopeRef.current === runId) return;
+    runScopeRef.current = runId;
+    resetRunScopedState();
+  }, [resetRunScopedState, runId]);
 
   const displayedSnapshotRef = useRef<Snapshot | undefined>(undefined);
 
@@ -192,6 +221,10 @@ export default function Home() {
   } else {
     snapshot = displayedSnapshotRef.current?.id === runId ? displayedSnapshotRef.current : undefined;
   }
+
+  useEffect(() => {
+    if (snapshot) openRun({ id: snapshot.id, label: snapshot.question });
+  }, [openRun, snapshot?.id, snapshot?.question]);
 
   const {
     artifact: selectedArtifact,
@@ -288,7 +321,7 @@ export default function Home() {
     setSelectedQuestion(null);
     setCreationError(null);
     setDismissedRunError(false);
-    setInspector("questions");
+    setInspector(null);
   }, [navigateToRun]);
 
   useEffect(() => {
@@ -313,6 +346,8 @@ export default function Home() {
       runId={runId}
       onRunIdChange={navigateToRun}
       onStartResearch={startResearch}
+      runs={runTabs}
+      onCloseRun={handleCloseRun}
       sidebar={
         <QuestionSidebar
           selectedQuestion={selectedQuestion}

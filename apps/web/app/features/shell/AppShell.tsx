@@ -1,17 +1,22 @@
 import styled from "@emotion/styled";
-import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
-import { ActivityIcon, CloseIcon, InspectIcon, LibraryIcon } from "../../Icons";
+import { CloseIcon, MenuIcon } from "../../Icons";
 import { useFocusTrap } from "../../hooks/useFocusTrap";
+import type { RunTab } from "../../hooks/useRunWorkingSet";
 import type { InspectorKind } from "../../lib/types/inspector";
-import { Button, colors, IconButton, mono } from "../../styles";
+import { colors, IconButton } from "../../styles";
 import { SettingsDialog, SettingsTrigger } from "../settings/SettingsDialog";
+import { ProjectSidebar } from "./ProjectSidebar";
+import { RunTabs } from "./RunTabs";
 
 export type AppShellProps = {
   runId: string | null;
   onRunIdChange: (id: string | null) => void;
   onStartResearch: (question: string) => Promise<void>;
   sidebar: ReactNode;
+  runs?: RunTab[];
+  onCloseRun?: (id: string) => void;
   header?: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
@@ -24,57 +29,66 @@ const Shell = styled.div`
   height: 100dvh;
   display: flex;
   flex-direction: column;
-  background: ${colors.canvas};
   overflow: hidden;
-`;
-const Topbar = styled.header`
-  height: 56px;
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 0 18px;
-  border-bottom: 1px solid ${colors.border};
-  background: ${colors.surface};
-  z-index: 40;
-  @media (max-width: 700px) {
-    height: 52px;
-    padding: 0 10px;
-    gap: 8px;
-  }
-`;
-const Brand = styled.div`
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  min-width: 0;
-  h1 {
-    font-size: 20px;
-    margin: 0;
-    letter-spacing: -0.03em;
-  }
-  span {
-    font-family: ${mono};
-    font-size: 11px;
-    color: ${colors.muted};
-  }
-`;
-const Nav = styled.nav`
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-left: auto;
-`;
-const DesktopOnly = styled.span`
-  @media (max-width: 700px) {
-    display: none;
-  }
+  background: ${colors.canvas};
 `;
 const Body = styled.div`
   position: relative;
   display: flex;
   min-height: 0;
   flex: 1;
+`;
+const NavigationReserve = styled.div`
+  position: relative;
+  width: 288px;
+  min-width: 288px;
+  flex: none;
+  background: ${colors.canvas};
+  @media (max-width: 900px) {
+    width: 0;
+    min-width: 0;
+  }
+`;
+const Navigation = styled.aside<{ expanded: boolean }>`
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 35;
+  width: ${({ expanded }) => (expanded ? "288px" : "48px")};
+  overflow: hidden;
+  border-right: 1px solid ${colors.border};
+  background: ${colors.surface};
+  transition: width 140ms ease;
+  @media (max-width: 900px) {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    display: ${({ expanded }) => (expanded ? "block" : "none")};
+    width: min(92vw, 360px);
+    box-shadow: 18px 0 40px rgba(16, 24, 40, 0.16);
+  }
+  @media (max-width: 420px) {
+    width: 100%;
+  }
+`;
+const Rail = styled.div`
+  height: 100%;
+  display: grid;
+  align-content: start;
+  justify-content: center;
+  padding-top: 10px;
+`;
+const MobileTrigger = styled(IconButton)`
+  display: none;
+  @media (max-width: 900px) {
+    position: absolute;
+    top: 5px;
+    left: 6px;
+    z-index: 33;
+    display: grid;
+  }
+  &[hidden] {
+    display: none;
+  }
 `;
 const Main = styled.main`
   display: flex;
@@ -91,11 +105,23 @@ const Scroll = styled.div`
     padding: 16px 12px 108px;
   }
 `;
-const Inspector = styled.aside<{ side: "left" | "right" }>`
-  order:${({ side }) => (side === "left" ? -1 : 1)};width:${({ side }) => (side === "left" ? "320px" : "420px")};flex:none;
-  border-${({ side }) => (side === "left" ? "right" : "left")}:1px solid ${colors.border};background:${colors.surface};overflow:hidden;
-  @media(max-width:900px){position:absolute;inset:0 0 0 auto;z-index:30;width:min(92vw,420px);box-shadow:-18px 0 40px rgba(16,24,40,.14)}
-  @media(max-width:700px){width:100%}
+const Inspector = styled.aside`
+  position: absolute;
+  inset: 0 0 0 auto;
+  z-index: 30;
+  width: 420px;
+  overflow: hidden;
+  border-left: 1px solid ${colors.border};
+  background: ${colors.surface};
+  box-shadow: -18px 0 40px rgba(16, 24, 40, 0.1);
+  @media (max-width: 900px) {
+    z-index: 40;
+    width: min(92vw, 420px);
+    box-shadow: -18px 0 40px rgba(16, 24, 40, 0.14);
+  }
+  @media (max-width: 700px) {
+    width: 100%;
+  }
 `;
 const Scrim = styled.button`
   display: none;
@@ -103,10 +129,13 @@ const Scrim = styled.button`
     display: block;
     position: absolute;
     inset: 0;
-    z-index: 29;
+    z-index: 34;
     border: 0;
     background: rgba(16, 24, 40, 0.28);
   }
+`;
+const InspectorScrim = styled(Scrim)`
+  z-index: 39;
 `;
 const InspectorTop = styled.div`
   height: 52px;
@@ -124,14 +153,14 @@ const InspectorBody = styled.div`
   height: calc(100% - 52px);
   overflow: auto;
 `;
-const inspectorMeta = {
-  questions: { label: "Science 125 题库", side: "left" as const },
-  artifacts: { label: "证据与冻结产物", side: "right" as const },
-  process: { label: "轨迹、审计与反馈", side: "right" as const },
-};
+const inspectorMeta = { artifacts: "证据与冻结产物", process: "轨迹、审计与反馈" };
 
 export function AppShell({
+  runId,
+  onRunIdChange,
   sidebar,
+  runs = [],
+  onCloseRun,
   header,
   children,
   footer,
@@ -140,14 +169,18 @@ export function AppShell({
   inspectorContent,
 }: AppShellProps) {
   const controlled = inspector !== undefined;
-  const [localInspector, setLocalInspector] = useState<InspectorKind>("questions");
+  const [localInspector, setLocalInspector] = useState<InspectorKind>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [mobileInspector, setMobileInspector] = useState(false);
+  const [mobile, setMobile] = useState(false);
+  const [navigationExpanded, setNavigationExpanded] = useState(true);
+  const responsiveInitialized = useRef(false);
+  const previousRunIdRef = useRef(runId);
+  const navigationRef = useRef<HTMLElement>(null);
+  const navigationTriggerRef = useRef<HTMLElement | null>(null);
   const inspectorRef = useRef<HTMLElement>(null);
-  const returnFocusRef = useRef<HTMLElement | null>(null);
-  const previousActiveRef = useRef<InspectorKind>(null);
-  const active = controlled ? inspector : localInspector;
-  const setActive = useCallback(
+  const inspectorReturnFocusRef = useRef<HTMLElement | null>(null);
+  const activeInspector = controlled ? inspector : localInspector;
+  const setInspector = useCallback(
     (value: InspectorKind) => (controlled ? onInspectorChange?.(value) : setLocalInspector(value)),
     [controlled, onInspectorChange],
   );
@@ -155,107 +188,137 @@ export function AppShell({
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
     const query = window.matchMedia("(max-width: 900px)");
-    const update = () => setMobileInspector(query.matches);
+    const update = () => {
+      setMobile(query.matches);
+      if (!responsiveInitialized.current) {
+        setNavigationExpanded(!query.matches);
+        responsiveInitialized.current = true;
+      } else if (!query.matches) setNavigationExpanded(true);
+    };
     update();
     query.addEventListener("change", update);
     return () => query.removeEventListener("change", update);
   }, []);
 
+  useEffect(() => {
+    if (mobile && previousRunIdRef.current !== runId) setNavigationExpanded(false);
+    previousRunIdRef.current = runId;
+  }, [mobile, runId]);
+
   useFocusTrap({
-    active: Boolean(active),
-    containerRef: inspectorRef,
-    onEscape: () => setActive(null),
-    autoFocus: mobileInspector,
-    trapFocus: mobileInspector,
+    active: mobile && navigationExpanded,
+    containerRef: navigationRef,
+    onEscape: () => setNavigationExpanded(false),
     suspended: settingsOpen,
-    returnFocusRef,
+    returnFocusRef: navigationTriggerRef,
+  });
+  useFocusTrap({
+    active: Boolean(activeInspector),
+    containerRef: inspectorRef,
+    onEscape: () => setInspector(null),
+    autoFocus: mobile,
+    trapFocus: mobile,
+    suspended: settingsOpen,
+    returnFocusRef: inspectorReturnFocusRef,
   });
 
-  useEffect(() => {
-    const previousActive = previousActiveRef.current;
-    const focused = document.activeElement;
-    if (
-      active &&
-      previousActive !== active &&
-      focused instanceof HTMLElement &&
-      focused !== document.body &&
-      !inspectorRef.current?.contains(focused)
-    ) {
-      returnFocusRef.current = focused;
-    }
-    previousActiveRef.current = active;
-  }, [active]);
-
-  const toggleInspector = (kind: Exclude<InspectorKind, null>, event: MouseEvent<HTMLButtonElement>) => {
-    returnFocusRef.current = event.currentTarget;
-    setActive(active === kind ? null : kind);
+  const toggleNavigation = (trigger: HTMLElement) => {
+    if (!navigationExpanded) navigationTriggerRef.current = trigger;
+    setNavigationExpanded((value) => !value);
   };
-  const meta = active ? inspectorMeta[active] : null;
+  const meta = activeInspector ? inspectorMeta[activeInspector] : null;
+  const mainInert = mobile && (navigationExpanded || Boolean(activeInspector));
   return (
     <Shell data-testid="app-shell">
-      <Topbar>
-        <Button
-          compact
-          data-testid="toggle-sidebar"
-          title={active === "questions" ? "收起侧边栏" : "展开 Science 125 题库"}
-          onClick={(event) => toggleInspector("questions", event)}
-          aria-pressed={active === "questions"}
-        >
-          <LibraryIcon />
-          <DesktopOnly>题库</DesktopOnly>
-        </Button>
-        <Brand>
-          <h1>Luup</h1>
-          <span>Science 125</span>
-        </Brand>
-        <Nav>
-          <Button compact onClick={(event) => toggleInspector("process", event)} aria-pressed={active === "process"}>
-            <ActivityIcon />
-            <DesktopOnly>过程</DesktopOnly>
-          </Button>
-          <Button
-            compact
-            onClick={(event) => toggleInspector("artifacts", event)}
-            aria-pressed={active === "artifacts"}
-          >
-            <InspectIcon />
-            <DesktopOnly>产物</DesktopOnly>
-          </Button>
-          <SettingsTrigger onOpen={() => setSettingsOpen(true)} />
-        </Nav>
-      </Topbar>
       <Body>
-        {active && meta && (
+        {mobile && (
+          <MobileTrigger
+            hidden={navigationExpanded}
+            compact
+            data-testid="toggle-sidebar"
+            title="展开项目导航"
+            aria-label="展开项目导航"
+            aria-expanded="false"
+            onClick={(event) => toggleNavigation(event.currentTarget)}
+          >
+            <MenuIcon />
+          </MobileTrigger>
+        )}
+        {mobile && navigationExpanded && (
+          <Scrim aria-label="关闭项目导航" onClick={() => setNavigationExpanded(false)} />
+        )}
+        <NavigationReserve data-testid="sidebar-layout-reserve" data-layout-strategy="fixed-reserve">
+          {(!mobile || navigationExpanded) && (
+            <Navigation
+              ref={navigationRef}
+              expanded={navigationExpanded}
+              role={mobile ? "dialog" : undefined}
+              aria-modal={mobile ? "true" : undefined}
+              aria-label="Science 125 项目导航"
+              data-testid="question-sidebar-panel"
+              data-collapsed={!navigationExpanded}
+            >
+              {navigationExpanded ? (
+                <ProjectSidebar
+                  activeRunId={runId}
+                  runs={runs}
+                  onSelectRun={(id) => {
+                    onRunIdChange(id);
+                    if (mobile) setNavigationExpanded(false);
+                  }}
+                  questionBank={sidebar}
+                  settings={<SettingsTrigger onOpen={() => setSettingsOpen(true)} />}
+                  onCollapse={toggleNavigation}
+                  collapseLabel={mobile ? "关闭项目导航" : "收起侧边栏"}
+                  mobile={mobile}
+                />
+              ) : (
+                <Rail>
+                  <IconButton
+                    compact
+                    data-testid="toggle-sidebar"
+                    title="展开项目导航"
+                    aria-label="展开项目导航"
+                    onClick={(event) => toggleNavigation(event.currentTarget)}
+                  >
+                    <MenuIcon />
+                  </IconButton>
+                </Rail>
+              )}
+            </Navigation>
+          )}
+        </NavigationReserve>
+        <Main inert={mainInert} data-testid="app-main" data-inspector-layout="overlay">
+          <RunTabs activeRunId={runId} tabs={runs} onSelect={onRunIdChange} onClose={(id) => onCloseRun?.(id)} />
+          {header}
+          <Scroll>{children}</Scroll>
+          {footer}
+        </Main>
+        {activeInspector && meta && (
           <>
-            <Scrim aria-label="关闭 Inspector" onClick={() => setActive(null)} />
+            <InspectorScrim aria-label="关闭 Inspector" onClick={() => setInspector(null)} />
             <Inspector
               ref={inspectorRef}
-              side={meta.side}
-              role={mobileInspector ? "dialog" : undefined}
-              aria-modal={mobileInspector ? "true" : undefined}
+              role={mobile ? "dialog" : undefined}
+              aria-modal={mobile ? "true" : undefined}
               aria-labelledby="inspector-title"
-              data-testid={active === "questions" ? "question-sidebar-panel" : "workspace-inspector"}
+              data-testid="workspace-inspector"
             >
               <InspectorTop>
-                <h2 id="inspector-title">{meta.label}</h2>
+                <h2 id="inspector-title">{meta}</h2>
                 <IconButton
                   compact
-                  aria-label={`关闭${meta.label}`}
-                  onClick={() => setActive(null)}
+                  aria-label={`关闭${meta}`}
+                  onClick={() => setInspector(null)}
                   style={{ marginLeft: "auto" }}
                 >
                   <CloseIcon />
                 </IconButton>
               </InspectorTop>
-              <InspectorBody>{active === "questions" ? sidebar : inspectorContent}</InspectorBody>
+              <InspectorBody>{inspectorContent}</InspectorBody>
             </Inspector>
           </>
         )}
-        <Main inert={Boolean(active && mobileInspector)}>
-          {header}
-          <Scroll>{children}</Scroll>
-          {footer}
-        </Main>
       </Body>
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </Shell>

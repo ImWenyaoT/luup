@@ -30,7 +30,7 @@ export function useFocusTrap({
   useEffect(() => {
     if (!active) return;
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    if (returnFocusRef && !returnFocusRef.current && previous !== document.body) returnFocusRef.current = previous;
+    if (returnFocusRef && previous !== document.body) returnFocusRef.current = previous;
     const frame = requestAnimationFrame(() => {
       if (autoFocus) containerRef.current?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)?.focus();
     });
