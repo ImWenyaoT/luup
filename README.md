@@ -28,7 +28,7 @@ memory/       跨 run 的战役记忆（事实数据）
 
 ## 快速开始
 
-需要 Node.js >= 22 与 pnpm 10（单体工作区由 Turborepo 编排）。
+需要 Node.js >=24.11.0（Node 24 LTS 基线）与 pnpm 10；单体工作区由 Turborepo 编排。
 
 ```sh
 pnpm install --frozen-lockfile
@@ -145,7 +145,7 @@ pnpm run db:restore -- \
 
 ### 跑题
 
-正式 live 批跑要求 Node.js >= 22；启动前会校验版本。`--dry-run` 只做规划，不受版本门限制。
+正式 live 批跑要求 Node.js >=24.11.0。启动前会校验版本，`--dry-run` 只做规划，不受版本门限制。
 
 ```sh
 pnpm run canary                              # 单题冒烟，走 live 模型并持久化证据
@@ -209,7 +209,7 @@ Canary 默认写 `outputs/runtime/canary.db`，并在 stdout 返回 `database` �
 `LUUP_DATABASE` 改写位置。除非只做临时诊断，不要把 live canary 指到 `:memory:`。
 每次 live 批跑都会在执行前输出 durable `manifestId`；纯 `--ids ... --dry-run` 使用内存规划且不创建
 SQLite 或 manifest。使用 `--manifest-id` 时可省略 `--ids`，若同时提供则必须与原 manifest 的题集完全一致。
-`--preflight` 复用正式付费启动门，额外检查 Node.js >= 22、题库、确认参数、Qwen 凭据、clean release commit
+`--preflight` 复用正式付费启动门，额外检查 Node.js >=24.11.0、题库、确认参数、Qwen 凭据、clean release commit
 以及 Phase A 的 fresh DB/sidecar（Phase B 则核对预注册 30 题），输出结构化 admitted plan 后退出；它不会打开
 SQLite、创建 manifest、构造 executor 或调用模型。它不能与 `--dry-run` 或 `--manifest-id` 混用：resume 的
 source/arm/terminal 一致性必须开库核对，不能伪装成零副作用检查。
@@ -261,7 +261,7 @@ Science-125 逐题索引、manifest-scoped 指标、评分、usage JSONL/Markdow
 ## 验证
 
 ```sh
-pnpm run ci            # typecheck → lint → format:check → knip → build → test:coverage，与 CI 同序
+pnpm run ci            # typecheck → lint → format:check → build → server test:coverage → frontend test，与 CI 同序
 pnpm run test:e2e      # Playwright；首次先 pnpm --filter @luup/frontend exec playwright install chromium
 ```
 

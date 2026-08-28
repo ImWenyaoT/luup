@@ -150,6 +150,22 @@ test("Phase B launch is pinned to the registered cohort, confirmation, clean sou
   assert.equal(wrongIds.admitted, false);
   if (!wrongIds.admitted) assert.match(wrongIds.error, /精确匹配.*30 题/);
 
+  const duplicateIds = admitPaidBatch({
+    stage: "launch",
+    questionIds: [...ids, ids[0]!],
+    dryRun: false,
+    noMemory: true,
+    manifestId: undefined,
+    confirmedScience125: false,
+    confirmedMemoryAblation: true,
+    releaseCommit: clean.gitCommit,
+    repoRoot: ".",
+    databasePath: ":memory:",
+    facts: { sourceIdentity: clean, protocolQuestionIds: ids },
+  });
+  assert.equal(duplicateIds.admitted, false);
+  if (!duplicateIds.admitted) assert.match(duplicateIds.error, /精确匹配.*30 题/);
+
   const dirty = admitPaidBatch({
     stage: "launch",
     questionIds: ids,
