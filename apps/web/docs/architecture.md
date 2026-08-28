@@ -1,6 +1,6 @@
 # apps/web 架构（C2a）
 
-> 栈：React Router 8.3 SPA（`ssr: false`），Vite 8 dev/build，Tailwind 4。生产由 Elysia 同端口托管 `dist/client`（`LUUP_WEB_DIST` 默认 `apps/web/dist/client`）。
+> 栈：React Router 8.3 SPA（`ssr: false`），Vite 8 dev/build，Emotion 11（`@emotion/react` + `@emotion/styled`）。生产由 Elysia 同端口托管 `dist/client`（`LUUP_WEB_DIST` 默认 `apps/web/dist/client`）。
 
 ## 分层与依赖
 
@@ -61,15 +61,15 @@ flowchart TB
 
 ## 模块边界
 
-| 模块 | 职责 | 不做什么 |
-|------|------|----------|
-| `lib/types/` | 手写 wire types + 常量（`ROLE_ORDER` 等） | 业务逻辑、fetch |
-| `lib/api/` | HTTP 封装、JSON 解析、`ApiError`、Bearer 注入 | DOM、React state |
-| `lib/sse/` | EventSource 生命周期、13 种 UI 事件注册、游标 | snapshot 合并逻辑 |
-| `hooks/` | 编排 api+sse、缓存、refetch 策略 | JSX |
-| `features/shell/` | 布局、侧边栏、URL `?run=` 同步 | artifact 渲染细节 |
-| `features/workspace/` | 轨迹、产物、反馈 composer | 全局设置 |
-| `features/settings/` | 凭据/模型配置弹窗 | run 状态机 |
+| 模块                  | 职责                                          | 不做什么          |
+| --------------------- | --------------------------------------------- | ----------------- |
+| `lib/types/`          | 手写 wire types + 常量（`ROLE_ORDER` 等）     | 业务逻辑、fetch   |
+| `lib/api/`            | HTTP 封装、JSON 解析、`ApiError`、Bearer 注入 | DOM、React state  |
+| `lib/sse/`            | EventSource 生命周期、13 种 UI 事件注册、游标 | snapshot 合并逻辑 |
+| `hooks/`              | 编排 api+sse、缓存、refetch 策略              | JSX               |
+| `features/shell/`     | 布局、侧边栏、URL `?run=` 同步                | artifact 渲染细节 |
+| `features/workspace/` | 轨迹、产物、反馈 composer                     | 全局设置          |
+| `features/settings/`  | 凭据/模型配置弹窗                             | run 状态机        |
 
 ## 目录树（目标）
 
@@ -117,10 +117,10 @@ apps/web/
 
 ## 环境与代理
 
-| 环境 | API 基址 | 说明 |
-|------|----------|------|
-| dev | Vite proxy → `:8000` | `vite.config.ts` 已配 SSE 无缓冲 |
-| prod/e2e | 同源 `/api/*` | `LUUP_WEB_DIST=apps/web/dist/client` |
+| 环境     | API 基址             | 说明                                 |
+| -------- | -------------------- | ------------------------------------ |
+| dev      | Vite proxy → `:8000` | `vite.config.ts` 已配 SSE 无缓冲     |
+| prod/e2e | 同源 `/api/*`        | `LUUP_WEB_DIST=apps/web/dist/client` |
 
 ## C3/C4 切分预告
 

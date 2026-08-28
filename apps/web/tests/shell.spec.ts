@@ -21,3 +21,15 @@ test("create run navigates to ?run= query param", async ({ page }) => {
   await expect(page.getByTestId("run-header")).toBeVisible();
   await expect(page.getByTestId("run-workspace")).toBeVisible();
 });
+
+test("mobile uses a full-width question drawer and restores the primary task", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  const drawer = page.getByTestId("question-sidebar-panel");
+  await expect(drawer).toBeVisible();
+  await expect.poll(async () => (await drawer.boundingBox())?.width).toBe(390);
+  await page.getByRole("button", { name: "关闭Science 125 题库" }).click();
+  await expect(page.getByTestId("welcome-question-input")).toBeVisible();
+  await page.getByTestId("open-settings").click();
+  await expect(page.getByRole("dialog", { name: "系统与模型设置" })).toBeVisible();
+});

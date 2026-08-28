@@ -1,9 +1,10 @@
 import { isRouteErrorResponse, Links, Meta, Outlet, Scripts, ScrollRestoration } from "react-router";
+import { Global } from "@emotion/react";
 
 import type { Route } from "./+types/root";
 import { ApiProvider } from "./providers/api";
 import { QueryProvider } from "./providers/query";
-import "./app.css";
+import { globalStyles } from "./styles";
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
@@ -15,6 +16,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <Links />
       </head>
       <body>
+        <Global styles={globalStyles} />
         {children}
         <ScrollRestoration />
         <Scripts />
@@ -25,8 +27,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
 export function HydrateFallback() {
   return (
-    <main className="min-h-dvh grid place-items-center p-8">
-      <p className="text-sm text-neutral-500">Loading…</p>
+    <main style={{ minHeight: "100dvh", display: "grid", placeItems: "center", padding: 32 }}>
+      <p style={{ color: "#667085", fontSize: 14 }}>Loading…</p>
     </main>
   );
 }
@@ -55,12 +57,22 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   }
 
   return (
-    <main className="min-h-dvh grid place-items-center p-8">
+    <main style={{ minHeight: "100dvh", display: "grid", placeItems: "center", padding: 32 }}>
       <div>
-        <h1 className="text-2xl font-semibold">{message}</h1>
-        <p className="mt-2 text-neutral-600">{details}</p>
+        <h1>{message}</h1>
+        <p style={{ marginTop: 8, color: "#475467" }}>{details}</p>
         {stack && (
-          <pre className="mt-4 w-full max-w-3xl overflow-x-auto rounded bg-neutral-100 p-4 text-xs">
+          <pre
+            style={{
+              marginTop: 16,
+              maxWidth: 768,
+              overflowX: "auto",
+              borderRadius: 8,
+              background: "#f2f4f7",
+              padding: 16,
+              fontSize: 12,
+            }}
+          >
             <code>{stack}</code>
           </pre>
         )}

@@ -101,6 +101,7 @@ describe("Home sticky artifact errors", () => {
     });
 
     await screen.findByText("first question");
+    fireEvent.click(screen.getByRole("button", { name: "查看冻结产物" }));
     fireEvent.click(screen.getByRole("button", { name: "research-plan" }));
     await waitFor(() => expect(screen.getByTestId("artifact-loading")).toBeInTheDocument());
     await waitFor(() => expect(screen.queryByTestId("artifact-loading")).not.toBeInTheDocument());

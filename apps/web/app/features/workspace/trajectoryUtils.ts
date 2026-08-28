@@ -50,10 +50,11 @@ export const EVIDENCE_FAILURE: ReadonlySet<string> = new Set([
   "refused",
 ]);
 
-export function railTone(segment: TrajectorySegment, currentRole: Role | null): string {
+export type RailTone = "failed" | "running" | "completed" | "pending";
+export function railTone(segment: TrajectorySegment, currentRole: Role | null): RailTone {
   const last = segment.attempts.at(-1);
-  if (last?.status === "failed") return "border-l-red-500";
-  if (last?.status === "running" || segment.role === currentRole) return "border-l-teal-600";
-  if (last?.status === "completed") return "border-l-neutral-400";
-  return "border-l-transparent";
+  if (last?.status === "failed") return "failed";
+  if (last?.status === "running" || segment.role === currentRole) return "running";
+  if (last?.status === "completed") return "completed";
+  return "pending";
 }

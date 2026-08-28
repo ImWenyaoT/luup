@@ -1,47 +1,89 @@
+import styled from "@emotion/styled";
 import { ROLE_LABEL } from "../../lib/types/constants";
 import type { Snapshot } from "../../lib/types/wire";
+import { colors, mono, SectionTitle } from "../../styles";
 
-const STATUS_LABEL = {
-  running: "进行中",
-  completed: "已完成",
-  failed: "失败",
-} as const;
+const STATUS_LABEL = { running: "进行中", completed: "已完成", failed: "失败" } as const;
+const Section = styled.section`
+  display: grid;
+  gap: 9px;
+`;
+const Tree = styled.div`
+  border-left: 2px solid ${colors.border};
+  padding-left: 12px;
+`;
+const Control = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12px;
+`;
+const Id = styled.span`
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: ${colors.muted};
+  font: 10px ${mono};
+`;
+const List = styled.ol`
+  display: grid;
+  gap: 6px;
+  margin: 9px 0 0;
+  padding: 0;
+  list-style: none;
+`;
+const Item = styled.li`
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  border-left: 1px solid ${colors.border};
+  padding-left: 10px;
+  font-size: 12px;
+`;
+const Role = styled.span`
+  font-weight: 600;
+`;
+const Meta = styled.span`
+  margin-left: 7px;
+  color: ${colors.muted};
+  font: 10px ${mono};
+`;
+const Result = styled.div<{ failed: boolean }>`
+  text-align: right;
+  color: ${({ failed }) => (failed ? colors.danger : colors.muted)};
+`;
 
 export function SubagentLineage({ snapshot }: { snapshot: Snapshot }) {
   return (
-    <section className="space-y-2" aria-labelledby="subagent-lineage-title" data-testid="subagent-lineage">
-      <h2 id="subagent-lineage-title" className="font-mono text-xs uppercase tracking-widest text-neutral-500">
-        Subagents · {snapshot.subagents.length}
-      </h2>
-      <div className="border-l-2 border-l-neutral-300 pl-3">
-        <div className="flex flex-wrap items-baseline gap-x-2 text-xs">
-          <span className="font-medium">控制面</span>
-          <span className="font-mono text-[11px] text-neutral-500">{snapshot.id}</span>
-        </div>
-        <ol className="mt-2 space-y-1">
+    <Section aria-labelledby="subagent-lineage-title" data-testid="subagent-lineage">
+      <SectionTitle id="subagent-lineage-title">Subagents · {snapshot.subagents.length}</SectionTitle>
+      <Tree>
+        <Control>
+          <Role>控制面</Role>
+          <Id>{snapshot.id}</Id>
+        </Control>
+        <List>
           {snapshot.subagents.map((subagent) => (
-            <li key={subagent.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 border-l pl-3 text-xs">
-              <div className="min-w-0">
-                <span className="font-medium">{ROLE_LABEL[subagent.role]}</span>
-                <span className="ml-2 font-mono text-[11px] text-neutral-500">
+            <Item key={subagent.id}>
+              <div>
+                <Role>{ROLE_LABEL[subagent.role]}</Role>
+                <Meta>
                   {subagent.role} #{subagent.ordinal}
-                </span>
-                <div className="truncate font-mono text-[11px] text-neutral-500" title={subagent.id}>
+                </Meta>
+                <Id title={subagent.id}>
                   {subagent.id} · {subagent.mode}
-                </div>
+                </Id>
               </div>
-              <div className="text-right">
-                <div className={subagent.status === "failed" ? "text-red-600" : "text-neutral-500"}>
-                  {STATUS_LABEL[subagent.status]}
-                </div>
-                {subagent.stop_reason !== null && (
-                  <div className="font-mono text-[11px] text-neutral-500">{subagent.stop_reason}</div>
-                )}
-              </div>
-            </li>
+              <Result failed={subagent.status === "failed"}>
+                <div>{STATUS_LABEL[subagent.status]}</div>
+                {subagent.stop_reason !== null && <Meta>{subagent.stop_reason}</Meta>}
+              </Result>
+            </Item>
           ))}
-        </ol>
-      </div>
-    </section>
+        </List>
+      </Tree>
+    </Section>
   );
 }
