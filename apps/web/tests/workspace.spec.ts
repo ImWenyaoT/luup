@@ -6,8 +6,8 @@ test("completes a deterministic research run through the server", async ({ page 
   await expect(page.getByRole("heading", { name: "Luup" })).toBeVisible();
 
   // 设置面：环境变量是默认，页面可补配；保存立即反映在状态行，key 永不回显。
-  await expect(page.getByText(/凭据：/)).toBeVisible();
-  await page.getByText("设置", { exact: true }).click();
+  await expect(page.getByTestId("open-settings")).toBeVisible();
+  await page.getByTestId("open-settings").click();
   await page.getByPlaceholder(/模型 id/).fill("qwen-e2e");
   await page.getByRole("button", { name: "保存" }).click();
   await expect(page.getByText("已保存，下一次运行即生效。")).toBeVisible();
@@ -22,6 +22,7 @@ test("completes a deterministic research run through the server", async ({ page 
     .filter({ hasText: /^已完成$/ })
     .first();
   await expect(completedBadge).toBeVisible();
+  await page.getByRole("button", { name: "查看执行轨迹" }).click();
   await expect(page.getByText("执行轨迹 · 2 次检索")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Subagents · 5" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "审计轨迹 · Audit / Trace" })).toBeVisible();
@@ -49,7 +50,8 @@ test("completes a deterministic research run through the server", async ({ page 
   // 未执行过的角色段是禁用态，点不动也不该抛错。
   await expect(page.getByRole("button", { name: "全部折叠" })).toBeVisible();
 
-  await expect(page.getByText("冻结产物")).toBeVisible();
+  await page.getByRole("button", { name: "查看冻结产物" }).click();
+  await expect(page.getByTestId("artifact-panel").getByRole("heading", { name: "冻结产物" })).toBeVisible();
   await expect(page).toHaveURL(/\?run=[a-z0-9]+$/);
 
   // Run 已持久化；刷新后要从 URL 恢复，而不是变成无法进入的后台任务。
@@ -67,7 +69,9 @@ test("completes a deterministic research run through the server", async ({ page 
   await expect(page.getByText("临时不可用")).toBeVisible();
   await expect(completedBadge).toBeVisible({ timeout: 8_000 });
   await expect(page.getByText("临时不可用")).not.toBeVisible();
+  await page.getByRole("button", { name: "查看执行轨迹" }).click();
   await expect(page.getByText("执行轨迹 · 2 次检索")).toBeVisible();
+  await page.getByRole("button", { name: "关闭轨迹、审计与反馈" }).click();
   await expect(page.getByText(/^version:/)).not.toBeVisible();
   await page.getByText("技术详情").first().click();
   await expect(page.getByText(/^version:/)).toBeVisible();
@@ -77,7 +81,7 @@ test("completes a deterministic research run through the server", async ({ page 
   await page.getByRole("button", { name: "开始研究" }).click();
   await expect(page.getByText("question 不能超过 4000 个字符。")).toBeVisible();
   await expect(completedBadge).toBeVisible();
-  await expect(page.getByText("执行轨迹 · 2 次检索")).toBeVisible();
+  await expect(page.getByTestId("run-workspace")).toBeVisible();
 
   // 旧 Artifact 先失败、新 Run 后成功时，旧错误不能挂到新 Run 下。
   await page.route(
@@ -99,15 +103,18 @@ test("completes a deterministic research run through the server", async ({ page 
       return response;
     }) as unknown as typeof window.fetch;
   });
+  await page.getByRole("button", { name: "查看冻结产物" }).click();
   await page.getByRole("button", { name: "research-plan", exact: true }).click();
   await expect(page.getByTestId("artifact-loading")).toBeVisible();
   await expect(page.getByTestId("artifact-loading")).not.toBeVisible();
+  await page.getByRole("button", { name: "关闭证据与冻结产物" }).click();
   await page.getByPlaceholder("提出一个可以设计实验去检验的研究问题").fill("第二个研究问题");
   await page.getByRole("button", { name: "开始研究" }).click();
   await expect(page.getByRole("alert")).toContainText("旧 Artifact 失败");
   await expect(page.getByText("旧 Artifact 失败")).not.toBeVisible();
   await expect(completedBadge).toBeVisible();
 
+  await page.getByRole("button", { name: "查看冻结产物" }).click();
   await page.getByRole("button", { name: "research-plan", exact: true }).click();
   for (const value of [
     "测量科研 Agent 的无来源引用率。",
@@ -144,6 +151,7 @@ test("completes a deterministic research run through the server", async ({ page 
 
 test("selects Science 125 benchmark preset question and triggers direct run", async ({ page }) => {
   await page.goto("/");
+  await page.getByRole("button", { name: /Science 125 题库/ }).click();
 
   await expect(page.getByText("Science 125 题库选题")).toBeVisible();
   await expect(page.getByText("125 题已冻结")).toBeVisible();
@@ -164,20 +172,21 @@ test("selects Science 125 benchmark preset question and triggers direct run", as
     .filter({ hasText: /^已完成$/ })
     .first();
   await expect(completedBadge).toBeVisible();
-  await expect(page.getByText("冻结产物")).toBeVisible();
+  await page.getByRole("button", { name: "查看冻结产物" }).click();
+  await expect(page.getByTestId("artifact-panel").getByRole("heading", { name: "冻结产物" })).toBeVisible();
 });
 
 test("supports sidebar collapse/expand toggle and new research reset workflow", async ({ page }) => {
   await page.goto("/");
 
   // 验证侧边栏存在并能收起
-  const collapseButton = page.getByTitle("收起侧边栏");
+  const collapseButton = page.getByTestId("toggle-sidebar");
   await expect(collapseButton).toBeVisible();
   await collapseButton.click();
 
   // 侧边栏收起后，浮现边缘展开手柄
-  const expandHandle = page.getByTitle("展开 Science 125 题库");
-  await expect(expandHandle).toBeVisible();
+  const expandHandle = page.getByTestId("toggle-sidebar");
+  await expect(expandHandle).toHaveAttribute("title", "展开项目导航");
   await expandHandle.click();
 
   // 展开后侧边栏重现
@@ -196,7 +205,7 @@ test("supports sidebar collapse/expand toggle and new research reset workflow", 
   await expect(page).toHaveURL(/\?run=[a-z0-9]+$/);
 
   // 点击侧边栏「新建研究课题」，重置工作区并清空 URL 运行态
-  const newResearchBtn = page.getByRole("button", { name: "+ 新建研究课题" });
+  const newResearchBtn = page.getByRole("button", { name: "＋ 新研究" });
   await expect(newResearchBtn).toBeVisible();
   await newResearchBtn.click();
 

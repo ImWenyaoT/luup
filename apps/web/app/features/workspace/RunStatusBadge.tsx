@@ -15,10 +15,6 @@ const STATUS_VARIANT: Record<RunStatus, "default" | "secondary" | "destructive">
   failed: "destructive",
 };
 
-export function RunStatusBadge({ status, className = "" }: { status: RunStatus; className?: string }) {
-  return (
-    <Badge variant={STATUS_VARIANT[status]} className={className}>
-      {STATUS_LABEL[status]}
-    </Badge>
-  );
+export function RunStatusBadge({ status }: { status: RunStatus }) {
+  return <Badge variant={STATUS_VARIANT[status]}>{STATUS_LABEL[status]}</Badge>;
 }

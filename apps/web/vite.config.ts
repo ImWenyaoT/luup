@@ -1,12 +1,11 @@
 import { reactRouter } from "@react-router/dev/vite";
-import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 
 // API process: `pnpm run dev:api` (apps/server/src/main.ts) defaults to port 8000.
 const api = "http://127.0.0.1:8000";
 
 export default defineConfig({
-  plugins: [tailwindcss(), reactRouter()],
+  plugins: [reactRouter()],
   resolve: {
     tsconfigPaths: true,
   },

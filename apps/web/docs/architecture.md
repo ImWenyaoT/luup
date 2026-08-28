@@ -1,6 +1,6 @@
 # apps/web 架构（C2a）
 
-> 栈：React Router 8.3 SPA（`ssr: false`），Vite 8 dev/build，Tailwind 4。生产由 Elysia 同端口托管 `dist/client`（`LUUP_WEB_DIST` 默认 `apps/web/dist/client`）。
+> 栈：React Router 8.3 SPA（`ssr: false`），Vite 8 dev/build，Emotion 11（`@emotion/react` + `@emotion/styled`）。生产由 Elysia 同端口托管 `dist/client`（`LUUP_WEB_DIST` 默认 `apps/web/dist/client`）。
 
 ## 分层与依赖
 
@@ -61,15 +61,15 @@ flowchart TB
 
 ## 模块边界
 
-| 模块 | 职责 | 不做什么 |
-|------|------|----------|
-| `lib/types/` | 手写 wire types + 常量（`ROLE_ORDER` 等） | 业务逻辑、fetch |
-| `lib/api/` | HTTP 封装、JSON 解析、`ApiError`、Bearer 注入 | DOM、React state |
-| `lib/sse/` | EventSource 生命周期、13 种 UI 事件注册、游标 | snapshot 合并逻辑 |
-| `hooks/` | 编排 api+sse、缓存、refetch 策略 | JSX |
-| `features/shell/` | 布局、侧边栏、URL `?run=` 同步 | artifact 渲染细节 |
-| `features/workspace/` | 轨迹、产物、反馈 composer | 全局设置 |
-| `features/settings/` | 凭据/模型配置弹窗 | run 状态机 |
+| 模块                  | 职责                                          | 不做什么          |
+| --------------------- | --------------------------------------------- | ----------------- |
+| `lib/types/`          | 手写 wire types + 常量（`ROLE_ORDER` 等）     | 业务逻辑、fetch   |
+| `lib/api/`            | HTTP 封装、JSON 解析、`ApiError`、Bearer 注入 | DOM、React state  |
+| `lib/sse/`            | EventSource 生命周期、13 种 UI 事件注册、游标 | snapshot 合并逻辑 |
+| `hooks/`              | 编排 api+sse、缓存、refetch 策略              | JSX               |
+| `features/shell/`     | 布局、项目树、本机 Run tabs、URL `?run=` 同步 | artifact 渲染细节 |
+| `features/workspace/` | 轨迹、产物、反馈 composer                     | 全局设置          |
+| `features/settings/`  | 凭据/模型配置弹窗                             | run 状态机        |
 
 ## 目录树（目标）
 
@@ -87,7 +87,8 @@ apps/web/
 │   │   ├── useRun.ts
 │   │   ├── useRunEvents.ts
 │   │   ├── useScience125.ts
-│   │   └── useConfig.ts
+│   │   ├── useConfig.ts
+│   │   └── useRunWorkingSet.ts  # localStorage，仅本机 working set
 │   └── lib/
 │       ├── api/
 │       │   ├── client.ts
@@ -115,12 +116,21 @@ apps/web/
      → status ∈ TERMINAL → 关闭 SSE，展示终态 + final artifact
 ```
 
+## 导航模型
+
+- 左侧是稳定层级：`Science 125` 项目 → `题库` + `Runs`。`Runs` 只来自当前浏览器 localStorage 中已成功打开的 run，不代表服务端历史。
+- 桌面为固定 `288px` 项目导航；整体折叠只收窄内部 rail。移动端改为 modal drawer，并对被遮挡主区设置 `inert`。
+- 水平 tabs 是本机 working set：active tab 与 `?run=<id>` 同步；创建或深链加载成功后加入，关闭 active tab 时切到相邻项，无相邻项则回到空闲态。
+- 桌面没有全局顶栏：品牌、题库搜索与设置归入左侧项目导航，主区从 working-set tabs 直接开始。移动端仅保留打开 drawer 的极简浮动触发器。
+- 过程/产物是 workspace 内部入口，并共享同一个 L2 Inspector：视口 `>=1200px` 时作为稳定 `332px` 证据坞与 Primary 并排；`701–1199px` 时覆盖 Primary；`<=700px` 时使用全宽 modal drawer。
+- 项目层级使用原生 `nav`/`ul`/展开按钮，不声明未完整实现键盘模型的 ARIA tree widget；working-set tabs 使用单一 roving `tabIndex`，支持方向键、Home 与 End。
+
 ## 环境与代理
 
-| 环境 | API 基址 | 说明 |
-|------|----------|------|
-| dev | Vite proxy → `:8000` | `vite.config.ts` 已配 SSE 无缓冲 |
-| prod/e2e | 同源 `/api/*` | `LUUP_WEB_DIST=apps/web/dist/client` |
+| 环境     | API 基址             | 说明                                 |
+| -------- | -------------------- | ------------------------------------ |
+| dev      | Vite proxy → `:8000` | `vite.config.ts` 已配 SSE 无缓冲     |
+| prod/e2e | 同源 `/api/*`        | `LUUP_WEB_DIST=apps/web/dist/client` |
 
 ## C3/C4 切分预告
 

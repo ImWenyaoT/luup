@@ -1,7 +1,8 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
 import { createApiClient } from "../lib/api/client";
+import { RUN_WORKING_SET_KEY } from "../hooks/useRunWorkingSet";
 import type { Artifact, Snapshot } from "../lib/types/wire";
 import { createTestWrapper } from "../test-utils";
 import Home from "./home";
@@ -79,6 +80,7 @@ describe("Home sticky artifact errors", () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       if (url.includes("/api/runs/run-1")) return respond(200, completedSnapshot);
+      if (url.includes("/api/runs/run-2")) return respond(200, nextSnapshot);
       if (url.endsWith("/api/artifacts/art-1")) {
         artifactCalls += 1;
         if (artifactCalls === 1) {
@@ -100,7 +102,8 @@ describe("Home sticky artifact errors", () => {
       wrapper: createTestWrapper({ client, initialEntries: ["/?run=run-1"] }),
     });
 
-    await screen.findByText("first question");
+    await screen.findAllByText("first question");
+    fireEvent.click(screen.getByRole("button", { name: "查看冻结产物" }));
     fireEvent.click(screen.getByRole("button", { name: "research-plan" }));
     await waitFor(() => expect(screen.getByTestId("artifact-loading")).toBeInTheDocument());
     await waitFor(() => expect(screen.queryByTestId("artifact-loading")).not.toBeInTheDocument());
@@ -111,6 +114,104 @@ describe("Home sticky artifact errors", () => {
 
     await waitFor(() => expect(screen.getByText("旧 Artifact 失败")).toBeInTheDocument());
     await waitFor(() => expect(screen.queryByText("旧 Artifact 失败")).not.toBeInTheDocument());
-    expect(screen.getByText("第二个研究问题")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByText("第二个研究问题").length).toBeGreaterThan(0));
+  });
+
+  test("在两个已打开 Run 间切换会清理产物选择并隔离旧错误", async () => {
+    const storage = new Map<string, string>();
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => storage.set(key, value),
+        removeItem: (key: string) => storage.delete(key),
+      },
+    });
+    window.localStorage.setItem(
+      RUN_WORKING_SET_KEY,
+      JSON.stringify([
+        { id: "run-1", label: "first question" },
+        { id: "run-2", label: "第二个研究问题" },
+      ]),
+    );
+    const runTwoSnapshot: Snapshot = {
+      ...nextSnapshot,
+      final_artifact_id: "art-2",
+      artifacts: [{ id: "art-2", type: "research-plan" }],
+    };
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/api/runs/run-1")) return respond(200, completedSnapshot);
+      if (url.includes("/api/runs/run-2")) return respond(200, runTwoSnapshot);
+      if (url.endsWith("/api/artifacts/art-1")) {
+        await new Promise((done) => setTimeout(done, 50));
+        return respond(500, { detail: "旧 Artifact 失败" });
+      }
+      return respond(404, { detail: "not found" });
+    }) as typeof fetch;
+
+    render(<Home />, {
+      wrapper: createTestWrapper({ client: createApiClient({ fetchImpl }), initialEntries: ["/?run=run-1"] }),
+    });
+
+    await screen.findAllByText("first question");
+    fireEvent.click(screen.getByRole("button", { name: "查看冻结产物" }));
+    fireEvent.click(screen.getByRole("button", { name: "research-plan" }));
+    await screen.findByTestId("artifact-loading");
+    fireEvent.click(screen.getByRole("tab", { name: "第二个研究问题" }));
+
+    await waitFor(() => expect(screen.getAllByText("第二个研究问题").length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.queryByTestId("workspace-inspector")).not.toBeInTheDocument());
+    await new Promise((done) => setTimeout(done, 70));
+    expect(screen.queryByText("旧 Artifact 失败")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "查看冻结产物" }));
+    expect(screen.getByText("点击上方按钮查看详细科学假设或研究计划")).toBeInTheDocument();
+    window.localStorage.removeItem(RUN_WORKING_SET_KEY);
+  });
+
+  test("选择当前 Run 或关闭非 active tab 不重置当前产物状态", async () => {
+    const storage = new Map<string, string>();
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => storage.set(key, value),
+        removeItem: (key: string) => storage.delete(key),
+      },
+    });
+    window.localStorage.setItem(
+      RUN_WORKING_SET_KEY,
+      JSON.stringify([
+        { id: "run-1", label: "first question" },
+        { id: "run-2", label: "第二个研究问题" },
+      ]),
+    );
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/api/runs/run-1")) return respond(200, completedSnapshot);
+      if (url.endsWith("/api/artifacts/art-1")) return respond(200, artifact);
+      return respond(404, { detail: "not found" });
+    }) as typeof fetch;
+
+    render(<Home />, {
+      wrapper: createTestWrapper({ client: createApiClient({ fetchImpl }), initialEntries: ["/?run=run-1"] }),
+    });
+
+    await screen.findAllByText("first question");
+    fireEvent.click(screen.getByRole("button", { name: "查看冻结产物" }));
+    fireEvent.click(screen.getByRole("button", { name: "research-plan" }));
+    await screen.findByTestId("artifact-view");
+
+    fireEvent.click(screen.getByRole("tab", { name: "first question" }));
+    expect(screen.getByTestId("artifact-view")).toBeInTheDocument();
+    fireEvent.click(within(screen.getByTestId("project-sidebar")).getByTitle("first question"));
+    expect(screen.getByTestId("artifact-view")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("close-run-run-2"));
+    expect(screen.queryByRole("tab", { name: "第二个研究问题" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("artifact-view")).toBeInTheDocument();
+    expect(screen.getByTestId("workspace-inspector")).toBeInTheDocument();
+    window.localStorage.removeItem(RUN_WORKING_SET_KEY);
   });
 });

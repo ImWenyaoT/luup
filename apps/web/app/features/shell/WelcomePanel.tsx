@@ -1,6 +1,7 @@
-import { useState } from "react";
-
+import styled from "@emotion/styled";
+import { useEffect, useState } from "react";
 import type { Science125Question } from "../../lib/types/wire";
+import { Button, colors, mono, Surface, Textarea } from "../../styles";
 
 const SUGGESTIONS = [
   { id: 61, label: "#61 脉冲星形成", text: "How are pulsars formed?" },
@@ -8,95 +9,140 @@ const SUGGESTIONS = [
   { id: 10, label: "#10 AI重塑化学", text: "Will AI redefine the future of chemistry?" },
   { id: 13, label: "#13 预测下一场大流行", text: "Can we predict the next pandemic?" },
 ] as const;
-
+const Wrap = styled.div`
+  max-width: 760px;
+  margin: 0 auto;
+  padding: clamp(32px, 8vh, 92px) 0;
+`;
+const Intro = styled.div`
+  max-width: 620px;
+  margin: 0 auto 28px;
+  text-align: center;
+  h2 {
+    margin: 0;
+    font-size: clamp(32px, 5vw, 54px);
+    line-height: 1.05;
+    letter-spacing: -0.05em;
+  }
+  p {
+    margin: 14px auto 0;
+    max-width: 560px;
+    color: ${colors.muted};
+    font-size: 14px;
+    line-height: 1.7;
+  }
+`;
+const Suggestions = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 7px;
+  margin-bottom: 22px;
+`;
+const Composer = styled(Surface)`
+  padding: 14px;
+  box-shadow: 0 14px 40px rgba(16, 24, 40, 0.06);
+`;
+const ComposerMeta = styled.div`
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  color: ${colors.muted};
+  font-family: ${mono};
+  font-size: 10px;
+`;
+const ComposerRow = styled.div`
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  @media (max-width: 560px) {
+    grid-template-columns: 1fr;
+  }
+`;
 export type WelcomePanelProps = {
   onStartResearch: (question: string) => Promise<void>;
   disabled?: boolean;
   selectedQuestion?: Science125Question | null;
 };
-
 export function WelcomePanel({ onStartResearch, disabled, selectedQuestion }: WelcomePanelProps) {
   const [question, setQuestion] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const busy = submitting || disabled;
+
+  useEffect(() => {
+    if (selectedQuestion) setQuestion(selectedQuestion.question);
+  }, [selectedQuestion]);
 
   const handleSubmit = async (override?: string) => {
-    const trimmed = (override ?? question).trim();
-    if (!trimmed || submitting || disabled) return;
+    const value = (override ?? question).trim();
+    if (!value || busy) return;
     setSubmitting(true);
     setError(null);
     try {
-      await onStartResearch(trimmed);
+      await onStartResearch(value);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setSubmitting(false);
     }
   };
-
-  const busy = submitting || disabled;
-
   return (
-    <div className="mx-auto max-w-2xl space-y-6 py-8" data-testid="welcome-panel">
-      <div className="text-center space-y-2">
-        <h2 className="font-mono text-3xl font-bold tracking-tight sm:text-4xl">AI Scientist</h2>
-        <p className="text-sm text-neutral-600 leading-relaxed">
-          面向《Science》125 个前沿科学问题的科研 Agent 流水线。证据由代码冻结，模型只能引用。
-        </p>
-      </div>
-
-      <div className="flex flex-wrap justify-center gap-1.5 pt-2">
+    <Wrap data-testid="welcome-panel">
+      <Intro>
+        <h2>AI Scientist</h2>
+        <p>面向《Science》125 个前沿科学问题的科研 Agent 流水线。证据由代码冻结，模型只能引用。</p>
+      </Intro>
+      <Suggestions>
         {SUGGESTIONS.map((s) => (
-          <button
+          <Button
+            compact
             key={s.id}
-            type="button"
             data-testid={`quick-question-${s.id}`}
-            className="rounded-full border border-neutral-300 bg-neutral-50 px-3 py-1 text-xs text-neutral-600 hover:border-neutral-400 hover:bg-white disabled:opacity-50"
             onClick={() => void handleSubmit(s.text)}
             disabled={busy}
           >
             {s.label}
-          </button>
+          </Button>
         ))}
-      </div>
-
-      <div className="space-y-2 pt-2 text-left">
-        <div className="flex items-center justify-between px-1">
-          <span className="font-mono text-[11px] font-medium text-neutral-500">
-            {selectedQuestion ? `已选 #${selectedQuestion.id} · ${selectedQuestion.domain}` : "研究课题输入"}
-          </span>
-          {question && <span className="font-mono text-[10px] text-neutral-500">{question.length} 字符</span>}
-        </div>
-
-        <div className="flex items-end gap-2">
-          <textarea
+      </Suggestions>
+      <Composer>
+        <ComposerMeta>
+          <span>{selectedQuestion ? `已选 #${selectedQuestion.id} · ${selectedQuestion.domain}` : "研究课题输入"}</span>
+          {question && <span>{question.length} 字符</span>}
+        </ComposerMeta>
+        <ComposerRow>
+          <Textarea
             data-testid="welcome-question-input"
-            className="min-h-[64px] flex-1 resize-none rounded-lg border border-neutral-300 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-neutral-400"
             placeholder="提出一个可以设计实验去检验的研究问题"
             value={question}
-            onChange={(e) => setQuestion(e.target.value)}
             rows={3}
             disabled={busy}
-            onKeyDown={(event) => {
-              if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && !busy && question.trim()) {
-                event.preventDefault();
+            onChange={(e) => setQuestion(e.target.value)}
+            onKeyDown={(e) => {
+              if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !busy && question.trim()) {
+                e.preventDefault();
                 void handleSubmit();
               }
             }}
           />
-          <button
-            type="button"
+          <Button
+            tone="primary"
             data-testid="start-research"
-            className="h-[64px] min-w-[88px] shrink-0 rounded-lg bg-neutral-900 px-4 text-xs font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
             onClick={() => void handleSubmit()}
             disabled={!question.trim() || busy}
+            style={{ minHeight: 72 }}
           >
             {busy ? "运行中…" : "开始研究"}
-          </button>
-        </div>
-
-        {error && <p className="text-sm text-red-600">{error}</p>}
-      </div>
-    </div>
+          </Button>
+        </ComposerRow>
+        {error && (
+          <p role="alert" style={{ color: colors.danger, fontSize: 12 }}>
+            {error}
+          </p>
+        )}
+      </Composer>
+    </Wrap>
   );
 }

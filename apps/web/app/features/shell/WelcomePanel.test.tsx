@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
 import { createApiClient } from "../../lib/api/client";
-import type { Science125Data } from "../../lib/types/wire";
+import type { Science125Data, Science125Question } from "../../lib/types/wire";
 import { renderWithProviders } from "../../test-utils";
 import { WelcomePanel } from "./WelcomePanel";
 
@@ -61,5 +61,21 @@ describe("WelcomePanel", () => {
     fireEvent.click(screen.getByTestId("start-research"));
 
     await waitFor(() => expect(onStartResearch).toHaveBeenCalledWith("自定义研究问题"));
+  });
+
+  test("侧边栏选题会填入研究输入框", () => {
+    const selectedQuestion: Science125Question = {
+      id: 2,
+      domain: "Physics",
+      question: "量子引力如何统一？",
+    };
+    const fetchImpl = vi.fn(async () => science125Response());
+    const client = createApiClient({ fetchImpl });
+    renderWithProviders(<WelcomePanel onStartResearch={vi.fn(async () => {})} selectedQuestion={selectedQuestion} />, {
+      client,
+    });
+
+    expect(screen.getByTestId("welcome-question-input")).toHaveValue("量子引力如何统一？");
+    expect(screen.getByTestId("start-research")).not.toBeDisabled();
   });
 });

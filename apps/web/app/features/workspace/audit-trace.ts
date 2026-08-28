@@ -21,6 +21,17 @@ export type TraceGroup = {
   callbackErrors: PublicEvent[];
 };
 
+export type ReferenceVerification = {
+  ok: boolean | null;
+  referenceCount: number | null;
+  frozenSources: number | null;
+  arxivChecked: number | null;
+  doiChecked: number | null;
+  failedCount: number | null;
+  infraError: boolean | null;
+  membershipOnly: boolean | null;
+};
+
 const TRACE_EVENT_KINDS = new Set([
   "sdk.trace.started",
   "sdk.trace.tool_started",
@@ -42,6 +53,34 @@ function stringValue(event: PublicEvent | null, key: string): string | null {
 export function numberValue(event: PublicEvent | null, key: string): number | null {
   const value = payload(event, key);
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function booleanValue(event: PublicEvent | null, key: string): boolean | null {
+  const value = payload(event, key);
+  return typeof value === "boolean" ? value : null;
+}
+
+export function getReferenceVerification(events: readonly PublicEvent[]): ReferenceVerification | null {
+  const event = events.filter((candidate) => candidate.kind === "verification.references").at(-1) ?? null;
+  if (event === null) return null;
+  return {
+    ok: booleanValue(event, "ok"),
+    referenceCount: numberValue(event, "reference_count"),
+    frozenSources: numberValue(event, "frozen_sources"),
+    arxivChecked: numberValue(event, "arxiv_checked"),
+    doiChecked: numberValue(event, "doi_checked"),
+    failedCount: numberValue(event, "failed_count"),
+    infraError: booleanValue(event, "infra_error"),
+    membershipOnly: booleanValue(event, "membership_only"),
+  };
+}
+
+export function referenceVerificationLabel(value: ReferenceVerification | null): string {
+  if (value === null) return "未知";
+  if (value.infraError) return "基础设施异常";
+  if (value.ok === true) return value.referenceCount === null ? "通过" : `通过 · ${value.referenceCount} 条`;
+  if (value.ok === false) return value.failedCount === null ? "未通过" : `未通过 · ${value.failedCount} 条失败`;
+  return "未知";
 }
 
 function traceIdOf(event: PublicEvent): string | null {

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import styled from "@emotion/styled";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router";
 
@@ -10,10 +11,13 @@ import { QuestionSidebar } from "../features/shell/QuestionSidebar";
 import { RunHeader } from "../features/shell/RunHeader";
 import { WelcomePanel } from "../features/shell/WelcomePanel";
 import { readRunId, writeRunSearchParams } from "../features/shell/url-run";
-import { RunWorkspace } from "../features/workspace/RunWorkspace";
+import { RunInspector, RunWorkspace } from "../features/workspace/RunWorkspace";
+import { Button, colors, mono, Textarea } from "../styles";
 import { useRunEvents } from "../hooks/useRunEvents";
+import { useRunWorkingSet } from "../hooks/useRunWorkingSet";
 import { useApiClient } from "../providers/api";
 import { TERMINAL_STATUSES } from "../lib/types/constants";
+import type { InspectorKind } from "../lib/types/inspector";
 import type { Science125Question, Snapshot } from "../lib/types/wire";
 import type { Route } from "./+types/home";
 
@@ -64,18 +68,17 @@ function ResearchInput({
   };
 
   return (
-    <div className="border-t border-neutral-200 bg-white/80 p-3.5 backdrop-blur shrink-0">
-      <div className="mx-auto max-w-5xl space-y-2">
-        <div className="flex items-center justify-between px-1">
-          <span className="font-mono text-[11px] font-medium text-neutral-500">
+    <ComposerBar>
+      <ComposerInner>
+        <ComposerMeta>
+          <span>
             {selectedQuestion ? `已选 #${selectedQuestion.id} · ${selectedQuestion.domain}` : "追加研究课题或问题"}
           </span>
-          {question && <span className="font-mono text-[10px] text-neutral-500">{question.length} 字符</span>}
-        </div>
-        <div className="flex items-end gap-2">
-          <textarea
+          {question && <span>{question.length} 字符</span>}
+        </ComposerMeta>
+        <ComposerRow>
+          <Textarea
             data-testid="welcome-question-input"
-            className="min-h-[52px] flex-1 resize-none rounded-lg border border-neutral-300 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-neutral-400"
             placeholder="提出一个可以设计实验去检验的研究问题"
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
@@ -88,18 +91,18 @@ function ResearchInput({
               }
             }}
           />
-          <button
+          <Button
+            tone="primary"
             type="button"
             data-testid="start-research"
-            className="h-[52px] min-w-[84px] shrink-0 rounded-lg bg-neutral-900 px-4 text-xs font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
             onClick={handleSubmit}
             disabled={!question.trim() || disabled}
           >
             {busy ? "运行中…" : "开始研究"}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </ComposerRow>
+      </ComposerInner>
+    </ComposerBar>
   );
 }
 
@@ -114,10 +117,14 @@ export default function Home() {
   const [dismissedRunError, setDismissedRunError] = useState(false);
   const [selectedQuestion, setSelectedQuestion] = useState<Science125Question | null>(null);
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
+  const [inspector, setInspector] = useState<InspectorKind>(null);
+  const inspectorRunRef = useRef<string | null>(null);
+  const { tabs: runTabs, openRun, closeRun } = useRunWorkingSet();
   const [stickyArtifactError, setStickyArtifactError] = useState<string | null>(null);
   const stickyArtifactRunRef = useRef<string | null>(null);
   const artifactRunByIdRef = useRef<Map<string, string>>(new Map());
   const pendingArtifactSelectionRef = useRef<string | null>(null);
+  const runScopeRef = useRef(runId);
 
   const applyStickyArtifactError = useCallback((message: string, originRunId: string) => {
     setStickyArtifactError(message);
@@ -167,12 +174,38 @@ export default function Home() {
     [fetchArtifactQuery, queryClient, rememberArtifactRun, runId],
   );
 
+  const resetRunScopedState = useCallback(() => {
+    pendingArtifactSelectionRef.current = null;
+    setSelectedArtifactId(null);
+    setStickyArtifactError(null);
+    stickyArtifactRunRef.current = null;
+    artifactRunByIdRef.current.clear();
+    setDismissedRunError(false);
+    setInspector(null);
+  }, []);
+
   const navigateToRun = useCallback(
     (id: string | null) => {
+      if (id === runId) return;
+      resetRunScopedState();
       setSearchParams(writeRunSearchParams(id), { replace: true });
     },
-    [setSearchParams],
+    [resetRunScopedState, runId, setSearchParams],
   );
+
+  const handleCloseRun = useCallback(
+    (id: string) => {
+      const nextRunId = closeRun(id, runId);
+      if (id === runId) navigateToRun(nextRunId);
+    },
+    [closeRun, navigateToRun, runId],
+  );
+
+  useEffect(() => {
+    if (runScopeRef.current === runId) return;
+    runScopeRef.current = runId;
+    resetRunScopedState();
+  }, [resetRunScopedState, runId]);
 
   const displayedSnapshotRef = useRef<Snapshot | undefined>(undefined);
 
@@ -189,6 +222,10 @@ export default function Home() {
   } else {
     snapshot = displayedSnapshotRef.current?.id === runId ? displayedSnapshotRef.current : undefined;
   }
+
+  useEffect(() => {
+    if (snapshot) openRun({ id: snapshot.id, label: snapshot.question });
+  }, [openRun, snapshot?.id, snapshot?.question]);
 
   const {
     artifact: selectedArtifact,
@@ -256,6 +293,7 @@ export default function Home() {
         pendingArtifactSelectionRef.current = null;
         setSelectedArtifactId(null);
         navigateToRun(id);
+        setInspector(null);
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : String(cause);
         setCreationError(message);
@@ -284,6 +322,7 @@ export default function Home() {
     setSelectedQuestion(null);
     setCreationError(null);
     setDismissedRunError(false);
+    setInspector(null);
   }, [navigateToRun]);
 
   useEffect(() => {
@@ -303,17 +342,27 @@ export default function Home() {
 
   const { connected: sseConnected } = useRunEvents(snapshot?.id ?? null, snapshot ?? null, () => void refetch());
 
+  useEffect(() => {
+    if (!snapshot || inspectorRunRef.current === snapshot.id) return;
+    inspectorRunRef.current = snapshot.id;
+    if (typeof window.matchMedia === "function" && window.matchMedia("(min-width: 1200px)").matches) {
+      setInspector("artifacts");
+    }
+  }, [snapshot?.id]);
+
   return (
     <AppShell
       runId={runId}
       onRunIdChange={navigateToRun}
       onStartResearch={startResearch}
+      onNewResearch={handleNewResearch}
+      runs={runTabs}
+      onCloseRun={handleCloseRun}
       sidebar={
         <QuestionSidebar
           selectedQuestion={selectedQuestion}
           onSelect={setSelectedQuestion}
           onStartRun={(q) => void startResearch(q.question)}
-          onNewResearch={handleNewResearch}
           disabled={state.status === "loading"}
         />
       }
@@ -327,32 +376,40 @@ export default function Home() {
           />
         ) : undefined
       }
+      inspector={inspector}
+      onInspectorChange={setInspector}
+      inspectorContent={
+        snapshot ? (
+          <RunInspector
+            kind={inspector}
+            snapshot={snapshot}
+            onRefetch={() => void refetch()}
+            selectedArtifactId={selectedArtifactId}
+            onSelectArtifact={handleSelectArtifact}
+            artifact={selectedArtifact}
+            artifactLoading={artifactLoading}
+          />
+        ) : null
+      }
     >
-      <div className="mx-auto max-w-5xl space-y-4">
+      <Page>
         {displayError && (
-          <div
-            role="alert"
-            className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700"
-            data-testid="error-banner"
-          >
-            <div className="flex items-start justify-between gap-2">
-              <span>{displayError}</span>
-              <button
-                type="button"
-                className="text-xs text-red-600 hover:text-red-800"
-                onClick={() => {
-                  if (creationError) setCreationError(null);
-                  else if (artifactErrorMessage) {
-                    setStickyArtifactError(null);
-                    stickyArtifactRunRef.current = null;
-                    setSelectedArtifactId(null);
-                  } else setDismissedRunError(true);
-                }}
-              >
-                关闭
-              </button>
-            </div>
-          </div>
+          <AlertRow role="alert" data-testid="error-banner">
+            <span>{displayError}</span>
+            <button
+              type="button"
+              onClick={() => {
+                if (creationError) setCreationError(null);
+                else if (artifactErrorMessage) {
+                  setStickyArtifactError(null);
+                  stickyArtifactRunRef.current = null;
+                  setSelectedArtifactId(null);
+                } else setDismissedRunError(true);
+              }}
+            >
+              关闭
+            </button>
+          </AlertRow>
         )}
 
         {!snapshot && (
@@ -364,16 +421,12 @@ export default function Home() {
         )}
 
         {runId && state.status === "loading" && (
-          <p className="text-sm text-neutral-500" data-testid="run-loading">
+          <p style={{ color: colors.muted }} data-testid="run-loading">
             加载运行…
           </p>
         )}
 
-        {runErrorMessage && (
-          <div className="rounded border border-red-200 bg-red-50 p-4 text-sm text-red-700" data-testid="run-error">
-            {runErrorMessage}
-          </div>
-        )}
+        {runErrorMessage && <ErrorPanel data-testid="run-error">{runErrorMessage}</ErrorPanel>}
 
         {snapshot && (
           <RunWorkspace
@@ -383,9 +436,77 @@ export default function Home() {
             onSelectArtifact={handleSelectArtifact}
             artifact={selectedArtifact}
             artifactLoading={artifactLoading}
+            onInspectorChange={setInspector}
           />
         )}
-      </div>
+      </Page>
     </AppShell>
   );
 }
+
+const ComposerBar = styled.div`
+  flex: none;
+  border-top: 1px solid ${colors.border};
+  background: rgba(255, 255, 255, 0.96);
+  padding: 12px 16px;
+  @media (max-width: 700px) {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    padding: 8px;
+  }
+`;
+const ComposerInner = styled.div`
+  max-width: 980px;
+  margin: 0 auto;
+  display: grid;
+  gap: 6px;
+`;
+const ComposerMeta = styled.div`
+  display: flex;
+  justify-content: space-between;
+  color: ${colors.muted};
+  font: 10px ${mono};
+`;
+const ComposerRow = styled.div`
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+  textarea {
+    min-height: 52px;
+  }
+  @media (max-width: 520px) {
+    button {
+      min-width: 84px;
+    }
+  }
+`;
+const Page = styled.div`
+  max-width: 1080px;
+  margin: 0 auto;
+  display: grid;
+  gap: 16px;
+`;
+const ErrorPanel = styled.div`
+  border: 1px solid #fda29b;
+  border-radius: 9px;
+  background: ${colors.dangerSoft};
+  padding: 12px;
+  color: ${colors.danger};
+  font-size: 13px;
+`;
+const AlertRow = styled(ErrorPanel)`
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  button {
+    border: 0;
+    background: transparent;
+    color: ${colors.danger};
+    font-size: 12px;
+  }
+`;
