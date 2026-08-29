@@ -281,6 +281,24 @@
       },
       "unchanged": "根 pnpm 入口、tsx、node:sqlite、题集、arms、phase_b_subset 及 digest、Artifact 合同、B1–B4、统计设计、失败桶、release 绑定、Phase A/B 启动门与禁止显著性主张全部不变。修订 #10 及更早历史文本原样保留。",
       "effect_on_numbers": "正式批尚未启动，故没有已落盘数字受影响；未来正式批统一使用 Node.js >=24.11.0，运行时差异对墙钟、失败分布和 token 用量的方向仍未知。"
+    },
+    {
+      "date": "2026-08-29",
+      "before_phase_a": false,
+      "before_definitive_phase_a": true,
+      "before_any_reading": false,
+      "recorded_when": "**历史 pilot/v2/v3、canary 与误启动读数均已存在，正式 Phase A 和 Phase B 仍未启动。** 本条是在研读外部多智能体编排案例后形成，但只采用能由 Luup 现有工件确定性验收的最小合同加固；没有运行或读取新的 live 指标。",
+      "registered_commit_amended": "34a88f0ba64505a1f4c7890be43af29a1a578152",
+      "summary": "Evidence Review 从自由选择若干论断评审，收紧为对 Hypothesis 的每个候选恰好做一次独立证据判定。保持五角色固定流水线，不新增 Agent、不新增模型调用、不引入动态编排。",
+      "changes": {
+        "design_sources": [
+          "https://antigravity.google/blog/teamwork-when-ai-becomes-a-research-partner",
+          "https://antigravity.google/blog/google-antigravity-built-an-os"
+        ],
+        "candidate_falsification_coverage": "`evidence-review.assessments` 新增 `candidate_id`，必须与输入 Hypothesis 的候选集合精确一一对应：遗漏、重复或未知 ID 均以 `invalid_output` fail-closed。每条判定继续使用 `supports | contradicts | uncertain`，非 uncertain 必须引用本 run 冻结证据。该约束同时进入模型 schema、角色说明与 Harness 规范化检查，不能仅靠提示词自觉。"
+      },
+      "unchanged": "五角色顺序、补证与修订两轮上界、模型/provider、题集、arms、phase_b_subset 及 digest、Research/Hypothesis/ResearchPlan/Review 合同、B1–B4、统计设计、双分母、失败桶、熔断、release 绑定、Phase A/B 启动门与禁止显著性主张全部不变。",
+      "effect_on_numbers": "未来正式批可能因 Evidence Review 漏评候选而增加 `invalid_output`，也可能因更完整的反证覆盖改变补证率、交付率、token 与失败分布，方向未知；没有历史 Run 或读数被改写。"
     }
   ],
   "interpretation": "这是对已记录架构取舍的证据，不是普适优越性主张。结论的形状只能是「在这一条 harness commit、这一个题库、这一条串行顺序下，跨 run 记忆让交付率朝某个方向动了多少」，不能读成「记忆机制优于无记忆」或反过来。Do not claim superiority from one successful trace, one direction, or an unpriced token count.",

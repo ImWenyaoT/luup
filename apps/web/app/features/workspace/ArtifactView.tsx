@@ -165,7 +165,12 @@ function renderBody(content: ArtifactContent) {
     case "evidence-review":
       return (
         <Stack>
-          <List label="逐条判定" items={content.assessments.map((item) => `[${item.verdict}] ${item.claim}`)} />
+          <List
+            label="逐条判定"
+            items={content.assessments.map(
+              (item) => `${item.candidate_id ? `${item.candidate_id} ` : ""}[${item.verdict}] ${item.claim}`,
+            )}
+          />
           <List label="缺口" items={content.gaps.length > 0 ? content.gaps : ["无"]} />
         </Stack>
       );

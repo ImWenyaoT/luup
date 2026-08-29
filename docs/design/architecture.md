@@ -77,7 +77,8 @@ wire type 手写在 `apps/web/app/lib/types/`，**不从服务端模块导入类
 
 1. **researcher** 检索 arXiv/Crossref，把命中写进证据台账并冻结成 Artifact。
 2. **hypothesis-generation** 在冻结证据上提出至少两个可区分、可证伪的候选假说，逐条保留支持/反对证据、替代解释与不确定性，再留下比较筛选记录；选中只表示进入计划，不表示已证实。
-3. **evidence-review** 找缺口；有 gaps 就回到检索，最多两轮。
+3. **evidence-review** 独立压力测试每条候选：每个 `candidate_id` 必须恰好有一条证据判定；再汇总缺口，
+   有 gaps 就回到检索，最多两轮。
 4. **research-plan** 产出研究计划，引用必须能追溯到冻结 Artifact 的 citations
    （`apps/server/src/agent/plan-quality.ts` 的两道门）。
 5. **reviewer** 必须检索到上游未见的新信息再表态；`revise` 触发定向修订，最多两轮，

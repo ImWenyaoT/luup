@@ -52,7 +52,7 @@ describe("ArtifactView hypothesis", () => {
       type: "evidence-review",
       content: {
         artifact_type: "evidence-review",
-        assessments: [{ claim: "论断", verdict: "supports" }],
+        assessments: [{ candidate_id: "c1", claim: "论断", verdict: "supports" }],
         gaps: [],
       },
     };
@@ -62,6 +62,6 @@ describe("ArtifactView hypothesis", () => {
     expect(hHtml).toContain("选中理由");
 
     const rHtml = renderToStaticMarkup(createElement(ArtifactView, { artifact: review }));
-    expect(rHtml).toContain("[supports] 论断");
+    expect(rHtml).toContain("c1 [supports] 论断");
   });
 });

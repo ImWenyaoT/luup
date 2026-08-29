@@ -4,8 +4,9 @@
 artifact_type 固定写 `evidence-review`。必须包含：artifact_type、hypothesis_artifact_id、
 research_artifact_ids、assessments、gaps、supported。
 
-assessments 的每一项恰好四个字段，字段名逐字照写，不要改名、不要增删：
+assessments 必须覆盖输入 Hypothesis Artifact 的每个 candidate_id，且每个候选恰好一项，不能遗漏、重复或自造候选。每一项恰好五个字段，字段名逐字照写，不要改名、不要增删：
 
+- `candidate_id`：逐字照抄被审查候选的 candidate_id。
 - `claim`：被审查的论断。
 - `verdict`：三个合法值之一 —— `supports`（冻结证据支持该论断）、
   `contradicts`（冻结证据与该论断相悖）、`uncertain`（冻结证据不足以判定）。

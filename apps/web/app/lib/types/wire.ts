@@ -149,7 +149,7 @@ export type ArtifactContent =
     }
   | {
       artifact_type: "evidence-review";
-      assessments: { claim: string; verdict: string }[];
+      assessments: { candidate_id?: string; claim: string; verdict: string }[];
       gaps: string[];
     }
   | {

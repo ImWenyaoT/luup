@@ -73,6 +73,7 @@ function fake(
     hidesASearch?: boolean;
     claimsFailedSearch?: boolean;
     inventsReviewEvidence?: boolean;
+    omitsCandidateAssessment?: boolean;
     repeatsSupplementarySearch?: boolean;
     rewritesResearchQuestion?: boolean;
     rewritesHypothesisQuestion?: boolean;
@@ -317,6 +318,7 @@ function fake(
         research_artifact_ids: research.map((item) => item.id),
         assessments: [
           {
+            candidate_id: "evidence-gate",
             claim: "证据门降低无来源引用。",
             verdict: gap ? "uncertain" : "supports",
             rationale: "冻结证据支持开展验证。",
@@ -324,6 +326,17 @@ function fake(
               ? ["ev_never_existed"]
               : research.flatMap((item) => item.content.citations.map((c: any) => c.evidence_id)),
           },
+          ...(options.omitsCandidateAssessment
+            ? []
+            : [
+                {
+                  candidate_id: "prompt-only",
+                  claim: "仅提示词约束也可能降低无来源引用。",
+                  verdict: "uncertain" as const,
+                  rationale: "冻结证据尚不足以排除任务差异等替代解释。",
+                  evidence_ids: [],
+                },
+              ]),
         ],
         gaps: gap ? ["comparison source"] : [],
         supported: !gap,
@@ -797,6 +810,18 @@ test("Evidence Review can only cite frozen Research evidence", async () => {
 
   const snapshot = h.store.snapshot(runId)!;
   assert.equal(snapshot.status, "failed");
+  assert.equal(snapshot.attempts.at(-1)!.role, "evidence-review");
+  h.store.close();
+});
+
+test("Evidence Review must independently assess every Hypothesis candidate", async () => {
+  const h = harness({ omitsCandidateAssessment: true });
+  const runId = h.harness.createRun("q");
+  await h.harness.execute(runId);
+
+  const snapshot = h.store.snapshot(runId)!;
+  assert.equal(snapshot.status, "failed");
+  assert.equal(snapshot.error_code, "invalid_output");
   assert.equal(snapshot.attempts.at(-1)!.role, "evidence-review");
   h.store.close();
 });

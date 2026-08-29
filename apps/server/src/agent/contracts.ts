@@ -241,6 +241,7 @@ export const evidenceReviewSchema = z.object({
   assessments: z
     .array(
       z.object({
+        candidate_id: z.string().min(1),
         claim: z.string().min(1),
         verdict: z.enum(["supports", "contradicts", "uncertain"]),
         rationale: z.string().min(1),
