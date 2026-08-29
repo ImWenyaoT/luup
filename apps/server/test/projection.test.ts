@@ -133,6 +133,7 @@ test("Evidence Review 详情不泄露内部 evidence_ids 与 rationale", () => {
       research_artifact_ids: ["research_internal"],
       assessments: [
         {
+          candidate_id: "evidence-gate",
           claim: "证据门降低无来源引用。",
           verdict: "supports",
           rationale: "冻结证据支持该结论。",
@@ -148,6 +149,7 @@ test("Evidence Review 详情不泄露内部 evidence_ids 与 rationale", () => {
     artifact_type: "evidence-review",
     assessments: [
       {
+        candidate_id: "evidence-gate",
         claim: "证据门降低无来源引用。",
         verdict: "supports",
       },

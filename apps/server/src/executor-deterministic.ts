@@ -228,10 +228,18 @@ export function createDeterministicRuntime(store: SqliteStore): {
         research_artifact_ids: [research.id],
         assessments: [
           {
+            candidate_id: "evidence-gate",
             claim: "引用可核验性可以被自动评测。",
             verdict: "supports",
             rationale: "已冻结来源给出了可用的评测框架。",
             evidence_ids: (research.content as Research).citations.map((item) => item.evidence_id),
+          },
+          {
+            candidate_id: "prompt-only",
+            claim: "仅提示词约束也可能降低无来源引用。",
+            verdict: "uncertain",
+            rationale: "冻结来源不足以证明提示词本身可以阻止捏造证据 ID。",
+            evidence_ids: [],
           },
         ],
         gaps: [],

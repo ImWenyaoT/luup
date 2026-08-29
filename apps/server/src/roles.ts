@@ -339,6 +339,17 @@ function acceptFor(
         if (research.length === 0 || !hypothesis) throw new Error("evidence-review task is missing its inputs");
         const proposed = evidenceReviewSchema.parse(raw);
         const frozen = frozenEvidenceOf(context).evidenceIds;
+        const candidateIds = hypothesisSchema
+          .parse(hypothesis.content)
+          .candidates.map((candidate) => candidate.candidate_id);
+        const assessedIds = proposed.assessments.map((assessment) => assessment.candidate_id);
+        const missing = candidateIds.filter((id) => !assessedIds.includes(id));
+        const unknown = assessedIds.filter((id) => !candidateIds.includes(id));
+        if (missing.length > 0 || unknown.length > 0 || new Set(assessedIds).size !== assessedIds.length) {
+          throw new ContractError(
+            `evidence review must assess every candidate exactly once; missing ${missing.join(",") || "none"}, unknown ${unknown.join(",") || "none"}`,
+          );
+        }
         for (const assessment of proposed.assessments) {
           if (assessment.verdict !== "uncertain" && assessment.evidence_ids.length === 0) {
             throw new ContractError(`${assessment.verdict} assessment must cite frozen evidence`);

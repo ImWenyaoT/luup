@@ -234,6 +234,8 @@ const publicArtifactReferenceSchema = z.object({
 });
 
 const publicAssessmentSchema = z.object({
+  // 历史 Evidence Review 没有 candidate_id；新 run 必须有，但旧工件仍须可读。
+  candidate_id: z.string().optional(),
   claim: z.string(),
   verdict: z.string(),
 });
