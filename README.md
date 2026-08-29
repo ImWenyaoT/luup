@@ -189,9 +189,6 @@ pnpm run score --db outputs/runtime/typescript-runs.db --out outputs/scoring.md
 pnpm run score --db outputs/runtime/science125-formal.db --manifest-id <id> \
   --out outputs/submission/science125-scoring.md       # 只读该 manifest 的有效 Run
 pnpm run submission:check -- outputs/submission/编号-学校-申报人姓名-作品名称.pdf
-pnpm run submission:case -- --db /private/tmp/luup-science125-canary-final-20260822.db \
-  --run-id <run_id> --out outputs/submission/science125-representative-case.json \
-  --strict  # 严格要求冻结题号、completed、两轮反馈/修订、B1–B4 和用量事实
 pnpm run submission:ready -- \
   --db outputs/runtime/science125-formal.db \
   --manifest-id <phase_a_manifest_id> \
@@ -240,15 +237,6 @@ Run ID 与相对 API 链接；它不嵌入问题正文或 Artifact 正文。默�
 `submission:check` 只对单个 PDF/MP4 做确定性检查：文件名四段、PDF 文件头/页数/200 MiB、MP4 文件头/`mvhd`
 时长/10 分钟。PPTX/DOCX、身份水印、盖章报名表、Qwen 凭证、125 逐题是否真实完成仍会明确列为人工/材料检查，
 checker 不会把这些缺失项伪装成通过。
-
-`submission:case` 从指定 SQLite `runId` 生成同目录的 JSON 与 Markdown 代表性案例；它保留题号、终态、两轮
-原始 Artifact ID、反馈来源、修订字段、评分/用量/限制变化和 B1–B4 验收计数，并通过与公开 API 相同的白名单
-投影输出候选比较、两轮研究计划和评审反馈。`source_ledger` 逐条列出实际检索来源的 locator/URL、search tool/query、
-可用性、候选假设的 supporting/opposing 关系、Artifact 使用关系和由检索通路决定的限制；缺失/失败来源仍保留为
-unknown 或 unavailable。prompt、内部 rationale、工具原始返回、内部错误正文或凭证不会进入导出；失败、缺失和 unknown
-会显式保留。该命令只读 SQLite，不会启动模型。默认模式仍是诊断模式；`--strict` 要求 science125_id 属冻结题库、
-Run 已 completed、round1/round2 及 feedback/revision 事实齐全、source ledger 完整、verification 事件含 B1/B2/B3/B4
-且均通过、用量记录完整。严格门失败会在 JSON 中保留 `strict.reasons` 并返回非零。
 
 `submission:ready` 是正式批跑后的统一赛前 readiness 控制面：以只读方式打开指定 SQLite，按 manifest 生成严格
 Science-125 逐题索引、manifest-scoped 指标、评分、usage JSONL/Markdown 和 strict representative case，并输出
