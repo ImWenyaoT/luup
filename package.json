@@ -18,7 +18,6 @@
     "score": "tsx apps/server/src/eval/scoring.ts",
     "usage:export": "tsx apps/server/src/submission/usage-export.ts",
     "submission:check": "tsx apps/server/src/submission/checker.ts",
-    "submission:case": "tsx apps/server/src/submission/representative-case.ts",
     "submission:ready": "tsx apps/server/src/submission/readiness.ts",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
