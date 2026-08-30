@@ -2,12 +2,14 @@
   "name": "luup",
   "private": true,
   "scripts": {
-    "dev": "turbo run dev",
-    "dev:api": "LUUP_RUNTIME=deterministic tsx watch apps/server/src/main.ts",
-    "dev:api:live": "tsx watch apps/server/src/main.ts",
+    "dev": "turbo run dev --parallel",
+    "dev:api": "pnpm --filter @luup/server dev",
+    "dev:api:live": "pnpm --filter @luup/server dev:live",
     "dev:web": "pnpm --filter @luup/frontend dev",
     "build": "turbo run build",
-    "start": "pnpm run build && tsx apps/server/src/main.ts",
+    "start": "pnpm run build && turbo run start --parallel",
+    "start:api": "pnpm --filter @luup/server start",
+    "start:web": "pnpm --filter @luup/frontend start",
     "canary": "tsx apps/server/src/canary.ts",
     "batch": "tsx apps/server/src/batch/runner.ts",
     "batch:export": "tsx apps/server/src/batch/submission-export.ts",
@@ -30,14 +32,14 @@
     "ci": "turbo run typecheck && pnpm run lint && pnpm run format:check && turbo run build && pnpm --filter @luup/server test:coverage && pnpm --filter @luup/frontend test"
   },
   "devDependencies": {
-    "oxfmt": "0.63.0",
-    "oxlint": "1.78.0",
+    "oxfmt": "0.65.0",
+    "oxlint": "1.80.0",
     "oxlint-tsgolint": "7.0.2001",
-    "tsx": "^4.19.3",
-    "turbo": "^2.4.4"
+    "tsx": "^4.23.12",
+    "turbo": "^2.10.12"
   },
   "engines": {
-    "node": ">=24.11.0"
+    "node": ">=24.20.0"
   },
-  "packageManager": "pnpm@10.5.0"
+  "packageManager": "pnpm@11.24.0"
 }

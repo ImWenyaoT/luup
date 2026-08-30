@@ -110,7 +110,7 @@ test("completes a deterministic research run through the server", async ({ page 
   await page.getByRole("button", { name: "关闭证据与冻结产物" }).click();
   await page.getByPlaceholder("提出一个可以设计实验去检验的研究问题").fill("第二个研究问题");
   await page.getByRole("button", { name: "开始研究" }).click();
-  await expect(page.getByRole("alert")).toContainText("旧 Artifact 失败");
+  await expect(page.getByTestId("error-banner")).toContainText("旧 Artifact 失败");
   await expect(page.getByText("旧 Artifact 失败")).not.toBeVisible();
   await expect(completedBadge).toBeVisible();
 
@@ -140,6 +140,7 @@ test("completes a deterministic research run through the server", async ({ page 
   });
   await page.goto("/?run=deadbeef");
   await expect(page.getByText("Run 不存在。")).toBeVisible();
+  expect(missingRunRequests).toBe(1);
   await page.waitForTimeout(5_500);
   expect(missingRunRequests).toBe(1);
 

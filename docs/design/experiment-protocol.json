@@ -299,6 +299,39 @@
       },
       "unchanged": "五角色顺序、补证与修订两轮上界、模型/provider、题集、arms、phase_b_subset 及 digest、Research/Hypothesis/ResearchPlan/Review 合同、B1–B4、统计设计、双分母、失败桶、熔断、release 绑定、Phase A/B 启动门与禁止显著性主张全部不变。",
       "effect_on_numbers": "未来正式批可能因 Evidence Review 漏评候选而增加 `invalid_output`，也可能因更完整的反证覆盖改变补证率、交付率、token 与失败分布，方向未知；没有历史 Run 或读数被改写。"
+    },
+    {
+      "date": "2026-08-30",
+      "before_phase_a": false,
+      "before_definitive_phase_a": true,
+      "before_any_reading": false,
+      "recorded_when": "**历史 pilot/v2/v3、canary 与误启动读数均已存在，正式 Phase A 和 Phase B 仍未启动。** 本条按用户明确要求升级模型协议与默认模型；改动前核对了百炼与 OpenAI Agents SDK 官方当前文档，没有运行或读取新的 live 指标。",
+      "registered_commit_amended": "5451b1e7a10679f774da719bfd9aa60e9cdd40be",
+      "summary": "模型接线从 OpenAI-compatible Chat Completions 切到 Responses；默认模型从 qwen3.7-plus 更新为 qwen3.8-max；@openai/agents 从 0.16.0 升到 0.17.0。旧的 enable_thinking=false 改为 Responses 标准 reasoning.effort=none。",
+      "changes": {
+        "wire_api": "`apps/server/src/seams/model.ts` 的 `OpenAIProvider` 显式设置 `useResponses: true`，模型仍由 Agents SDK Runner 调用，不增加裸 HTTP 或第二个 provider 路径。百炼 base URL、凭据与模型 ID 的唯一读取点仍是该 seam。",
+        "model": "`LUUP_MODEL_ID` 未设置时由 qwen3.7-plus 改为 qwen3.8-max。两臂继续共用同一模型、端点与接线；正式批 release 绑定与全新 DB 门保持不变。",
+        "reasoning": "结构化输出的思考关闭参数由非标准、已声明将废弃的 `enable_thinking=false` 改为 `reasoning.effort=none`；retry、turn 上界、五角色合同与纠错语义不变。",
+        "sdk": "`@openai/agents` 0.16.0 升到 0.17.0；使用 SDK 自带 OpenAIProvider、Responses model、structured output、tools、Runner retry 与 tracing hooks，不自造 OpenAI 客户端层。"
+      },
+      "unchanged": "题集、arms、phase_b_subset 及 digest、Artifact 合同、五角色顺序、补证/修订两轮上界、B1–B4、统计设计、双分母、失败桶、熔断、release 绑定、Phase A/B 启动门与禁止显著性主张全部不变。历史 Run、修订与注册文本原样保留。",
+      "effect_on_numbers": "Responses 协议、SDK 与默认模型会改变未来正式批的输出质量、工具调用、token、墙钟与失败分布，方向未知；因此旧 canary 或历史批不能当作本次接线的 live 验证，也没有任何历史数字被重写。"
+    },
+    {
+      "date": "2026-08-30",
+      "before_phase_a": false,
+      "before_definitive_phase_a": true,
+      "before_any_reading": false,
+      "recorded_when": "**Responses 改造后已运行一次隔离在内存数据库的诊断 canary：五个角色及 tools/structured output 均完成，终局仅因 B3 引用数 4<5 被 verifier fail-closed；正式 Phase A 和 Phase B 仍未启动。** 本条记录用户要求的全栈 stable/LTS 收敛，不把诊断 canary 当业务效果读数。",
+      "registered_commit_amended": "5451b1e7a10679f774da719bfd9aa60e9cdd40be",
+      "summary": "Node 最低版本从 24.11.0 更新到 2026-08-30 的 Latest LTS 24.20.0；workspace 直接依赖升级到当前稳定版本，Node 类型保持 24 LTS 线；pnpm 保持已验证的 11.24.0。",
+      "changes": {
+        "runtime_floor": "`.nvmrc`、`package.json#engines.node`、CI 与正式 live batch 版本门统一为 Node.js >=24.20.0；拒绝更早或畸形版本。",
+        "toolchain": "TypeScript 7、Vitest 4、Hono Node Server 2、jsdom 30、Turborepo 2.10 及其余 workspace 直接依赖升级到 registry 当前 stable；`@types/node` 固定 24 LTS 线，不采纳 Node 26 Current 类型。",
+        "package_manager": "pnpm 保持 11.24.0：11.25 与 12 在当前主机均未通过可信引导和 frozen install 的共同验证。"
+      },
+      "unchanged": "题集、arms、phase_b_subset 及 digest、Artifact 合同、五角色顺序、模型与 Responses 接线、补证/修订两轮上界、B1–B4、统计设计、双分母、失败桶、熔断、release 绑定、Phase A/B 启动门与禁止显著性主张全部不变。历史 Run、修订与注册文本原样保留。",
+      "effect_on_numbers": "运行时与工具链升级可能改变未来正式批的墙钟、资源占用和故障分布，方向未知；诊断 canary 的 verifier_refs 终态只证明 fail-closed 行为，不构成新模型质量结论，也没有历史数字被改写。"
     }
   ],
   "interpretation": "这是对已记录架构取舍的证据，不是普适优越性主张。结论的形状只能是「在这一条 harness commit、这一个题库、这一条串行顺序下，跨 run 记忆让交付率朝某个方向动了多少」，不能读成「记忆机制优于无记忆」或反过来。Do not claim superiority from one successful trace, one direction, or an unpriced token count.",

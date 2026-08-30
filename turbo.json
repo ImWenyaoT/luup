@@ -1,18 +1,20 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalEnv": ["LUUP_API_ORIGIN"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**"]
+      "outputs": [".next/**", "!.next/cache/**"]
     },
     "typecheck": {
       "dependsOn": ["^typecheck"]
     },
     "test": {},
-    "test:coverage": {
-      "outputs": ["coverage/**"]
-    },
     "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "start": {
       "cache": false,
       "persistent": true
     }

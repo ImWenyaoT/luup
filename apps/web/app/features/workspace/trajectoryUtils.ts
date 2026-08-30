@@ -25,7 +25,7 @@ export function buildSegments(snapshot: Snapshot): TrajectorySegment[] {
   });
 }
 
-export function attemptSeconds(attempt: Attempt): number | null {
+function attemptSeconds(attempt: Attempt): number | null {
   if (attempt.finished_at === null) return null;
   const ms = Date.parse(attempt.finished_at) - Date.parse(attempt.started_at);
   return Number.isFinite(ms) && ms >= 0 ? ms / 1000 : null;

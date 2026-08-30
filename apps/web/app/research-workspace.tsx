@@ -1,29 +1,26 @@
+"use client";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import styled from "@emotion/styled";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { useSearchParams } from "react-router";
+import { useRouter, useSearchParams } from "next/navigation";
 
-import { useRun } from "../hooks/useRun";
-import { useArtifact } from "../hooks/useArtifact";
-import { fetchArtifact } from "../lib/api/artifacts";
-import { AppShell } from "../features/shell/AppShell";
-import { QuestionSidebar } from "../features/shell/QuestionSidebar";
-import { RunHeader } from "../features/shell/RunHeader";
-import { WelcomePanel } from "../features/shell/WelcomePanel";
-import { readRunId, writeRunSearchParams } from "../features/shell/url-run";
-import { RunInspector, RunWorkspace } from "../features/workspace/RunWorkspace";
-import { Button, colors, mono, Textarea } from "../styles";
-import { useRunEvents } from "../hooks/useRunEvents";
-import { useRunWorkingSet } from "../hooks/useRunWorkingSet";
-import { useApiClient } from "../providers/api";
-import { TERMINAL_STATUSES } from "../lib/types/constants";
-import type { InspectorKind } from "../lib/types/inspector";
-import type { Science125Question, Snapshot } from "../lib/types/wire";
-import type { Route } from "./+types/home";
-
-export function meta(_args: Route.MetaArgs) {
-  return [{ title: "Luup" }, { name: "description", content: "Luup research harness" }];
-}
+import { useRun } from "./hooks/useRun";
+import { useArtifact } from "./hooks/useArtifact";
+import { fetchArtifact } from "./lib/api/artifacts";
+import { AppShell } from "./features/shell/AppShell";
+import { QuestionSidebar } from "./features/shell/QuestionSidebar";
+import { RunHeader } from "./features/shell/RunHeader";
+import { WelcomePanel } from "./features/shell/WelcomePanel";
+import { readRunId, writeRunSearchParams } from "./features/shell/url-run";
+import { RunInspector, RunWorkspace } from "./features/workspace/RunWorkspace";
+import { Button, colors, mono, Textarea } from "./styles";
+import { useRunEvents } from "./hooks/useRunEvents";
+import { useRunWorkingSet } from "./hooks/useRunWorkingSet";
+import { useApiClient } from "./providers/api";
+import { TERMINAL_STATUSES } from "./lib/types/constants";
+import type { InspectorKind } from "./lib/types/inspector";
+import type { Science125Question, Snapshot } from "./lib/types/wire";
 
 function readArtifactErrorMessage(error: unknown): string | null {
   if (!error) return null;
@@ -109,7 +106,8 @@ function ResearchInput({
 export default function Home() {
   const queryClient = useQueryClient();
   const client = useApiClient();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const runId = readRunId(searchParams);
 
   const { state, refetch, createAndNavigate } = useRun(runId);
@@ -119,7 +117,7 @@ export default function Home() {
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
   const [inspector, setInspector] = useState<InspectorKind>(null);
   const inspectorRunRef = useRef<string | null>(null);
-  const { tabs: runTabs, openRun, closeRun } = useRunWorkingSet();
+  const { tabs: runTabs, openRun, closeRun, persistenceError, clearPersistenceError } = useRunWorkingSet();
   const [stickyArtifactError, setStickyArtifactError] = useState<string | null>(null);
   const stickyArtifactRunRef = useRef<string | null>(null);
   const artifactRunByIdRef = useRef<Map<string, string>>(new Map());
@@ -161,8 +159,9 @@ export default function Home() {
         pendingArtifactSelectionRef.current = id;
         if (runId) {
           rememberArtifactRun(id, runId);
-          void queryClient.fetchQuery(fetchArtifactQuery(id)).catch(() => {
-            // Errors are surfaced through the query cache subscription.
+          void queryClient.fetchQuery(fetchArtifactQuery(id)).catch((cause: unknown) => {
+            const message = readArtifactErrorMessage(cause);
+            if (message && artifactRunByIdRef.current.get(id) === runId) applyStickyArtifactError(message, runId);
           });
         }
         setCreationError(null);
@@ -171,7 +170,7 @@ export default function Home() {
       }
       setSelectedArtifactId(id);
     },
-    [fetchArtifactQuery, queryClient, rememberArtifactRun, runId],
+    [applyStickyArtifactError, fetchArtifactQuery, queryClient, rememberArtifactRun, runId],
   );
 
   const resetRunScopedState = useCallback(() => {
@@ -188,9 +187,13 @@ export default function Home() {
     (id: string | null) => {
       if (id === runId) return;
       resetRunScopedState();
-      setSearchParams(writeRunSearchParams(id), { replace: true });
+      const next = new URLSearchParams(searchParams.toString());
+      const values = writeRunSearchParams(id);
+      if (values.run) next.set("run", values.run);
+      else next.delete("run");
+      router.replace(next.size > 0 ? `/?${next.toString()}` : "/");
     },
-    [resetRunScopedState, runId, setSearchParams],
+    [resetRunScopedState, router, runId, searchParams],
   );
 
   const handleCloseRun = useCallback(
@@ -283,8 +286,9 @@ export default function Home() {
           if (existingState?.status !== "error" && existingState?.status !== "success") {
             try {
               await queryClient.fetchQuery(fetchArtifactQuery(pendingArtifactId));
-            } catch {
-              // Expected when the artifact request fails; sync from query cache below.
+            } catch (cause) {
+              const message = readArtifactErrorMessage(cause);
+              if (message) applyStickyArtifactError(message, pendingRunId);
             }
             syncStickyArtifactError(pendingArtifactId, pendingRunId);
           }
@@ -297,11 +301,11 @@ export default function Home() {
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : String(cause);
         setCreationError(message);
-        throw cause;
       }
     },
     [
       createAndNavigate,
+      applyStickyArtifactError,
       fetchArtifactQuery,
       navigateToRun,
       queryClient,
@@ -338,7 +342,7 @@ export default function Home() {
 
   const artifactErrorMessage = stickyArtifactError ?? artifactFetchError?.message ?? null;
 
-  const displayError = creationError ?? artifactErrorMessage ?? refetchErrorMessage;
+  const displayError = creationError ?? artifactErrorMessage ?? refetchErrorMessage ?? persistenceError;
 
   const { connected: sseConnected } = useRunEvents(snapshot?.id ?? null, snapshot ?? null, () => void refetch());
 
@@ -404,7 +408,8 @@ export default function Home() {
                   setStickyArtifactError(null);
                   stickyArtifactRunRef.current = null;
                   setSelectedArtifactId(null);
-                } else setDismissedRunError(true);
+                } else if (refetchErrorMessage) setDismissedRunError(true);
+                else clearPersistenceError();
               }}
             >
               关闭

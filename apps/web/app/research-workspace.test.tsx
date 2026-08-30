@@ -1,11 +1,11 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
-import { createApiClient } from "../lib/api/client";
-import { RUN_WORKING_SET_KEY } from "../hooks/useRunWorkingSet";
-import type { Artifact, Snapshot } from "../lib/types/wire";
-import { createTestWrapper } from "../test-utils";
-import Home from "./home";
+import { createApiClient } from "./lib/api/client";
+import { RUN_WORKING_SET_KEY } from "./hooks/useRunWorkingSet";
+import type { Artifact, Snapshot } from "./lib/types/wire";
+import { createTestWrapper } from "./test-utils";
+import Home from "./research-workspace";
 
 const completedSnapshot: Snapshot = {
   id: "run-1",

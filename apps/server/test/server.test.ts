@@ -1,8 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { onTestFinished, test } from "vitest";
+import { test } from "vitest";
 
 import { createDeterministicRuntime, createDeterministicVerifier } from "../src/executor-deterministic.ts";
 import { Harness } from "../src/harness.ts";
@@ -315,12 +312,7 @@ test("rejects an unknown runtime instead of silently selecting paid live mode", 
   assert.throws(() => runtimeMode("determinstic"), /must be live or deterministic/);
 });
 
-test("unknown API routes stay JSON 404 when the SPA is enabled", async () => {
-  const t = { onTestFinished };
-  const dist = mkdtempSync(join(tmpdir(), "luup-web-"));
-  t.onTestFinished(() => rmSync(dist, { recursive: true, force: true }));
-  writeFileSync(join(dist, "index.html"), "<main>Luup</main>");
-
+test("unknown API routes stay JSON 404", async () => {
   const store = new SqliteStore(":memory:");
   const runtime = createDeterministicRuntime(store);
   const harness = new Harness(store, runtime.execute, {
@@ -328,7 +320,7 @@ test("unknown API routes stay JSON 404 when the SPA is enabled", async () => {
     // 与 createDefaultApp 的确定性模式同形：引用验收也不打网络。
     verifyReferences: createDeterministicVerifier(),
   });
-  const server = createApp({ store, harness, runtime: "deterministic", webDist: dist });
+  const server = createApp({ store, harness, runtime: "deterministic" });
   await server.ready;
   const base = server.url.origin;
 
@@ -337,7 +329,7 @@ test("unknown API routes stay JSON 404 when the SPA is enabled", async () => {
   assert.match(api.headers.get("content-type") ?? "", /^application\/json/);
   assert.deepEqual(await api.json(), { detail: "Not Found" });
   assert.equal((await fetch(`${base}/api`)).status, 404);
-  assert.equal(await (await fetch(`${base}/workspace`)).text(), "<main>Luup</main>");
+  assert.equal((await fetch(`${base}/workspace`)).status, 404);
   await close(server, store);
 });
 

@@ -30,12 +30,26 @@ export function useRun(runId: string | null, options?: UseRunOptions) {
   const stateRef = useRef(state);
   stateRef.current = state;
   const backoffRef = useRef(INITIAL_BACKOFF_MS);
+  const inFlightRef = useRef<{ client: ApiClient; runId: string; promise: Promise<Snapshot> } | null>(null);
+
+  const fetchSnapshot = useCallback(
+    (id: string): Promise<Snapshot> => {
+      const current = inFlightRef.current;
+      if (current?.client === client && current.runId === id) return current.promise;
+      const promise = fetchRun(client, id).finally(() => {
+        if (inFlightRef.current?.promise === promise) inFlightRef.current = null;
+      });
+      inFlightRef.current = { client, runId: id, promise };
+      return promise;
+    },
+    [client],
+  );
 
   const loadRun = useCallback(
     async (id: string) => {
       setState({ status: "loading", runId: id });
       try {
-        const snapshot = await fetchRun(client, id);
+        const snapshot = await fetchSnapshot(id);
         setState({ status: "ready", snapshot });
         backoffRef.current = INITIAL_BACKOFF_MS;
       } catch (cause) {
@@ -44,7 +58,7 @@ export function useRun(runId: string | null, options?: UseRunOptions) {
         setState({ status: "error", runId: id, error, lastSnapshot });
       }
     },
-    [client],
+    [fetchSnapshot],
   );
 
   useEffect(() => {
@@ -62,7 +76,7 @@ export function useRun(runId: string | null, options?: UseRunOptions) {
     const lastSnapshot =
       previous.status === "ready" ? previous.snapshot : previous.status === "error" ? previous.lastSnapshot : undefined;
     try {
-      const snapshot = await fetchRun(client, runId);
+      const snapshot = await fetchSnapshot(runId);
       setState({ status: "ready", snapshot });
       backoffRef.current = INITIAL_BACKOFF_MS;
     } catch (cause) {
@@ -73,7 +87,7 @@ export function useRun(runId: string | null, options?: UseRunOptions) {
         setState({ status: "error", runId, error });
       }
     }
-  }, [client, runId]);
+  }, [fetchSnapshot, runId]);
 
   useEffect(() => {
     if (state.status !== "error") return;

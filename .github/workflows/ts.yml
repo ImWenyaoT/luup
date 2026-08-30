@@ -16,6 +16,9 @@ concurrency:
 jobs:
   # 门矩阵与 `pnpm run ci` 同序
   check:
+    env:
+      # Next 生产构建必须显式声明 API origin；CI 使用确定性本地 API。
+      LUUP_API_ORIGIN: http://127.0.0.1:8000
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -28,14 +31,14 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 24.11.0
+          node-version-file: .nvmrc
           cache: "pnpm"
       - name: Install
         run: pnpm install --frozen-lockfile
       - name: CI Gate
         run: pnpm run ci
 
-  # 交付形态的端到端：确定性 runtime + 单进程托管静态产物，零 LLM 调用、零外部网络。
+  # 交付形态的端到端：确定性 API + Next.js 两进程，零 LLM 调用、零外部网络。
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -49,14 +52,14 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 24.11.0
+          node-version-file: .nvmrc
           cache: "pnpm"
       - name: Install
         run: pnpm install --frozen-lockfile
       - name: Install Playwright browsers
         run: pnpm --filter @luup/frontend exec playwright install --with-deps chromium
       - name: Test
-        # playwright.config.ts 的 webServer 自己 build 再起 src/main.ts，这里不重复 build。
+        # playwright.config.ts 先 build，再启动确定性 API 与 next start。
         run: pnpm run test:e2e
       - name: Upload Playwright traces
         if: ${{ failure() }}

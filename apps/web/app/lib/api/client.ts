@@ -4,8 +4,8 @@ export class ApiError extends Error {
   readonly status: number;
   readonly body?: ApiErrorBody;
 
-  constructor(status: number, message: string, body?: ApiErrorBody) {
-    super(message);
+  constructor(status: number, message: string, body?: ApiErrorBody, options?: ErrorOptions) {
+    super(message, options);
     this.name = "ApiError";
     this.status = status;
     this.body = body;
@@ -42,8 +42,8 @@ const DEFAULT_SNAPSHOT_TIMEOUT_MS = 10_000;
 function resolveToken(getToken?: () => string | undefined): string | undefined {
   const fromGetter = getToken?.();
   if (fromGetter) return fromGetter;
-  if (typeof import.meta !== "undefined" && import.meta.env?.VITE_LUUP_API_TOKEN) {
-    const envToken = import.meta.env.VITE_LUUP_API_TOKEN;
+  if (process.env.NEXT_PUBLIC_LUUP_API_TOKEN) {
+    const envToken = process.env.NEXT_PUBLIC_LUUP_API_TOKEN;
     if (typeof envToken === "string" && envToken.trim()) return envToken.trim();
   }
   return undefined;
@@ -51,10 +51,18 @@ function resolveToken(getToken?: () => string | undefined): string | undefined {
 
 export async function parseJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    const body = await response.json().catch(() => ({ detail: response.statusText }) as ApiErrorBody);
-    const detail = (body as ApiErrorBody).detail;
+    let parsed: unknown;
+    try {
+      parsed = await response.json();
+    } catch (cause) {
+      const summary = response.statusText || `HTTP ${response.status}`;
+      throw new ApiError(response.status, `${summary}：错误响应不是有效 JSON。`, undefined, { cause });
+    }
+    const body =
+      typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? (parsed as ApiErrorBody) : undefined;
+    const detail = body?.detail;
     const message = detail ?? (response.statusText || `HTTP ${response.status}`);
-    throw new ApiError(response.status, message, body as ApiErrorBody);
+    throw new ApiError(response.status, message, body);
   }
   return (await response.json()) as T;
 }

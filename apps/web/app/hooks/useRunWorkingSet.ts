@@ -4,13 +4,15 @@ export type RunTab = { id: string; label: string };
 
 export const RUN_WORKING_SET_KEY = "luup.run-working-set.v1";
 
-function readStoredTabs(): RunTab[] {
-  if (typeof window === "undefined") return [];
+type StoredTabs = { tabs: RunTab[]; error: string | null };
+
+function readStoredTabs(): StoredTabs {
+  if (typeof window === "undefined") return { tabs: [], error: null };
   try {
     const storage = window.localStorage;
-    if (!storage) return [];
+    if (!storage) return { tabs: [], error: null };
     const value: unknown = JSON.parse(storage.getItem(RUN_WORKING_SET_KEY) ?? "[]");
-    if (!Array.isArray(value)) return [];
+    if (!Array.isArray(value)) return { tabs: [], error: "无法恢复运行标签：本地存储格式无效。" };
     const tabs: RunTab[] = [];
     const positions = new Map<string, number>();
     for (const item of value) {
@@ -27,20 +29,24 @@ function readStoredTabs(): RunTab[] {
         tabs[existing] = { id: normalizedId, label };
       }
     }
-    return tabs;
-  } catch {
-    return [];
+    return { tabs, error: null };
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    return { tabs: [], error: `无法恢复运行标签：${detail}` };
   }
 }
 
 export function useRunWorkingSet() {
-  const [tabs, setTabs] = useState<RunTab[]>(readStoredTabs);
+  const [initial] = useState(readStoredTabs);
+  const [tabs, setTabs] = useState<RunTab[]>(initial.tabs);
+  const [persistenceError, setPersistenceError] = useState<string | null>(initial.error);
 
   useEffect(() => {
     try {
       window.localStorage?.setItem(RUN_WORKING_SET_KEY, JSON.stringify(tabs));
-    } catch {
-      // Storage can be unavailable in privacy modes; the in-memory working set still works.
+    } catch (cause) {
+      const detail = cause instanceof Error ? cause.message : String(cause);
+      setPersistenceError(`运行标签仅保存在当前页面：${detail}`);
     }
   }, [tabs]);
 
@@ -70,5 +76,5 @@ export function useRunWorkingSet() {
     [tabs],
   );
 
-  return { tabs, openRun, closeRun };
+  return { tabs, openRun, closeRun, persistenceError, clearPersistenceError: () => setPersistenceError(null) };
 }

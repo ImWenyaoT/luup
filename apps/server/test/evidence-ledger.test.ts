@@ -31,3 +31,24 @@ test("a persistence failure cannot leave ghost evidence in the in-memory ledger"
   assert.deepEqual(ledger.values(), [persisted]);
   assert.deepEqual(ledger.scopedRecords(), [persisted]);
 });
+
+test("adapter execution diagnostics survive the ledger commit", () => {
+  const persisted: unknown[] = [];
+  const ledger = new EvidenceLedger({ onRecord: (record) => persisted.push(record) });
+  const record = ledger.record({
+    ...input,
+    status: "source_unavailable",
+    execution: {
+      request_url: "https://export.arxiv.org/api/query",
+      exception_type: "TimeoutError",
+      message: "request timed out",
+    },
+  });
+
+  assert.deepEqual(record.execution, {
+    request_url: "https://export.arxiv.org/api/query",
+    exception_type: "TimeoutError",
+    message: "request timed out",
+  });
+  assert.deepEqual(persisted, [record]);
+});

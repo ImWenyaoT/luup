@@ -1,6 +1,4 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { extname, join, normalize, resolve } from "node:path";
 import { serve, type ServerType } from "@hono/node-server";
 import { Elysia } from "elysia";
 
@@ -17,20 +15,6 @@ import { FeedbackSubmissionError, MAX_QUESTION_LENGTH, normalizeQuestion, Sqlite
 const TERMINAL = new Set(["completed", "review_rejected", "failed"]);
 const POLL_MS = 100;
 const KEEP_ALIVE_TICKS = 100;
-
-const MIME: Record<string, string> = {
-  ".html": "text/html; charset=utf-8",
-  ".js": "text/javascript; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-  ".json": "application/json; charset=utf-8",
-  ".svg": "image/svg+xml",
-  ".woff2": "font/woff2",
-  ".png": "image/png",
-  ".ico": "image/x-icon",
-  ".txt": "text/plain; charset=utf-8",
-  ".xml": "application/xml; charset=utf-8",
-  ".md": "text/markdown; charset=utf-8",
-};
 
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
 
@@ -64,13 +48,13 @@ export function timingSafeTokenCompare(provided: string, expected: string): bool
  * - x-frame-options: DENY（防御 Clickjacking 点击劫持，禁止第三方 frame 嵌入）
  * - referrer-policy: strict-origin-when-cross-origin（防止向外部文献服务如 arXiv/Crossref 泄漏内部路径与查询）
  */
-export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
+const SECURITY_HEADERS: Readonly<Record<string, string>> = {
   "x-content-type-options": "nosniff",
   "x-frame-options": "DENY",
   "referrer-policy": "strict-origin-when-cross-origin",
 };
 
-export function applySecurityHeaders(response: Response): Response {
+function applySecurityHeaders(response: Response): Response {
   for (const [header, value] of Object.entries(SECURITY_HEADERS)) {
     if (!response.headers.has(header)) {
       response.headers.set(header, value);
@@ -83,7 +67,6 @@ export type ServerOptions = {
   store: SqliteStore;
   harness: Harness;
   runtime?: "live" | "deterministic";
-  webDist?: string;
   reportError?: (message: string, error: unknown) => void;
   hostname?: string;
   port?: number;
@@ -100,7 +83,7 @@ export type LuupServer = {
 };
 
 /** 基于 Elysia 的应用工厂，负责路由声明与类型系统推导。 */
-export function createElysiaApp(options: ServerOptions) {
+function createElysiaApp(options: ServerOptions) {
   const { store, harness } = options;
   const mode = options.runtime ?? runtimeMode();
   const reportError = options.reportError ?? ((message, error) => console.error(message, error));
@@ -230,20 +213,6 @@ export function createElysiaApp(options: ServerOptions) {
         "cache-control": "no-cache, no-transform",
         connection: "keep-alive",
       },
-    });
-  }
-
-  function serveStatic(pathname: string): Response | null {
-    const dist = options.webDist;
-    if (!dist) return null;
-    const root = resolve(dist);
-    const candidate = resolve(join(root, normalize(pathname)));
-    const inside = candidate === root || candidate.startsWith(root + (process.platform === "win32" ? "\\" : "/"));
-    const target =
-      inside && existsSync(candidate) && statSync(candidate).isFile() ? candidate : join(root, "index.html");
-    if (!existsSync(target)) return null;
-    return new Response(readFileSync(target), {
-      headers: { "content-type": MIME[extname(target)] ?? "application/octet-stream" },
     });
   }
 
@@ -648,20 +617,16 @@ export function createElysiaApp(options: ServerOptions) {
       }
       return json(200, projectArtifact(artifact));
     })
-    // 静态文件与 SPA / 404 兜底
+    // API 进程不托管 Web；Next.js 作为独立应用通过 rewrite 代理 /api。
     .get("*", ({ request }) => {
       const url = new URL(request.url);
       const path = url.pathname;
-      const staticResponse = path !== "/api" && !path.startsWith("/api/") ? serveStatic(path) : null;
-      return (
-        staticResponse ??
-        errorProblem(request, 404, {
-          code: "not_found",
-          title: "Not Found",
-          detail: "Not Found",
-          instance: path,
-        })
-      );
+      return errorProblem(request, 404, {
+        code: "not_found",
+        title: "Not Found",
+        detail: "Not Found",
+        instance: path,
+      });
     });
 
   return app;
@@ -749,7 +714,6 @@ export function createDefaultApp(options: Pick<ServerOptions, "hostname" | "port
     store,
     harness,
     runtime: mode,
-    webDist: process.env.LUUP_WEB_DIST || "apps/web/dist/client",
     hostname: options.hostname,
     port: options.port,
   });

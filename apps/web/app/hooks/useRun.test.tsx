@@ -57,6 +57,7 @@ describe("useRun", () => {
 
     await waitFor(() => expect(result.current.state.status).toBe("ready"));
     expect(result.current.state).toMatchObject({ status: "ready", snapshot });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   test("createAndNavigate 创建 run 并返回 id", async () => {
@@ -112,6 +113,7 @@ describe("useRun", () => {
     });
 
     await waitFor(() => expect(result.current.state.status).toBe("error"));
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
     if (result.current.state.status === "error") {
       expect(result.current.state.error.status).toBe(404);
     }

@@ -87,7 +87,7 @@ export type BatchRuntimePreflight = {
 /** 正式 live batch 的运行时门；dry-run 是规划动作，不受 Node 版本限制。 */
 export function validateBatchRuntime({ nodeVersion, dryRun }: BatchRuntimePreflight): string | null {
   if (dryRun) return null;
-  const requirement = "Node.js >= 24.11.0";
+  const requirement = "Node.js >= 24.20.0";
   const match = /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.exec(nodeVersion);
   const version = match?.slice(1).map(Number);
   if (version === undefined || version.some((part) => !Number.isSafeInteger(part))) {
@@ -98,7 +98,7 @@ export function validateBatchRuntime({ nodeVersion, dryRun }: BatchRuntimePrefli
     const firstDifference = parsed.findIndex((part, index) => part !== minimum[index]);
     return firstDifference === -1 || parsed[firstDifference]! > minimum[firstDifference]!;
   };
-  if (meetsMinimum([24, 11, 0])) return null;
+  if (meetsMinimum([24, 20, 0])) return null;
   return `正式 live batch 不支持 Node.js ${nodeVersion}；${requirement}。请按 packageManager 声明的范围运行。`;
 }
 

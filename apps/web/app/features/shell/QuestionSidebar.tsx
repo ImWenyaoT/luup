@@ -4,7 +4,7 @@ import { useScience125 } from "../../hooks/useScience125";
 import type { Science125Question } from "../../lib/types/wire";
 import { Button, colors, Input, mono } from "../../styles";
 
-export const DOMAIN_TRANSLATIONS: Record<string, string> = {
+const DOMAIN_TRANSLATIONS: Record<string, string> = {
   "Mathematical Sciences": "数学科学",
   Chemistry: "化学",
   "Medicine & Health": "医学与健康",

@@ -77,9 +77,6 @@ export type Snapshot = {
   recent_events: RunEvent[];
 };
 
-/** @deprecated 使用 Snapshot */
-export type RunSnapshot = Snapshot;
-
 type Grounded = { name: string; evidence_id: string };
 
 type ResearchFraming = {
@@ -194,9 +191,6 @@ export type ConfigStatus = {
   model_id: string;
   base_url: string;
 };
-
-/** @deprecated 使用 ConfigStatus */
-export type ConfigState = ConfigStatus;
 
 export type Science125Question = {
   id: number;

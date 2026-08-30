@@ -35,6 +35,7 @@ export function createCrossrefSearchTool(
         query: result.query,
         status: result.status,
         resultSummary: result.resultSummary,
+        execution: result.execution,
         citations: result.records.map((item) => ({
           source_type: "web" as const,
           title: item.title,

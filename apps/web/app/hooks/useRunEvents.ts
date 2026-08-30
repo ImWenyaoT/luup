@@ -23,9 +23,14 @@ export function useRunEvents(
       return;
     }
 
-    setConnected(true);
-    const subscription = subscribeRunEvents(runId, snapshot.version, () => {
-      onTickRef.current();
+    setConnected(false);
+    const subscription = subscribeRunEvents(runId, snapshot.version, () => onTickRef.current(), {
+      onOpen: () => setConnected(true),
+      onError: () => {
+        setConnected(false);
+        // SSE 只负责唤醒；协议漂移或断流时立即回源 snapshot，不能伪装成“在线但无更新”。
+        onTickRef.current();
+      },
     });
 
     return () => {

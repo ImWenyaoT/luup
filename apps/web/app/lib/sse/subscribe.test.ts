@@ -27,7 +27,7 @@ describe("parseSseMessage", () => {
     expect(parseSseMessage(JSON.stringify(payload), "run.created")).toEqual(payload);
   });
 
-  test("未知 event kind 返回 null", () => {
+  test("未知 event kind 显式报协议错误", () => {
     const payload = {
       id: 1,
       version: 2,
@@ -35,11 +35,11 @@ describe("parseSseMessage", () => {
       payload: {},
       created_at: "2026-01-01T00:00:00Z",
     };
-    expect(parseSseMessage(JSON.stringify(payload), "sdk.output_rejected")).toBeNull();
+    expect(() => parseSseMessage(JSON.stringify(payload), "sdk.output_rejected")).toThrow(/未知 SSE event kind/);
   });
 
-  test("非法 JSON 返回 null", () => {
-    expect(parseSseMessage("{not-json")).toBeNull();
+  test("非法 JSON 显式报协议错误", () => {
+    expect(() => parseSseMessage("{not-json")).toThrow(/不是有效 JSON/);
   });
 });
 
@@ -59,7 +59,9 @@ describe("subscribeRunEvents", () => {
 
     expect(subscription.runId).toBe("run-1");
     expect(subscription.afterVersion).toBe(3);
-    expect(listeners.size).toBe(13);
+    expect(listeners.size).toBe(15);
+    expect(listeners.has("open")).toBe(true);
+    expect(listeners.has("error")).toBe(true);
 
     const payload = JSON.stringify({
       id: 9,
@@ -76,7 +78,7 @@ describe("subscribeRunEvents", () => {
     expect(source.close).toHaveBeenCalledTimes(1);
   });
 
-  test("非法 payload 不触发 onTick", () => {
+  test("非法 payload 不触发 onTick，并上报协议错误", () => {
     const listeners = new Map<string, EventListener>();
     const source = {
       addEventListener(type: string, listener: EventListener) {
@@ -85,11 +87,14 @@ describe("subscribeRunEvents", () => {
       close: vi.fn(),
     };
     const onTick = vi.fn();
+    const onError = vi.fn();
     subscribeRunEvents("run-1", 0, onTick, {
       eventSourceFactory: () => source as unknown as EventSource,
+      onError,
     });
 
     listeners.get("run.created")?.(new MessageEvent("run.created", { data: "not-json" }) as unknown as Event);
     expect(onTick).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ name: "SseProtocolError" }));
   });
 });
