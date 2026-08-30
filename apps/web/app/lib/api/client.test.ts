@@ -45,7 +45,7 @@ describe("parseJson", () => {
     });
   });
 
-  test("非 2xx 且响应体不是 JSON：回落到 statusText", async () => {
+  test("非 2xx 且响应体不是 JSON：保留协议错误及其 cause", async () => {
     const response = {
       ok: false,
       status: 502,
@@ -56,7 +56,8 @@ describe("parseJson", () => {
     } as unknown as Response;
     const error = await parseJson(response).catch((cause: unknown) => cause);
     expect(error).toBeInstanceOf(ApiError);
-    expect((error as ApiError).message).toBe("HTTP-502");
+    expect((error as ApiError).message).toBe("HTTP-502：错误响应不是有效 JSON。");
+    expect((error as ApiError).cause).toBeInstanceOf(SyntaxError);
   });
 
   test("非 2xx 的 JSON 里没有 detail：回落到 HTTP <status>", async () => {

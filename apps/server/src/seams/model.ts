@@ -51,17 +51,23 @@ function effectiveBaseUrl(): string {
 export function qwenModelProvider(): OpenAIProvider {
   const apiKey = override.apiKey || process.env.QWEN_API_KEY;
   if (!apiKey) throw new StageError("missing_credential", "missing QWEN_API_KEY");
-  return new OpenAIProvider({ apiKey, baseURL: effectiveBaseUrl() });
+  return new OpenAIProvider({
+    apiKey,
+    baseURL: effectiveBaseUrl(),
+    // 百炼已原生支持 OpenAI-compatible Responses。显式钉住，避免 SDK 全局默认变化
+    // 把 Qwen 静默切回 Chat Completions。
+    useResponses: true,
+  });
 }
 
-/** Demo 先让五个角色共用一个已验证模型；需要对比时用环境变量覆盖即可。
- *
- * 变量名是 `LUUP_MODEL_ID`：仓根 `.env.example` 声明的键，也是 Python 期就在用的那个
- * （ADR-0004 退役该栈，但没人的 `.env` 要跟着改）。
- */
+/** Demo 先让五个角色共用一个已验证模型；需要对比时用 `LUUP_MODEL_ID` 环境变量覆盖。 */
 export function modelForRole(): string {
-  return override.modelId || process.env.LUUP_MODEL_ID || "qwen3.7-plus";
+  return override.modelId || process.env.LUUP_MODEL_ID || "qwen3.8-max";
 }
 
-/** 结构化输出场景一律关思考：百炼在 structured output 上开思考会放大 token 且不稳。 */
-export const sharedModelSettings = { providerData: { enable_thinking: false } } as const;
+/** 结构化输出场景一律关思考。
+ *
+ * Responses 用 OpenAI 标准 `reasoning.effort`；百炼已声明旧的非标准
+ * `enable_thinking` 后续不再支持。Agents SDK 负责把该设置映射到 Responses 请求。
+ */
+export const sharedModelSettings = { reasoning: { effort: "none" } } as const;

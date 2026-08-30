@@ -607,7 +607,7 @@ test("live CLI rejects absent credentials before creating its SQLite database", 
     process.stdout.write = originalWrite;
   });
 
-  const code = await main(["--ids", "1", "--db", dbPath], { nodeVersion: "v24.11.0" });
+  const code = await main(["--ids", "1", "--db", dbPath], { nodeVersion: "v24.20.0" });
   assert.equal(code, 2);
   assert.match(output, /缺少.*QWEN_API_KEY/);
   assert.equal(existsSync(dbPath), false);
@@ -643,7 +643,7 @@ test("formal Science-125 CLI requires an explicit confirmation before opening SQ
     process.stdout.write = originalWrite;
   });
 
-  const code = await main(["--ids", "1-125", "--db", dbPath], { nodeVersion: "v24.11.0" });
+  const code = await main(["--ids", "1-125", "--db", dbPath], { nodeVersion: "v24.20.0" });
 
   assert.equal(code, 2);
   assert.match(output, /--confirm-science125/);
@@ -665,7 +665,7 @@ test("paid formal phases require an exact release commit before credentials or S
   });
 
   const code = await main(["--manifest-id", "formal-resume", "--confirm-science125", "--db", dbPath], {
-    nodeVersion: "v24.11.0",
+    nodeVersion: "v24.20.0",
   });
   assert.equal(code, 2);
   assert.match(output, /--release-commit/);
@@ -688,14 +688,14 @@ test("memory-off is fail-closed before SQLite for confirmation, ids, and source 
   });
   const missingConfirmationDb = join(dir, "runtime", "missing-confirmation.db");
   const missingConfirmationCode = await main(["--ids", "1", "--no-memory", "--db", missingConfirmationDb], {
-    nodeVersion: "v24.11.0",
+    nodeVersion: "v24.20.0",
   });
   assert.equal(missingConfirmationCode, 2);
   assert.match(output, /--confirm-memory-ablation/);
   assert.equal(existsSync(missingConfirmationDb), false);
 
   const code = await main(["--ids", "1", "--no-memory", "--confirm-memory-ablation", "--db", dbPath], {
-    nodeVersion: "v24.11.0",
+    nodeVersion: "v24.20.0",
   });
   assert.equal(code, 2);
   assert.match(output, /精确匹配.*30 题/);
@@ -703,13 +703,13 @@ test("memory-off is fail-closed before SQLite for confirmation, ids, and source 
 });
 
 test("formal live batch requires the pinned Node runtime, while dry-run is portable", () => {
-  assert.equal(validateBatchRuntime({ nodeVersion: "v24.11.0", dryRun: false }), null);
-  assert.match(validateBatchRuntime({ nodeVersion: "v24.10.0", dryRun: false }) ?? "", /24\.10\.0/);
-  assert.match(validateBatchRuntime({ nodeVersion: "v24.10.0", dryRun: false }) ?? "", /Node\.js >= 24\.11\.0/);
+  assert.equal(validateBatchRuntime({ nodeVersion: "v24.20.0", dryRun: false }), null);
+  assert.match(validateBatchRuntime({ nodeVersion: "v24.19.0", dryRun: false }) ?? "", /24\.19\.0/);
+  assert.match(validateBatchRuntime({ nodeVersion: "v24.19.0", dryRun: false }) ?? "", /Node\.js >= 24\.20\.0/);
   assert.match(validateBatchRuntime({ nodeVersion: "v23.4.0", dryRun: false }) ?? "", /23\.4\.0/);
   assert.equal(validateBatchRuntime({ nodeVersion: "v26.0.0", dryRun: false }), null);
   assert.match(validateBatchRuntime({ nodeVersion: "v20.10.0", dryRun: false }) ?? "", /20\.10\.0/);
-  assert.match(validateBatchRuntime({ nodeVersion: "v20.10.0", dryRun: false }) ?? "", /Node\.js >= 24\.11\.0/);
+  assert.match(validateBatchRuntime({ nodeVersion: "v20.10.0", dryRun: false }) ?? "", /Node\.js >= 24\.20\.0/);
   assert.match(validateBatchRuntime({ nodeVersion: "definitely-not-semver", dryRun: false }) ?? "", /版本格式无效/);
   assert.equal(validateBatchRuntime({ nodeVersion: "v20.10.0", dryRun: true }), null);
 });
@@ -731,7 +731,7 @@ test("live batch rejects an unsupported Node runtime before opening SQLite", asy
   const code = await main(["--ids", "1", "--db", dbPath], { nodeVersion: "v20.9.0" });
   assert.equal(code, 2);
   assert.match(output, /20\.9\.0/);
-  assert.match(output, /Node\.js >= 24\.11\.0/);
+  assert.match(output, /Node\.js >= 24\.20\.0/);
   assert.equal(existsSync(dbPath), false);
 });
 
@@ -762,7 +762,7 @@ test("formal preflight prints an admitted plan and never creates SQLite", async 
       "--db",
       dbPath,
     ],
-    { nodeVersion: "v24.11.0", modelCredential: true },
+    { nodeVersion: "v24.20.0", modelCredential: true },
   );
 
   assert.equal(code, 0);
@@ -812,7 +812,7 @@ test("formal preflight admits only the preregistered Phase B ids without touchin
       "--db",
       dbPath,
     ],
-    { nodeVersion: "v24.11.0", modelCredential: true },
+    { nodeVersion: "v24.20.0", modelCredential: true },
   );
 
   assert.equal(code, 0);
@@ -849,7 +849,7 @@ test("formal preflight rejects missing credentials, dirty source, and existing D
         "--db",
         missingCredentialDb,
       ],
-      { nodeVersion: "v24.11.0", modelCredential: false },
+      { nodeVersion: "v24.20.0", modelCredential: false },
     ),
     2,
   );
@@ -873,7 +873,7 @@ test("formal preflight rejects missing credentials, dirty source, and existing D
         "--db",
         dirtyDb,
       ],
-      { nodeVersion: "v24.11.0", modelCredential: true },
+      { nodeVersion: "v24.20.0", modelCredential: true },
     ),
     2,
   );
@@ -899,7 +899,7 @@ test("formal preflight rejects missing credentials, dirty source, and existing D
         "--db",
         existingDb,
       ],
-      { nodeVersion: "v24.11.0", modelCredential: true },
+      { nodeVersion: "v24.20.0", modelCredential: true },
     ),
     2,
   );
@@ -909,8 +909,8 @@ test("formal preflight rejects missing credentials, dirty source, and existing D
 });
 
 test("preflight rejects manifest resume and dry-run instead of pretending to inspect durable facts", async () => {
-  assert.equal(await main(["--manifest-id", "resume", "--preflight"], { nodeVersion: "v24.11.0" }), 2);
-  assert.equal(await main(["--ids", "1-125", "--preflight", "--dry-run"], { nodeVersion: "v24.11.0" }), 2);
+  assert.equal(await main(["--manifest-id", "resume", "--preflight"], { nodeVersion: "v24.20.0" }), 2);
+  assert.equal(await main(["--ids", "1-125", "--preflight", "--dry-run"], { nodeVersion: "v24.20.0" }), 2);
 });
 
 test("--dry-run plans without creating a single run", async () => {
@@ -938,7 +938,7 @@ test("--dry-run with ids leaves no persistent manifest behind", async () => {
   const dir = workspace(t);
   const path = join(dir, "runtime", "runs.db");
 
-  assert.equal(await main(["--ids", "1", "--dry-run", "--db", path], { nodeVersion: "v24.11.0" }), 0);
+  assert.equal(await main(["--ids", "1", "--dry-run", "--db", path], { nodeVersion: "v24.20.0" }), 0);
   assert.equal(existsSync(path), false);
 });
 

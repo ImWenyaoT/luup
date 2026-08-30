@@ -4,7 +4,7 @@
 > 已随 Python 栈退役，只存于 git 历史。仍成立的裁决（存储边界、单写者、评估只读、公开状态收窄）
 > 逐条保留在下面，换了落点但没换主张。
 >
-> 2026-08-28 运行时以 [ADR-0009](../adr/0009-node-pnpm-runtime.md) 为准：Node.js >=24.11.0，
+> 2026-08-28 运行时以 [ADR-0009](../adr/0009-node-pnpm-runtime.md) 为准：Node.js >=24.20.0，
 > 包管理器为 pnpm；
 > ADR-0007 的 Bun 栈只保留为历史决策。
 
@@ -14,10 +14,10 @@ Luup 是一个确定性 Harness 编排五个 LLM 角色的科研 Agent：固定�
 最后由不问模型的 verifier 决定能否交付。
 
 ```text
-apps/web (React Router 8 SPA)
+apps/web (Next.js 16 App Router)
         ↓ HTTP + SSE
 apps/server/src/server.ts ── apps/server/src/harness.ts ── researcher
-   （同进程）          │            ├─ hypothesis-generation
+   （独立 API）        │            ├─ hypothesis-generation
                       │            ├─ evidence-review
                       │            ├─ research-plan
                       │            └─ reviewer
@@ -57,8 +57,8 @@ store 只记账，不参与决定顺序。
 
 ### HTTP adapter
 
-`apps/server/src/server.ts` 基于 Elysia / Node HTTP，同时做四件事：输入防护、两槽并发闸、
-只读投影、静态产物托管。它不拥有第二套业务状态——SQLite 才是事实源。
+`apps/server/src/server.ts` 基于 Elysia / Node HTTP，负责输入防护、两槽并发闸与只读投影。
+它不托管 Web，也不拥有第二套业务状态——SQLite 才是事实源。
 
 - `POST /api/runs` 只建 run 并返回 202，执行在后台队列推进；
 - `GET /api/runs/:id/events` 是 SSE，游标优先读 `Last-Event-ID`；
@@ -70,8 +70,8 @@ store 只记账，不参与决定顺序。
 
 `apps/web/` 只通过 HTTP 读 run 快照、事件与 Artifact，不直接推断存储状态。
 wire type 手写在 `apps/web/app/lib/types/`，**不从服务端模块导入类型**——这条边界是故意的，
-它让投影的收窄在两侧都是显式的。生产形态下 `apps/web/dist/client`（`LUUP_WEB_DIST` 默认）
-由 `apps/server/src/server.ts` 同端口托管，只有一个进程。
+它让投影的收窄在两侧都是显式的。`apps/web/next.config.ts` 用 `LUUP_API_ORIGIN` 把浏览器同源
+`/api` rewrite 到独立 API；Next 与 API 可分别部署，SQLite 仍只存在于持久化 API origin。
 
 ## Agent 流程
 
@@ -96,7 +96,7 @@ wire type 手写在 `apps/web/app/lib/types/`，**不从服务端模块导入类
 - 历史批证据（`runs-ts/` 的 pilot/v2/v3 部分批与 Python 期 `runs/`，ADR-0004）：已迁至
   git tag `archive/phase-a-evidence-20260816`，不在工作树（协议修订 #6，2026-08-16）；
   运营级聚合先行转录进 `memory/lessons.md`。正式批入库时重建 `runs-ts/`。
-- `outputs/`、`dist/`、`node_modules/`、覆盖率报告：可重建派生物，不提交。
+- `outputs/`、`.next/`、`node_modules/`、覆盖率报告：可重建派生物，不提交。
 
 ## 运行与并发
 

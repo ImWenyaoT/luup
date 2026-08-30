@@ -1,7 +1,7 @@
 # luup Agent App
 
 Luup 是 TypeScript 全栈：`@openai/agents` 驱动 Qwen，走百炼的 OpenAI-compatible 端点。
-运行时要求 Node.js >=24.11.0，包管理器使用 pnpm，单体工作区编排使用 Turborepo。
+运行时要求 Node.js >=24.20.0，包管理器使用 pnpm，单体工作区编排使用 Turborepo。
 修改模型或 Agent 前先查 <https://openai.github.io/openai-agents-js/>，不得回退到默认 OpenAI 客户端。
 
 Python 栈已于 ADR-0004 退役，只存于 git 历史；源码注释里写着「Python 期」的路径都是历史坐标。
@@ -13,7 +13,7 @@ Python 栈已于 ADR-0004 退役，只存于 git 历史；源码注释里写着�
 ```text
 apps/server/ 后端 `@luup/server`：src/（harness 本体 + 领域 + 工具 + 评估，按子系统分目录）
              + test/（vitest）+ tsconfig
-apps/web/    React Router 8 SPA（`@luup/frontend`，`ssr: false`），构建产物 `dist/client` 由 apps/server/src/server.ts 同端口托管（`LUUP_WEB_DIST`）
+apps/web/    Next.js 16 App Router（`@luup/frontend`），独立 Web 应用；`next.config.ts` 将同源 `/api` rewrite 到 `apps/server`
 data/        science125.json，冻结题库，只读
 docs/        产品契约、架构、判据、ADR、赛题与报告材料
 memory/      跨 run 的战役记忆，文件事实源，append-only
@@ -50,7 +50,7 @@ pnpm run lint          # oxlint（含 typeAware 档）
 pnpm run format:check  # oxfmt 格式检查；pnpm run format 原地修复
 pnpm run test          # vitest 全量测试
 pnpm run test:coverage # 覆盖率地板 80%，只许涨不许降
-pnpm run build         # react-router build → apps/web/dist/client
+pnpm run build         # Next.js production build → apps/web/.next
 pnpm run test:e2e      # Playwright；确定性 runtime，零 LLM 调用
 ```
 

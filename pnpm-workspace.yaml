@@ -1,2 +1,6 @@
 packages:
   - "apps/*"
+
+allowBuilds:
+  # esbuild 已提供平台二进制包；不运行其兜底构建脚本，并让其他依赖脚本继续 fail-closed。
+  esbuild: false

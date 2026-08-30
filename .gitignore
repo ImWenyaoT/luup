@@ -1,11 +1,9 @@
 # 环境与平台
 .env*
-!.env.example
 .DS_Store
 
-# 会话工具状态：私有配置不入库；共享工作流入库。
-.claude/*
-!.claude/skills
+# 会话工具状态：私有配置不入库。
+.claude/
 .codex/
 .jules/
 
@@ -13,10 +11,11 @@
 node_modules/
 .pnpm-store/
 .turbo/
-.build/
-dist/
+.next/
+out/
 coverage/
 *.tsbuildinfo
+next-env.d.ts
 
 # 运行期瞬态。边界纪律（architecture.md「存储裁决」）：
 # `memory/`、`data/` 是 source of truth，永不 ignore；只有「删掉重算即可」的瞬态才 ignore。

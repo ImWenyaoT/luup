@@ -42,6 +42,7 @@ function internalSnapshot(): Record<string, unknown> {
         created_at: "2026-08-06T00:00:00.000Z",
         output: {
           result_summary: "arXiv returned 1 citable record(s)",
+          execution: { exception_type: "TimeoutError", message: "internal diagnostic" },
           documents: [{ path: "/data/doc.pdf", sha256: "abc" }],
           citations: [
             {

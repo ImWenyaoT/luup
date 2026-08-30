@@ -18,7 +18,7 @@
 
 ```text
 apps/server/  后端 @luup/server：harness 本体、领域、工具、评估 + 用例
-apps/web/     React Router 8 SPA @luup/frontend，产物由同一个 Node 进程托管
+apps/web/     Next.js 16 App Router @luup/frontend，独立消费 API/SSE
 data/         science125.json，冻结题库
 docs/         产品契约、架构、验收标准、ADR、赛题与报告材料
 memory/       跨 run 的战役记忆（事实数据）
@@ -28,41 +28,37 @@ memory/       跨 run 的战役记忆（事实数据）
 
 ## 快速开始
 
-需要 Node.js >=24.11.0（Node 24 LTS 基线）与 pnpm 10；单体工作区由 Turborepo 编排。
+需要 Node.js >=24.20.0（Node 24 LTS 基线）与 pnpm 11.24；单体工作区由 Turborepo 编排。
 
 ```sh
 pnpm install --frozen-lockfile
 ```
 
-凭据二选一。写进仓根 `.env`：
-
-```sh
-cp .env.example .env   # 填 QWEN_API_KEY / QWEN_BASE_URL
-```
-
-或直接 export 系统环境变量——同名时**系统环境变量优先**，`.env` 只是兜底：
+live 模式通过部署环境或 secret manager 注入变量；仓库不隐式加载 `.env`：
 
 ```sh
 export QWEN_API_KEY='your-key'
 export QWEN_BASE_URL='your-openai-compatible-base-url'
+export LUUP_API_TOKEN='use-a-long-random-value'
 ```
 
 `LUUP_RUNTIME=deterministic` 用内置替身跑完整条流水线，不发一次模型请求，也不需要凭据。
 
 ### 起服务
 
-单进程交付：一个 Node 进程同端口给出 API 与页面，静态产物从 `apps/web/dist/client` 读（`LUUP_WEB_DIST` 可覆盖，默认同路径）。
-**先 build 再起**——`dist/client` 不存在时 `/` 是 404（`/api` 不受影响）。
+Web 与 API 是两个 workspace 应用：Next.js 对浏览器保持同源 `/api`，通过 `LUUP_API_ORIGIN`
+rewrite 到 API。`next dev` 未设置时默认 `http://127.0.0.1:8000`；生产 build/start 必须显式设置。
 
 ```sh
-pnpm run build     # react-router build → apps/web/dist/client
-pnpm run start     # http://127.0.0.1:8000
+export LUUP_API_ORIGIN='http://127.0.0.1:8000'
+pnpm run build     # Next.js → apps/web/.next
+pnpm run start     # Web :3000 + API :8000
 ```
 
-开发用一条命令，前后端一起起（React Router dev + Vite HMR，`/api` 代理到 8000）：
+开发用一条命令，前后端一起起（Next.js Turbopack + API，`/api` rewrite 到 8000）：
 
 ```sh
-pnpm run dev       # 前端 http://127.0.0.1:5173 + API :8000（确定性 runtime，不花钱）
+pnpm run dev       # 前端 http://127.0.0.1:3000 + API :8000（确定性 runtime，不花钱）
 ```
 
 也可分开起：`pnpm run dev:api`（仅后端）、`pnpm run dev:web`（仅前端）。
@@ -97,7 +93,7 @@ curl -sS "$BASE/api/runs/<run_id>"
 curl -N "$BASE/api/runs/<run_id>/events?after=0"
 ```
 
-live 模式必须设置 `.env` 中的 `LUUP_API_TOKEN`，且 `POST /api/runs` 与 `PUT /api/config` 必须带；
+live 模式必须设置环境变量 `LUUP_API_TOKEN`，且 `POST /api/runs` 与 `PUT /api/config` 必须带；
 deterministic 本地开发可不设置：
 
 ```sh
@@ -145,7 +141,7 @@ pnpm run db:restore -- \
 
 ### 跑题
 
-正式 live 批跑要求 Node.js >=24.11.0。启动前会校验版本，`--dry-run` 只做规划，不受版本门限制。
+正式 live 批跑要求 Node.js >=24.20.0。启动前会校验版本，`--dry-run` 只做规划，不受版本门限制。
 
 ```sh
 pnpm run canary                              # 单题冒烟，走 live 模型并持久化证据
@@ -206,7 +202,7 @@ Canary 默认写 `outputs/runtime/canary.db`，并在 stdout 返回 `database` �
 `LUUP_DATABASE` 改写位置。除非只做临时诊断，不要把 live canary 指到 `:memory:`。
 每次 live 批跑都会在执行前输出 durable `manifestId`；纯 `--ids ... --dry-run` 使用内存规划且不创建
 SQLite 或 manifest。使用 `--manifest-id` 时可省略 `--ids`，若同时提供则必须与原 manifest 的题集完全一致。
-`--preflight` 复用正式付费启动门，额外检查 Node.js >=24.11.0、题库、确认参数、Qwen 凭据、clean release commit
+`--preflight` 复用正式付费启动门，额外检查 Node.js >=24.20.0、题库、确认参数、Qwen 凭据、clean release commit
 以及 Phase A 的 fresh DB/sidecar（Phase B 则核对预注册 30 题），输出结构化 admitted plan 后退出；它不会打开
 SQLite、创建 manifest、构造 executor 或调用模型。它不能与 `--dry-run` 或 `--manifest-id` 混用：resume 的
 source/arm/terminal 一致性必须开库核对，不能伪装成零副作用检查。

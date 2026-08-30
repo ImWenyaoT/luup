@@ -40,14 +40,3 @@ export const LibraryIcon = (props: SVGProps<SVGSVGElement>) => (
     <path d="M4 5.5v16M8 7h8M8 11h6" />
   </Icon>
 );
-export const InspectIcon = (props: SVGProps<SVGSVGElement>) => (
-  <Icon {...props}>
-    <path d="M4 4h16v16H4zM9 4v16" />
-    <path d="m13 9 2 2 4-4" />
-  </Icon>
-);
-export const ActivityIcon = (props: SVGProps<SVGSVGElement>) => (
-  <Icon {...props}>
-    <path d="M3 12h4l2.5-6 5 12 2.5-6h4" />
-  </Icon>
-);

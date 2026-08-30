@@ -78,4 +78,29 @@ describe("useRunWorkingSet", () => {
     act(() => result.current.openRun({ id: "  ", label: "不应加入" }));
     expect(result.current.tabs).toHaveLength(2);
   });
+
+  test("损坏的本地存储不会被静默当成空工作集", () => {
+    stored.set(RUN_WORKING_SET_KEY, "{not-json");
+    const { result } = renderHook(() => useRunWorkingSet());
+    expect(result.current.tabs).toEqual([]);
+    expect(result.current.persistenceError).toMatch(/无法恢复运行标签/);
+    act(() => result.current.clearPersistenceError());
+    expect(result.current.persistenceError).toBeNull();
+  });
+
+  test("持久化失败保留内存状态并暴露错误", async () => {
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: () => null,
+        setItem: () => {
+          throw new DOMException("quota exceeded", "QuotaExceededError");
+        },
+      },
+    });
+    const { result } = renderHook(() => useRunWorkingSet());
+    act(() => result.current.openRun({ id: "run-1", label: "问题一" }));
+    expect(result.current.tabs).toEqual([{ id: "run-1", label: "问题一" }]);
+    await waitFor(() => expect(result.current.persistenceError).toMatch(/仅保存在当前页面/));
+  });
 });

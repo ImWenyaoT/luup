@@ -615,6 +615,7 @@ export class SqliteStore {
           source_type: record.sourceType,
           result_summary: record.resultSummary,
           citations: record.citations,
+          ...(record.execution ? { execution: record.execution } : {}),
         }),
         record.status,
         nowIso(),

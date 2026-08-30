@@ -330,8 +330,9 @@ export function createQwenExecutor(
       if (spent) {
         try {
           onComplete?.({ runId, role, ...spent, outcome: "failed" });
-        } catch {
-          // 记账是旁路，不参与失败分类。
+        } catch (callbackError) {
+          // 记账是旁路，不改写原始失败分类，但失败本身必须进入 trace/stderr。
+          reportCallbackError("onComplete", callbackError);
         }
       }
       // 抛出去的是新造的分类异常，用量必须挂在**它**身上：上层看不见这里的原始 error。

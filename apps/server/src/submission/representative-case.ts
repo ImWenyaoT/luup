@@ -174,8 +174,6 @@ export function checkRepresentativeCaseStrict(
 
 export { renderRepresentativeCaseMarkdown } from "./representative-case-markdown.ts";
 export {
-  REPRESENTATIVE_CASE_FORMAT,
-  REPRESENTATIVE_CASE_VERSION,
   type RepresentativeCaseExport,
   type RepresentativeCasePublicArtifact,
   type RepresentativeCaseReadSource,

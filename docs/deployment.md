@@ -7,23 +7,23 @@
 当前代码的最小可信部署形态是：
 
 ```text
-浏览器 → Cloudflare DNS/Access/TLS → Cloudflare Tunnel → 127.0.0.1:8000
-                                                     ↓
-                                     Node.js >=24.11 · Elysia
-                                                     ↓
-                                  持久磁盘上的 SQLite + memory/ 文件
+浏览器 → Next.js/Vercel（同源 /api rewrite）→ Cloudflare Access/Tunnel → 127.0.0.1:8000
+                                                                    ↓
+                                                     Node.js >=24.20 · Elysia
+                                                                    ↓
+                                                 持久磁盘上的 SQLite + memory/
 ```
 
-Tunnel 只负责把 HTTP 流量送到已经运行的 Node origin；它不把本项目转换成 Worker，
-也不解决应用鉴权、费用控制或 SQLite 备份。当前服务同源托管 React Router SPA 静态产物（`apps/web/dist/client`，`LUUP_WEB_DIST` 可覆盖）和 `/api`，
-因此 Tunnel 方案不需要跨域配置，也不会引入第二套前端 API 地址。
+Tunnel 只负责把 API 流量送到已经运行的 Node origin；它不把本项目转换成 Worker，
+也不解决应用鉴权、费用控制或 SQLite 备份。Next.js 通过 `LUUP_API_ORIGIN` 做服务端 rewrite，
+浏览器仍使用同源 `/api`，无需把 API origin 或 CORS 暴露给客户端。
 
 ## 为什么不是直接部署成 Worker
 
 当前 `apps/server/src/server.ts` 和 `apps/server/src/store/store.ts` 明确使用：
 
 - Node HTTP / Elysia、`node:sqlite` 和进程内后台执行队列；
-- `node:fs` / `node:path` 读取前端构建产物（默认 `apps/web/dist/client`）；
+- `node:fs` 读写题库、战役记忆与运行产物；
 - 长生命周期 SQLite 单写者锁、WAL 文件和 `memory/` append-only 文件；
 - SSE 长连接与同一进程内的 Run 调度。
 
@@ -41,10 +41,10 @@ Cloudflare Pages 只托管静态前端也不是当前的即插即用路径：前
 
 ```sh
 cd /path/to/luup
-node --version                         # 必须 >= 24.11.0
+node --version                         # 必须 >= 24.20.0
 pnpm install --frozen-lockfile
+export LUUP_API_ORIGIN='http://127.0.0.1:8000' # CI/build 的显式本地代理目标
 pnpm run ci
-pnpm run build
 ```
 
 创建只存在于 origin 主机的环境变量或 secret manager 注入项。不要把 `.env`、Qwen key、
@@ -54,13 +54,16 @@ Cloudflare tunnel credentials 或 API token 提交进仓库：
 export LUUP_RUNTIME=live
 export QWEN_API_KEY='...'
 export QWEN_BASE_URL='https://dashscope.aliyuncs.com/compatible-mode/v1'
-export LUUP_MODEL_ID='qwen3.7-plus'
+export LUUP_MODEL_ID='qwen3.8-max'
 export LUUP_API_TOKEN='use-a-long-random-value'
 export LUUP_DATABASE='/var/lib/luup/typescript-runs.db'
 export LUUP_HOSTNAME='127.0.0.1'
 export PORT=8000
-pnpm run start
+pnpm run start:api
 ```
+
+Vercel Web 项目必须在 build 前把 `LUUP_API_ORIGIN` 设为可从 Vercel 访问的 HTTPS API origin；
+只有 `next dev` 会在未设置时使用本地 `http://127.0.0.1:8000`。
 
 `LUUP_API_TOKEN` 在 live 公网场景是必填的纵深防线；Cloudflare Access 不能替代应用层 token。
 `LUUP_MAX_QUEUED_RUNS` 只限制进程内同时执行/排队数量，不是用户级限流，也不是费用预算：

@@ -33,6 +33,8 @@ export type EvidenceRecord = {
   status: EvidenceStatus;
   resultSummary: string;
   citations: EvidenceCitation[];
+  /** 检索适配器的执行现场，只进内部审计存储，不进入 Artifact 或公开投影。 */
+  execution?: Readonly<Record<string, unknown>>;
 };
 
 export type EvidenceInput = Omit<EvidenceRecord, "evidenceId">;
