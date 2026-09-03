@@ -68,6 +68,8 @@ const fixtureLookup: ArxivLookup = async (ids) => {
 function fake(
   options: {
     gapOnce?: boolean;
+    /** 选中候选（evidence-gate）在最终 evidence-review 上的 verdict；默认 supports。 */
+    selectedVerdict?: "supports" | "contradicts" | "uncertain";
     rejectReviews?: number;
     invalidPlanOnce?: boolean;
     hidesASearch?: boolean;
@@ -312,6 +314,8 @@ function fake(
       evidenceReviews += 1;
       const gap = options.gapOnce === true && evidenceReviews === 1;
       const research = ofType("research");
+      // 补证首轮仍用 uncertain（触发 gaps）；最终轮才应用 selectedVerdict 门禁夹具。
+      const selectedVerdict = gap ? "uncertain" : (options.selectedVerdict ?? "supports");
       return {
         artifact_type: "evidence-review",
         hypothesis_artifact_id: ofType("hypothesis").at(-1)!.id,
@@ -320,11 +324,19 @@ function fake(
           {
             candidate_id: "evidence-gate",
             claim: "证据门降低无来源引用。",
-            verdict: gap ? "uncertain" : "supports",
-            rationale: "冻结证据支持开展验证。",
-            evidence_ids: options.inventsReviewEvidence
-              ? ["ev_never_existed"]
-              : research.flatMap((item) => item.content.citations.map((c: any) => c.evidence_id)),
+            verdict: selectedVerdict,
+            rationale:
+              selectedVerdict === "supports"
+                ? "冻结证据支持开展验证。"
+                : selectedVerdict === "contradicts"
+                  ? "冻结证据与该论断相悖。"
+                  : "冻结证据不足以判定该论断。",
+            evidence_ids:
+              selectedVerdict === "uncertain"
+                ? []
+                : options.inventsReviewEvidence
+                  ? ["ev_never_existed"]
+                  : research.flatMap((item) => item.content.citations.map((c: any) => c.evidence_id)),
           },
           ...(options.omitsCandidateAssessment
             ? []
@@ -339,7 +351,7 @@ function fake(
               ]),
         ],
         gaps: gap ? ["comparison source"] : [],
-        supported: !gap,
+        supported: selectedVerdict === "supports" && !gap,
       };
     }
 
@@ -826,6 +838,95 @@ test("Evidence Review must independently assess every Hypothesis candidate", asy
   h.store.close();
 });
 
+test("candidate gate fail-closes when selected verdict is contradicts (no research-plan)", async () => {
+  const h = harness({ selectedVerdict: "contradicts" });
+  const runId = h.harness.createRun("q");
+  await h.harness.execute(runId);
+
+  const snapshot = h.store.snapshot(runId)!;
+  assert.equal(snapshot.status, "failed");
+  assert.equal(snapshot.error_code, "invalid_output");
+  assert.equal(h.calls.filter((c) => c.role === "research-plan").length, 0);
+  assert.equal(h.calls.filter((c) => c.role === "reviewer").length, 0);
+  assert.deepEqual(
+    h.calls.map((c) => c.role),
+    ["researcher", "hypothesis-generation", "evidence-review"],
+  );
+  const gate = snapshot.recent_events.find((e: any) => e.kind === "evaluation.candidate_gate");
+  assert.ok(gate);
+  assert.equal(gate!.payload.selected_candidate_id, "evidence-gate");
+  assert.equal(gate!.payload.verdict, "contradicts");
+  assert.equal(gate!.payload.promoted, false);
+  h.store.close();
+});
+
+test("candidate gate fail-closes when selected verdict is uncertain", async () => {
+  const h = harness({ selectedVerdict: "uncertain" });
+  const runId = h.harness.createRun("q");
+  await h.harness.execute(runId);
+
+  const snapshot = h.store.snapshot(runId)!;
+  assert.equal(snapshot.status, "failed");
+  assert.equal(snapshot.error_code, "invalid_output");
+  assert.equal(h.calls.filter((c) => c.role === "research-plan").length, 0);
+  const gate = snapshot.recent_events.find((e: any) => e.kind === "evaluation.candidate_gate");
+  assert.ok(gate);
+  assert.equal(gate!.payload.verdict, "uncertain");
+  assert.equal(gate!.payload.promoted, false);
+  h.store.close();
+});
+
+test("candidate gate promotes only when selected verdict is supports", async () => {
+  const h = harness({ selectedVerdict: "supports" });
+  const runId = h.harness.createRun("q");
+  await h.harness.execute(runId);
+
+  const snapshot = h.store.snapshot(runId)!;
+  assert.equal(snapshot.status, "completed");
+  assert.ok(h.calls.some((c) => c.role === "research-plan"));
+  const gate = snapshot.recent_events.find((e: any) => e.kind === "evaluation.candidate_gate");
+  assert.ok(gate);
+  assert.equal(gate!.payload.selected_candidate_id, "evidence-gate");
+  assert.equal(gate!.payload.verdict, "supports");
+  assert.equal(gate!.payload.promoted, true);
+  h.store.close();
+});
+
+test("candidate gate runs after the gaps loop, not instead of it", async () => {
+  // 首轮 gaps 触发补证；第二轮 supports → 闸放行。证明闸在循环之后。
+  const h = harness({ gapOnce: true, selectedVerdict: "supports" });
+  const runId = h.harness.createRun("q");
+  await h.harness.execute(runId);
+
+  const snapshot = h.store.snapshot(runId)!;
+  assert.equal(snapshot.status, "completed");
+  assert.equal(h.calls.filter((c) => c.role === "evidence-review").length, 2);
+  assert.equal(h.calls.filter((c) => c.role === "research-plan").length, 1);
+  const gate = snapshot.recent_events.find((e: any) => e.kind === "evaluation.candidate_gate");
+  assert.ok(gate);
+  assert.equal(gate!.payload.verdict, "supports");
+  assert.equal(gate!.payload.promoted, true);
+  h.store.close();
+});
+
+test("candidate gate fail-closes after gaps loop when final verdict contradicts", async () => {
+  const h = harness({ gapOnce: true, selectedVerdict: "contradicts" });
+  const runId = h.harness.createRun("q");
+  await h.harness.execute(runId);
+
+  const snapshot = h.store.snapshot(runId)!;
+  assert.equal(snapshot.status, "failed");
+  assert.equal(snapshot.error_code, "invalid_output");
+  // 补证两轮都跑完，但绝不进 research-plan
+  assert.equal(h.calls.filter((c) => c.role === "evidence-review").length, 2);
+  assert.equal(h.calls.filter((c) => c.role === "research-plan").length, 0);
+  const gate = snapshot.recent_events.find((e: any) => e.kind === "evaluation.candidate_gate");
+  assert.ok(gate);
+  assert.equal(gate!.payload.verdict, "contradicts");
+  assert.equal(gate!.payload.promoted, false);
+  h.store.close();
+});
+
 /** 这个 run 里全部漂移记录，按事件顺序。 */
 function driftEvents(snapshot: any): any[] {
   return snapshot.recent_events.filter((event: any) => event.kind === "artifact.field_overwritten");
@@ -1026,34 +1127,31 @@ test("rejects a supplementary round that repeats every inherited search", async 
   h.store.close();
 });
 
-test("terminates review_rejected after the bounded revision", async () => {
-  const h = harness({ rejectReviews: 2 });
+test("reviewer reject terminates as review_rejected without replanning", async () => {
+  const h = harness({ rejectReviews: 1 });
   const runId = h.harness.createRun("q");
   await h.harness.execute(runId);
 
   const snapshot = h.store.snapshot(runId)!;
-  // review_rejected 现在是独立终态，不再挤在 failed 里 —— 它是合同内的正常终止
+  // review_rejected 是独立终态，不是 failed —— 合同内的正常终止
   assert.equal(snapshot.status, "review_rejected");
   assert.equal(snapshot.error_code, "review_rejected");
   assert.equal(snapshot.recent_events.at(-1)!.kind, "run.review_rejected");
-  assert.equal(h.calls.filter((c) => c.role === "research-plan").length, 2);
-  assert.equal(h.calls.filter((c) => c.role === "reviewer").length, 2);
+  assert.equal(h.calls.filter((c) => c.role === "research-plan").length, 1);
+  assert.equal(h.calls.filter((c) => c.role === "reviewer").length, 1);
   const feedback = snapshot.recent_events.filter((event: any) => event.kind === "feedback.received");
   assert.deepEqual(
     feedback.map((event: any) => [event.payload.source, event.payload.round, event.payload.action]),
-    [
-      ["model_reviewer", 1, "revise"],
-      ["model_reviewer", 2, "stop"],
-    ],
+    [["model_reviewer", 1, "stop"]],
   );
-  const revision = snapshot.recent_events.find((event: any) => event.kind === "revision.applied");
-  assert.equal(revision.payload.round, 2);
-  assert.equal(typeof revision.payload.changed_fields, "string");
-  assert.ok(revision.payload.changed_fields.length > 0);
+  assert.equal(
+    snapshot.recent_events.some((event: any) => event.kind === "revision.applied"),
+    false,
+  );
   h.store.close();
 });
 
-test("queued researcher feedback forces the existing bounded revision loop", async () => {
+test("queued researcher feedback terminates without rewriting the plan", async () => {
   let releaseReviewer!: () => void;
   const reviewerGate = new Promise<void>((resolve) => {
     releaseReviewer = resolve;
@@ -1068,35 +1166,35 @@ test("queued researcher feedback forces the existing bounded revision loop", asy
   releaseReviewer();
   const outcome = await execution;
 
-  assert.equal(outcome.status, "completed");
+  assert.equal(outcome.status, "review_rejected");
   const planCalls = h.calls.filter((call) => call.role === "research-plan");
-  assert.equal(planCalls.length, 2);
-  assert.match(planCalls[1]!.input.goal, /研究者反馈.*补充失败结果对应的回退条件/);
-  const revision = h.store
+  assert.equal(planCalls.length, 1);
+  assert.equal(h.calls.filter((call) => call.role === "reviewer").length, 1);
+  assert.equal(
+    h.store.eventsAfter(runId, 0).some((event) => event.kind === "revision.applied"),
+    false,
+  );
+  const humanFeedback = h.store
     .eventsAfter(runId, 0)
-    .find((event) => event.kind === "revision.applied" && event.payload.feedback_source === "human");
-  assert.equal(revision?.payload.source, "researcher");
+    .find((event) => event.kind === "feedback.received" && event.payload.feedback_source === "human");
+  assert.equal(humanFeedback?.payload.source, "researcher");
   h.store.close();
 });
 
-test("records an auditable evaluation iteration without inventing human feedback", async () => {
-  const h = harness({ rejectReviews: 2 });
+test("records a single-shot evaluation round without inventing human feedback", async () => {
+  const h = harness({ rejectReviews: 1 });
   const runId = h.harness.createRun("q");
   await h.harness.execute(runId);
 
   const snapshot = h.store.snapshot(runId)!;
   const evaluations = snapshot.recent_events.filter((event: any) => event.kind === "evaluation.round");
-  assert.equal(evaluations.length, 2);
+  assert.equal(evaluations.length, 1);
   assert.deepEqual(
     evaluations.map((event: any) => [event.payload.round, event.payload.phase, event.payload.action]),
-    [
-      [1, "raw", "revise"],
-      [2, "revision", "stop"],
-    ],
+    [[1, "raw", "stop"]],
   );
 
   const first = evaluations[0]!.payload;
-  const second = evaluations[1]!.payload;
   assert.equal(first.evaluator, "model_reviewer");
   assert.equal(first.target, "research-plan");
   assert.equal(first.sample, "one run / one research plan");
@@ -1110,28 +1208,42 @@ test("records an auditable evaluation iteration without inventing human feedback
   assert.equal(first.score_delta_total, null);
   assert.equal(first.cost_delta_tokens, null);
   assert.equal(first.rollback_reason, null);
-
-  assert.equal(second.feedback_source, "auto");
-  assert.equal(second.raw_plan_artifact_id, first.raw_plan_artifact_id);
-  assert.equal(second.raw_review_artifact_id, first.raw_review_artifact_id);
-  assert.notEqual(second.plan_artifact_id, first.plan_artifact_id);
-  assert.notEqual(second.review_artifact_id, first.review_artifact_id);
-  assert.equal(second.score_before_total, 12);
-  assert.equal(second.score_after_total, 12);
-  assert.equal(second.score_delta_total, 0);
-  assert.equal(second.limitation_delta_count, 0);
-  assert.equal(second.stop_reason, "revision_budget_exhausted");
-  assert.equal(second.retry_reason, null);
-  assert.equal(second.rollback_reason, null);
-  assert.equal(typeof second.changed_fields, "string");
-  assert.notEqual(second.changed_fields, "");
+  assert.equal(first.stop_reason, "reviewer_rejected");
+  assert.equal(first.retry_reason, null);
+  assert.equal(first.changed_fields, "");
   assert.equal(first.feedback_artifact_id, first.review_artifact_id);
-  assert.equal(first.raw_review_artifact_id, first.review_artifact_id);
-  assert.equal(first.feedback_source, "auto");
   assert.equal(
     snapshot.recent_events.some((event: any) => event.kind === "feedback.received" && event.payload.source === "human"),
     false,
   );
+  h.store.close();
+});
+
+test("reviewer accept still completes on the deterministic path", async () => {
+  const h = harness();
+  const runId = h.harness.createRun("q");
+  const outcome = await h.harness.execute(runId);
+
+  assert.equal(outcome.status, "completed");
+  assert.equal(outcome.errorCode, null);
+  assert.ok(outcome.finalArtifactId);
+  assert.equal(h.calls.filter((c) => c.role === "research-plan").length, 1);
+  assert.equal(h.calls.filter((c) => c.role === "reviewer").length, 1);
+
+  const snapshot = h.store.snapshot(runId)!;
+  assert.equal(snapshot.status, "completed");
+  const evaluations = snapshot.recent_events.filter((event: any) => event.kind === "evaluation.round");
+  assert.equal(evaluations.length, 1);
+  assert.deepEqual(
+    [evaluations[0]!.payload.round, evaluations[0]!.payload.phase, evaluations[0]!.payload.action],
+    [1, "raw", "accept"],
+  );
+  assert.equal(evaluations[0]!.payload.stop_reason, "reviewer_accepted");
+  assert.equal(
+    snapshot.recent_events.some((event: any) => event.kind === "revision.applied"),
+    false,
+  );
+  assert.equal(snapshot.recent_events.at(-1)!.kind, "run.completed");
   h.store.close();
 });
 
@@ -1307,7 +1419,7 @@ test("keeps a quality failure ahead of an arXiv outage", async () => {
 });
 
 test("does not verify references when the Reviewer rejects the plan", async () => {
-  const h = harness({ rejectReviews: 2 });
+  const h = harness({ rejectReviews: 1 });
   const runId = h.harness.createRun("q");
   await h.harness.execute(runId);
 

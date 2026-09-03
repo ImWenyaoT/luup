@@ -88,4 +88,23 @@ describe("useArtifact", () => {
     await waitFor(() => expect(result.current.artifact?.id).toBe("art-1"));
     expect(result.current.error).toBeNull();
   });
+
+  test("非 ApiError 网络失败包装为 500 ApiError，并可 refetch", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("network down"))
+      .mockResolvedValueOnce(respond(200, artifact));
+    const client = createApiClient({ fetchImpl });
+    const { result } = renderHook(() => useArtifact("art-1", { client }), {
+      wrapper: createTestWrapper({ client }),
+    });
+
+    await waitFor(() => expect(result.current.error).toBeInstanceOf(ApiError));
+    expect(result.current.error?.status).toBe(500);
+    expect(result.current.error?.message).toContain("network down");
+
+    result.current.refetch();
+    await waitFor(() => expect(result.current.artifact).toEqual(artifact));
+    expect(result.current.error).toBeNull();
+  });
 });

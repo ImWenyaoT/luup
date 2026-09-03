@@ -1,7 +1,7 @@
 import { EvidenceLedger } from "./agent/evidence.ts";
 import { classifyFailure } from "./agent/failures.ts";
 import type { RunTraceEvent } from "./agent/run-trace.ts";
-import type { DomainArtifact, EvidenceReview, Research, ResearchPlan, Review, Role } from "./agent/contracts.ts";
+import type { EvidenceReview, Research, ResearchPlan, Review, Role } from "./agent/contracts.ts";
 import {
   evaluationRoundSchema,
   evaluationUsageTokens,
@@ -49,9 +49,9 @@ export type RunOutcome = {
 
 /** 固定五阶段编排。
  *
- * 顺序和两条上界都写在下面的控制流里，一眼可读：
+ * 顺序和上界写在下面的控制流里，一眼可读：
  * - 补证：`for (round = 1; round <= 2)`，evidence-review 没有 gaps 就提前 break
- * - 修订：同样两轮，Reviewer 第二次拒绝必定终止
+ * - research-plan → reviewer 单次射击；不接受或人反馈插入即 review_rejected（无同支线改稿环）
  *
  * 这里曾经把「下一个角色是谁」交给 store 的任务依赖图算。那是 Python 版为任意 DAG
  * 和生产级恢复准备的结构，而 Luup 的主张恰恰是「格子之间怎么走由代码决定」——
@@ -195,137 +195,55 @@ export class Harness {
         if ((evidenceReview.content as EvidenceReview).gaps.length === 0) break;
       }
 
+      // ADR-0012 F1：候选晋升硬闸。hypothesis 自选 ≠ 晋升（Propose ≠ Select）；
+      // 仅 latest EvidenceReview 对选中候选给出 supports 才进入 research-plan。
+      // contradicts / uncertain / 缺评估一律 fail-closed（森林「默认真错」）。
+      const hypothesisArtifact = hypotheses.at(-1)!;
+      const selectedCandidateId = (hypothesisArtifact.content as { comparison: { selected_candidate_id: string } })
+        .comparison.selected_candidate_id;
+      const selectedAssessment = (evidenceReview.content as EvidenceReview).assessments.find(
+        (item) => item.candidate_id === selectedCandidateId,
+      );
+      const verdict = selectedAssessment?.verdict ?? null;
+      const promoted = verdict === "supports";
+      this.#store.emit(runId, "evaluation.candidate_gate", {
+        selected_candidate_id: selectedCandidateId,
+        verdict,
+        promoted,
+        evidence_review_artifact_id: evidenceReview.id,
+        hypothesis_artifact_id: hypothesisArtifact.id,
+      });
+      if (!promoted) {
+        throw new AttemptFailed(
+          "invalid_output",
+          verdict === null
+            ? `candidate gate: no assessment for selected candidate ${selectedCandidateId}`
+            : `candidate gate: selected candidate ${selectedCandidateId} verdict is ${verdict}; only supports may promote`,
+        );
+      }
+
+      // 森林语义（ADR-0012 / F2）：research-plan → reviewer 单次射击。
+      // Reviewer 不接受或研究者插了人反馈，立刻 review_rejected；禁止把意见喂回 planner 改到过。
       const domainInputs = [...research, ...hypotheses, evidenceReview].map(toInput);
-      let plan!: StoredArtifact;
-      let review!: StoredArtifact;
-      let queuedResearcherFeedback: string | null = null;
-      let previousEvaluation: {
-        scoreTotal: number;
-        limitations: number;
-        roundCostTokens: number | null;
-        rawPlanArtifactId: string;
-        rawReviewArtifactId: string;
-      } | null = null;
+      const evaluationCostBefore = evaluationUsageTokens(this.#store.eventsAfter(runId, 0));
+      const plan = await this.#step(runId, question, "research-plan", domainInputs, "生成可验证研究计划");
+      const review = await this.#step(
+        runId,
+        question,
+        "reviewer",
+        [toInput(plan), toInput(evidenceReview)],
+        "独立评审研究计划",
+      );
 
-      for (let round = 1; round <= 2; round += 1) {
-        const evaluationCostBefore = evaluationUsageTokens(this.#store.eventsAfter(runId, 0));
-        const previousPlan = plan;
-        const plannerInputs = round === 1 ? domainInputs : [...domainInputs, toInput(plan), toInput(review)];
-        plan = await this.#step(
-          runId,
-          question,
-          "research-plan",
-          plannerInputs,
-          round === 1
-            ? "生成可验证研究计划"
-            : queuedResearcherFeedback === null
-              ? "根据冻结 Review Artifact 修订研究计划"
-              : `根据研究者反馈修订研究计划：${queuedResearcherFeedback}`,
-        );
-        const changedFields = previousPlan ? changedTopLevelFields(previousPlan.content, plan.content).join(",") : "";
-        if (previousPlan) {
-          this.#store.emit(runId, "revision.applied", {
-            round,
-            source: queuedResearcherFeedback === null ? "model_reviewer" : "researcher",
-            feedback_source: queuedResearcherFeedback === null ? "auto" : "human",
-            from_artifact_id: previousPlan.id,
-            to_artifact_id: plan.id,
-            changed_fields: changedFields,
-          });
-        }
+      const reviewVerdict = review.content as Review;
+      const researcherFeedback = this.#store.researcherFeedback(runId, 1);
+      const evaluationCostAfter = evaluationUsageTokens(this.#store.eventsAfter(runId, 0));
+      const roundCostTokens = knownDelta(evaluationCostAfter, evaluationCostBefore);
+      const scoreAfterTotal = reviewScoreTotal(reviewVerdict);
+      const limitationsAfter = reviewVerdict.weaknesses.length;
+      const round = 1 as const;
 
-        review = await this.#step(
-          runId,
-          question,
-          "reviewer",
-          [toInput(plan), toInput(evidenceReview)],
-          "独立评审研究计划",
-        );
-
-        const verdict = review.content as Review;
-        const researcherFeedback = this.#store.researcherFeedback(runId, round);
-        if (researcherFeedback) queuedResearcherFeedback = researcherFeedback.text;
-        const evaluationCostAfter = evaluationUsageTokens(this.#store.eventsAfter(runId, 0));
-        const roundCostTokens = knownDelta(evaluationCostAfter, evaluationCostBefore);
-        const scoreAfterTotal = reviewScoreTotal(verdict);
-        const scoreBeforeTotal = previousEvaluation?.scoreTotal ?? null;
-        const limitationsAfter = verdict.weaknesses.length;
-        const limitationsBefore = previousEvaluation?.limitations ?? null;
-        if (verdict.accepted && researcherFeedback === null) {
-          this.#store.emit(
-            runId,
-            "evaluation.round",
-            evaluationRoundSchema.parse({
-              evaluator: "model_reviewer",
-              target: "research-plan",
-              sample: "one run / one research plan",
-              sample_size: 1,
-              rubric_version: REVIEW_RUBRIC_VERSION,
-              scientific_rationale: REVIEW_RUBRIC_RATIONALE,
-              round,
-              phase: previousEvaluation ? "revision" : "raw",
-              action: "accept",
-              feedback_source: "auto",
-              feedback_artifact_id: null,
-              feedback_count: verdict.feedback.length,
-              raw_plan_artifact_id: previousEvaluation?.rawPlanArtifactId ?? plan.id,
-              raw_review_artifact_id: previousEvaluation?.rawReviewArtifactId ?? review.id,
-              plan_artifact_id: plan.id,
-              review_artifact_id: review.id,
-              changed_fields: changedFields,
-              score_before_total: scoreBeforeTotal,
-              score_after_total: scoreAfterTotal,
-              score_delta_total: knownDelta(scoreAfterTotal, scoreBeforeTotal),
-              round_cost_tokens: roundCostTokens,
-              cost_delta_tokens: knownDelta(roundCostTokens, previousEvaluation?.roundCostTokens ?? null),
-              limitations_before_count: limitationsBefore,
-              limitations_after_count: limitationsAfter,
-              limitation_delta_count: knownDelta(limitationsAfter, limitationsBefore),
-              stop_reason: "reviewer_accepted",
-              retry_reason: null,
-              rollback_reason: null,
-            }),
-          );
-          // Reviewer 说好只是另一个模型的判断。终态之前还有一道不问模型的验收：
-          // 计划引的文献必须真的存在，而且就是本 run 检索并冻结下来的那几篇。
-          const verification = await this.#verifyReferences({
-            plan: plan.content as ResearchPlan,
-            research: research.map((item) => item.content as Research),
-          });
-          this.#store.emit(runId, "verification.references", {
-            ok: verification.ok,
-            reference_count: verification.referenceCount,
-            frozen_sources: verification.frozenSources,
-            arxiv_checked: verification.arxivChecked,
-            doi_checked: verification.doiChecked,
-            membership_only: verification.membershipOnly,
-            failed_count: verification.failed.length,
-            infra_error: verification.infraError,
-            // 逐条证据留在库里供报告与排障引用；公共投影只放行上面那些标量。
-            checks: verification.checks,
-            failed: verification.failed,
-          });
-          if (!verification.ok) {
-            const code = verificationFailureCode(verification);
-            this.#store.finishRun(runId, "failed", { errorCode: code });
-            return { status: "failed", finalArtifactId: null, errorCode: code };
-          }
-          this.#store.finishRun(runId, "completed", { finalArtifactId: plan.id });
-          return { status: "completed", finalArtifactId: plan.id, errorCode: null };
-        }
-        const shouldRevise =
-          round < 2 && (researcherFeedback !== null || verdict.suggested_successor_roles.includes("research-plan"));
-        const stopReason = shouldRevise
-          ? null
-          : round >= 2
-            ? "revision_budget_exhausted"
-            : "reviewer_did_not_request_research_plan";
-        const retryReason = shouldRevise
-          ? researcherFeedback === null
-            ? "reviewer_requested_revision"
-            : "researcher_requested_revision"
-          : null;
-        const priorEvaluation = previousEvaluation;
+      if (reviewVerdict.accepted && researcherFeedback === null) {
         this.#store.emit(
           runId,
           "evaluation.round",
@@ -337,57 +255,106 @@ export class Harness {
             rubric_version: REVIEW_RUBRIC_VERSION,
             scientific_rationale: REVIEW_RUBRIC_RATIONALE,
             round,
-            phase: previousEvaluation ? "revision" : "raw",
-            action: shouldRevise ? "revise" : "stop",
-            feedback_source: researcherFeedback === null ? "auto" : "human",
-            feedback_artifact_id: researcherFeedback === null ? review.id : null,
-            feedback_count: researcherFeedback === null ? verdict.feedback.length : 1,
-            raw_plan_artifact_id: previousEvaluation?.rawPlanArtifactId ?? plan.id,
-            raw_review_artifact_id: previousEvaluation?.rawReviewArtifactId ?? review.id,
+            phase: "raw",
+            action: "accept",
+            feedback_source: "auto",
+            feedback_artifact_id: null,
+            feedback_count: reviewVerdict.feedback.length,
+            raw_plan_artifact_id: plan.id,
+            raw_review_artifact_id: review.id,
             plan_artifact_id: plan.id,
             review_artifact_id: review.id,
-            changed_fields: changedFields,
-            score_before_total: scoreBeforeTotal,
+            changed_fields: "",
+            score_before_total: null,
             score_after_total: scoreAfterTotal,
-            score_delta_total: knownDelta(scoreAfterTotal, scoreBeforeTotal),
+            score_delta_total: null,
             round_cost_tokens: roundCostTokens,
-            cost_delta_tokens: knownDelta(roundCostTokens, previousEvaluation?.roundCostTokens ?? null),
-            limitations_before_count: limitationsBefore,
+            cost_delta_tokens: null,
+            limitations_before_count: null,
             limitations_after_count: limitationsAfter,
-            limitation_delta_count: knownDelta(limitationsAfter, limitationsBefore),
-            stop_reason: stopReason,
-            retry_reason: retryReason,
+            limitation_delta_count: null,
+            stop_reason: "reviewer_accepted",
+            retry_reason: null,
             rollback_reason: null,
           }),
         );
-        this.#store.emit(runId, "feedback.received", {
-          source: "model_reviewer",
-          feedback_source: "auto",
-          target: "research-plan",
-          round,
-          action: shouldRevise ? "revise" : "stop",
-          feedback_count: verdict.feedback.length,
-          feedback_artifact_id: review.id,
-          retry_reason: retryReason,
-          stop_reason: stopReason,
-          rollback_reason: null,
+        // Reviewer 说好只是另一个模型的判断。终态之前还有一道不问模型的验收：
+        // 计划引的文献必须真的存在，而且就是本 run 检索并冻结下来的那几篇。
+        const verification = await this.#verifyReferences({
+          plan: plan.content as ResearchPlan,
+          research: research.map((item) => item.content as Research),
         });
-        // 第二次拒绝、或者 Reviewer 认为一次修订解决不了，都必须终止。
-        if (!shouldRevise) {
-          this.#store.finishRun(runId, "review_rejected", { errorCode: "review_rejected" });
-          return { status: "review_rejected", finalArtifactId: null, errorCode: "review_rejected" };
+        this.#store.emit(runId, "verification.references", {
+          ok: verification.ok,
+          reference_count: verification.referenceCount,
+          frozen_sources: verification.frozenSources,
+          arxiv_checked: verification.arxivChecked,
+          doi_checked: verification.doiChecked,
+          membership_only: verification.membershipOnly,
+          failed_count: verification.failed.length,
+          infra_error: verification.infraError,
+          // 逐条证据留在库里供报告与排障引用；公共投影只放行上面那些标量。
+          checks: verification.checks,
+          failed: verification.failed,
+        });
+        if (!verification.ok) {
+          const code = verificationFailureCode(verification);
+          this.#store.finishRun(runId, "failed", { errorCode: code });
+          return { status: "failed", finalArtifactId: null, errorCode: code };
         }
-        const rawPlanArtifactId: string = priorEvaluation === null ? plan.id : priorEvaluation.rawPlanArtifactId;
-        const rawReviewArtifactId: string = priorEvaluation === null ? review.id : priorEvaluation.rawReviewArtifactId;
-        previousEvaluation = {
-          scoreTotal: scoreAfterTotal,
-          limitations: limitationsAfter,
-          roundCostTokens,
-          rawPlanArtifactId,
-          rawReviewArtifactId,
-        };
+        this.#store.finishRun(runId, "completed", { finalArtifactId: plan.id });
+        return { status: "completed", finalArtifactId: plan.id, errorCode: null };
       }
-      throw new Error("unreachable pipeline state");
+
+      const stopReason = "reviewer_rejected";
+      this.#store.emit(
+        runId,
+        "evaluation.round",
+        evaluationRoundSchema.parse({
+          evaluator: "model_reviewer",
+          target: "research-plan",
+          sample: "one run / one research plan",
+          sample_size: 1,
+          rubric_version: REVIEW_RUBRIC_VERSION,
+          scientific_rationale: REVIEW_RUBRIC_RATIONALE,
+          round,
+          phase: "raw",
+          action: "stop",
+          feedback_source: researcherFeedback === null ? "auto" : "human",
+          feedback_artifact_id: researcherFeedback === null ? review.id : null,
+          feedback_count: researcherFeedback === null ? reviewVerdict.feedback.length : 1,
+          raw_plan_artifact_id: plan.id,
+          raw_review_artifact_id: review.id,
+          plan_artifact_id: plan.id,
+          review_artifact_id: review.id,
+          changed_fields: "",
+          score_before_total: null,
+          score_after_total: scoreAfterTotal,
+          score_delta_total: null,
+          round_cost_tokens: roundCostTokens,
+          cost_delta_tokens: null,
+          limitations_before_count: null,
+          limitations_after_count: limitationsAfter,
+          limitation_delta_count: null,
+          stop_reason: stopReason,
+          retry_reason: null,
+          rollback_reason: null,
+        }),
+      );
+      this.#store.emit(runId, "feedback.received", {
+        source: "model_reviewer",
+        feedback_source: "auto",
+        target: "research-plan",
+        round,
+        action: "stop",
+        feedback_count: reviewVerdict.feedback.length,
+        feedback_artifact_id: review.id,
+        retry_reason: null,
+        stop_reason: stopReason,
+        rollback_reason: null,
+      });
+      this.#store.finishRun(runId, "review_rejected", { errorCode: "review_rejected" });
+      return { status: "review_rejected", finalArtifactId: null, errorCode: "review_rejected" };
     } catch (error) {
       const code = error instanceof AttemptFailed ? error.code : "runtime_error";
       this.#store.finishRun(runId, "failed", { errorCode: code });
@@ -475,14 +442,6 @@ export class Harness {
       throw new AttemptFailed(failure.code, failure.reason);
     }
   }
-}
-
-function changedTopLevelFields(before: DomainArtifact, after: DomainArtifact): string[] {
-  const beforeRecord = before as unknown as Record<string, unknown>;
-  const afterRecord = after as unknown as Record<string, unknown>;
-  return [...new Set([...Object.keys(beforeRecord), ...Object.keys(afterRecord)])]
-    .filter((field) => JSON.stringify(beforeRecord[field]) !== JSON.stringify(afterRecord[field]))
-    .sort();
 }
 
 /** 漂移记录里的正文摘要。

@@ -11,5 +11,7 @@ assessments 必须覆盖输入 Hypothesis Artifact 的每个 candidate_id，且�
 - `verdict`：三个合法值之一 —— `supports`（冻结证据支持该论断）、
   `contradicts`（冻结证据与该论断相悖）、`uncertain`（冻结证据不足以判定）。
   字段名是 `verdict` 不是 `status`；值是 `supports` 不是 `supported`，别的写法一律不合法。
+  Harness 硬闸：hypothesis 自选的候选仅当本审查对其 `verdict` 为 `supports` 才可进入
+  research-plan；`contradicts` / `uncertain` / 缺评估一律 fail-closed（不得晋升）。
 - `rationale`：给出这个判定的理由。
 - `evidence_ids`：支撑这条判定的冻结证据 ID 列表；`verdict` 不是 `uncertain` 时至少要有一个。

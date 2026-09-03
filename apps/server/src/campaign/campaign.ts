@@ -14,8 +14,13 @@
  * 只有两处按 TS 栈的事实改写：run 定位符从 `runs/<ts>` 改成 `<db 相对路径>#<runId>`，
  * 失败分类从 `分类：x` 改成可机读的 `cls=x`。
  *
+ * **森林 KB 规则（ADR-0012）**：审计账本 ≠ 可注入 KB。`log.md` 是给人看的全量审计（SUCCESS /
+ * FAILED 都写）；`questions/q*.md` 才是注入面，**只**收 `completed`（即 SUCCESS，harness 已保证
+ * B1–B4 通过）。失败与 `review_rejected` 不得进题页；读取端再滤掉遗留的 `FAILED |` 行，
+ * 不改写磁盘历史。
+ *
  * 本模块**不含检索工具**。TS 栈的记忆通道只有一条：批跑发起 run 之前确定性读同题页末
- * 几行，注入 researcher 的输入。没有 memory_search，模型没有任何自主读记忆的通路 ——
+ * 几条 SUCCESS，注入 researcher 的输入。没有 memory_search，模型没有任何自主读记忆的通路 ——
  * 消融臂因此是「注入开 / 关」，而不是「工具返回真数据 / 返回 enabled=false」。
  */
 
@@ -173,7 +178,7 @@ export class CampaignMemory {
     }
   }
 
-  /** 同题最近若干条记录，供新 run 开局避开已知死路。零解析、零模型。 */
+  /** 同题最近若干条 SUCCESS，供新 run 开局注入。零解析、零模型；遗留 FAILED 行不注入。 */
   readPriorAttempts(questionId: number | null): CampaignReadResult {
     if (questionId === null) return { status: "not_applicable", entries: [], reason: null };
     const directory = this.#directoryStatus();
@@ -189,15 +194,16 @@ export class CampaignMemory {
       this.#reportError(error);
       return { status: "unavailable", entries: [], reason: errorReason(error) };
     }
+    // 与 formatQuestionEntry / verdictOf 对齐：前缀后须出现 `SUCCESS |`；FAILED 遗留行跳过。
     const entries = text
       .split("\n")
       .map((line) => line.trim())
-      .filter((line) => line.startsWith(ENTRY_PREFIX));
+      .filter((line) => line.startsWith(ENTRY_PREFIX) && line.includes("] SUCCESS |"));
     const limited = entries.slice(-PRIOR_ATTEMPT_LIMIT);
     return { status: limited.length > 0 ? "available" : "empty", entries: limited, reason: null };
   }
 
-  /** run 终态后追加一行。总日志必写，题页在有题号时同步。 */
+  /** run 终态后追加。总日志必写；题页仅 completed（可注入 SUCCESS）且有题号时追加。 */
   recordRun(facts: CampaignFacts, now: Date = new Date()): CampaignWriteResult {
     const directory = this.#directoryStatus();
     if (directory.status === "disabled") return { status: "disabled", reason: null };
@@ -212,7 +218,7 @@ export class CampaignMemory {
     }
 
     const results = [append(join(this.#dir, "log.md"), formatLogEntry(facts, locator, now), "", this.#reportError)];
-    if (facts.questionId !== null) {
+    if (facts.questionId !== null && facts.status === "completed") {
       results.push(
         append(
           join(this.#dir, "questions", `q${facts.questionId}.md`),

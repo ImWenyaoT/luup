@@ -23,13 +23,13 @@
     "submission:ready": "tsx apps/server/src/submission/readiness.ts",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "test:coverage": "pnpm --filter @luup/server test:coverage",
+    "test:coverage": "pnpm --filter @luup/server test:coverage && pnpm --filter @luup/frontend test:coverage",
     "test:e2e": "pnpm --filter @luup/frontend test:e2e",
     "lint": "oxlint --type-aware --deny-warnings --report-unused-disable-directives -D typescript/await-thenable -D typescript/no-floating-promises -D typescript/no-misused-promises -D typescript/only-throw-error -D typescript/switch-exhaustiveness-check .",
     "lint:fix": "oxlint --type-aware --deny-warnings --report-unused-disable-directives -D typescript/await-thenable -D typescript/no-floating-promises -D typescript/no-misused-promises -D typescript/only-throw-error -D typescript/switch-exhaustiveness-check --fix .",
     "format": "oxfmt --write 'apps/**/*.{ts,tsx,json,css,html}' package.json turbo.json .oxfmtrc.json",
     "format:check": "oxfmt --check 'apps/**/*.{ts,tsx,json,css,html}' package.json turbo.json .oxfmtrc.json",
-    "ci": "turbo run typecheck && pnpm run lint && pnpm run format:check && turbo run build && pnpm --filter @luup/server test:coverage && pnpm --filter @luup/frontend test"
+    "ci": "turbo run typecheck && pnpm run lint && pnpm run format:check && LUUP_API_ORIGIN=http://127.0.0.1:8000 turbo run build && pnpm --filter @luup/server test:coverage && pnpm --filter @luup/frontend test:coverage"
   },
   "devDependencies": {
     "oxfmt": "0.65.0",

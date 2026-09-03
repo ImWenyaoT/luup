@@ -114,3 +114,8 @@ export function withAuth(client: ApiClient, init: RequestInit = {}): RequestInit
   if (token) headers.set("authorization", `Bearer ${token}`);
   return { ...init, headers };
 }
+
+export function toApiError(cause: unknown): ApiError {
+  if (cause instanceof ApiError) return cause;
+  return new ApiError(500, String(cause));
+}

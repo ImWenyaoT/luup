@@ -1,10 +1,11 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { ApiError } from "../lib/api/client";
+import { toApiError } from "../lib/api/client";
+import type { ApiClient, ApiError } from "../lib/api/client";
 import { createRun, fetchRun } from "../lib/api/runs";
 import type { Snapshot } from "../lib/types/wire";
 import { useApiClient } from "../providers/api";
-import type { ApiClient } from "../lib/api/client";
 
 export type UseRunState =
   | { status: "idle" }
@@ -23,92 +24,148 @@ function isClientError(status: number): boolean {
   return status >= 400 && status < 500;
 }
 
+export function runQueryKey(runId: string) {
+  return ["run", runId] as const;
+}
+
+export function runQueryOptions(client: ApiClient, runId: string) {
+  return {
+    queryKey: runQueryKey(runId),
+    queryFn: () => fetchRun(client, runId),
+  };
+}
+
+function deriveRunState(
+  runId: string | null,
+  cached:
+    | {
+        status: string;
+        data: Snapshot | undefined;
+        error: unknown;
+      }
+    | undefined,
+  createdSnapshot: Snapshot | null,
+): UseRunState {
+  if (createdSnapshot && (!runId || runId === createdSnapshot.id)) {
+    return { status: "ready", snapshot: createdSnapshot };
+  }
+  if (!runId) return { status: "idle" };
+  if (!cached || cached.status === "pending") {
+    return { status: "loading", runId };
+  }
+  if (cached.status === "error") {
+    return {
+      status: "error",
+      runId,
+      error: toApiError(cached.error),
+      // Prior success data stays on this queryKey only — no cross-runId leak.
+      ...(cached.data ? { lastSnapshot: cached.data } : {}),
+    };
+  }
+  if (cached.data) return { status: "ready", snapshot: cached.data };
+  return { status: "loading", runId };
+}
+
 export function useRun(runId: string | null, options?: UseRunOptions) {
   const defaultClient = useApiClient();
   const client = options?.client ?? defaultClient;
-  const [state, setState] = useState<UseRunState>({ status: "idle" });
-  const stateRef = useRef(state);
-  stateRef.current = state;
+  const queryClient = useQueryClient();
   const backoffRef = useRef(INITIAL_BACKOFF_MS);
-  const inFlightRef = useRef<{ client: ApiClient; runId: string; promise: Promise<Snapshot> } | null>(null);
+  const [createdSnapshot, setCreatedSnapshot] = useState<Snapshot | null>(null);
+  // Query cache mutates state in place; useQuery alone can miss a React turn after
+  // fetchQuery error (refetch-fail → lastSnapshot). Bump on matching cache events.
+  const [, setCacheEpoch] = useState(0);
 
-  const fetchSnapshot = useCallback(
-    (id: string): Promise<Snapshot> => {
-      const current = inFlightRef.current;
-      if (current?.client === client && current.runId === id) return current.promise;
-      const promise = fetchRun(client, id).finally(() => {
-        if (inFlightRef.current?.promise === promise) inFlightRef.current = null;
-      });
-      inFlightRef.current = { client, runId: id, promise };
-      return promise;
-    },
-    [client],
-  );
+  useQuery({
+    ...runQueryOptions(client, runId ?? ""),
+    enabled: Boolean(runId),
+    retry: false,
+  });
 
-  const loadRun = useCallback(
-    async (id: string) => {
-      setState({ status: "loading", runId: id });
-      try {
-        const snapshot = await fetchSnapshot(id);
-        setState({ status: "ready", snapshot });
-        backoffRef.current = INITIAL_BACKOFF_MS;
-      } catch (cause) {
-        const error = cause instanceof ApiError ? cause : new ApiError(500, String(cause));
-        const lastSnapshot = stateRef.current.status === "ready" ? stateRef.current.snapshot : undefined;
-        setState({ status: "error", runId: id, error, lastSnapshot });
-      }
+  useEffect(() => {
+    if (!runId) return;
+    const key = runQueryKey(runId);
+    return queryClient.getQueryCache().subscribe((event) => {
+      if (event.type !== "updated" && event.type !== "added") return;
+      const eventKey = event.query.queryKey;
+      if (eventKey[0] !== key[0] || eventKey[1] !== key[1]) return;
+      setCacheEpoch((n) => n + 1);
+    });
+  }, [queryClient, runId]);
+
+  const mutation = useMutation({
+    mutationFn: (question: string) => createRun(client, question),
+    onSuccess: (snapshot) => {
+      queryClient.setQueryData(runQueryKey(snapshot.id), snapshot);
     },
-    [fetchSnapshot],
-  );
+  });
+
+  useEffect(() => {
+    if (createdSnapshot && runId === createdSnapshot.id) {
+      setCreatedSnapshot(null);
+    }
+  }, [runId, createdSnapshot]);
 
   useEffect(() => {
     if (!runId) {
-      setState({ status: "idle" });
       backoffRef.current = INITIAL_BACKOFF_MS;
-      return;
     }
-    void loadRun(runId);
-  }, [runId, loadRun]);
+  }, [runId]);
+
+  const cached = runId ? queryClient.getQueryState<Snapshot>(runQueryKey(runId)) : undefined;
+
+  useEffect(() => {
+    if (cached?.status === "success") {
+      backoffRef.current = INITIAL_BACKOFF_MS;
+    }
+  }, [cached?.status, cached?.dataUpdatedAt]);
 
   const refetch = useCallback(async () => {
     if (!runId) return;
-    const previous = stateRef.current;
-    const lastSnapshot =
-      previous.status === "ready" ? previous.snapshot : previous.status === "error" ? previous.lastSnapshot : undefined;
     try {
-      const snapshot = await fetchSnapshot(runId);
-      setState({ status: "ready", snapshot });
-      backoffRef.current = INITIAL_BACKOFF_MS;
-    } catch (cause) {
-      const error = cause instanceof ApiError ? cause : new ApiError(500, String(cause));
-      if (lastSnapshot) {
-        setState({ status: "error", runId, error, lastSnapshot });
-      } else {
-        setState({ status: "error", runId, error });
-      }
+      await queryClient.fetchQuery({
+        ...runQueryOptions(client, runId),
+        staleTime: 0,
+      });
+    } catch {
+      // fetchQuery throws and sets cache status=error; subscription re-renders.
     }
-  }, [fetchSnapshot, runId]);
+  }, [runId, client, queryClient]);
 
   useEffect(() => {
-    if (state.status !== "error") return;
-    if (isClientError(state.error.status)) return;
+    if (!runId) return;
+    if (cached?.status !== "error" || !cached.error) return;
+    const error = toApiError(cached.error);
+    if (isClientError(error.status)) return;
 
+    const delay = backoffRef.current;
     const timer = setTimeout(() => {
-      void refetch();
-    }, backoffRef.current);
-    backoffRef.current = Math.min(backoffRef.current * 2, MAX_BACKOFF_MS);
+      void queryClient
+        .fetchQuery({
+          ...runQueryOptions(client, runId),
+          staleTime: 0,
+        })
+        .catch(() => undefined);
+    }, delay);
+    backoffRef.current = Math.min(delay * 2, MAX_BACKOFF_MS);
     return () => clearTimeout(timer);
-  }, [state, refetch]);
+  }, [runId, cached?.status, cached?.error, cached?.fetchFailureCount, client, queryClient]);
 
   const createAndNavigate = useCallback(
     async (question: string) => {
-      const snapshot = await createRun(client, question);
-      setState({ status: "ready", snapshot });
-      backoffRef.current = INITIAL_BACKOFF_MS;
-      return snapshot.id;
+      try {
+        const snapshot = await mutation.mutateAsync(question);
+        setCreatedSnapshot(snapshot);
+        backoffRef.current = INITIAL_BACKOFF_MS;
+        return snapshot.id;
+      } catch (cause) {
+        throw toApiError(cause);
+      }
     },
-    [client],
+    [mutation],
   );
+
+  const state = deriveRunState(runId, cached, createdSnapshot);
 
   return { state, refetch, createAndNavigate };
 }

@@ -49,12 +49,13 @@ pnpm run typecheck     # server + web TypeScript program，全量 (Turbo)
 pnpm run lint          # oxlint（含 typeAware 档）
 pnpm run format:check  # oxfmt 格式检查；pnpm run format 原地修复
 pnpm run test          # vitest 全量测试
-pnpm run test:coverage # 覆盖率地板 80%，只许涨不许降
+pnpm run test:coverage # server + web；functions/lines 地板各 80%，只许涨不许降
 pnpm run build         # Next.js production build → apps/web/.next
 pnpm run test:e2e      # Playwright；确定性 runtime，零 LLM 调用
 ```
 
-CI 是 `.github/workflows/ts.yml` 的 `check` 与 `e2e` 两个 job，门与上面逐条对应。
+CI 是 `.github/workflows/ts.yml` 的 `check`（=`pnpm run ci`）与 `e2e` 两个 job。
+`check` 含双包 typecheck、oxlint、oxfmt、build、server/web 覆盖率门；`e2e` 另跑确定性双进程。
 
 ## 锚点
 
@@ -64,3 +65,16 @@ CI 是 `.github/workflows/ts.yml` 的 `check` 与 `e2e` 两个 job，门与上�
 - 已定案、不再重提的决策：`docs/adr/`
 - 领域词汇：`CONTEXT.md`
 - Issue 流程：见本文件验证/锚点节；原 `docs/agents/` 已删（历史可查）
+
+## Learned User Preferences
+
+- 优先把现有技术栈用全、用精，而不是为现代化引入新依赖或平行工具链
+- 测试要扎实、覆盖率尽量拉高；认真对待 CI，避免弄乱 main
+- 多 agent / harness 协作按森林语义：默认真错、独立 critique、允许高拒收，仅 verified 有用才 merge 进共享知识面；拒绝公司式互相改稿
+- 大块工作倾向并行 subagents 提案、由父 agent 做核实与合并
+- 实质设计偏好自上而下：先 specs / 需求与架构接口，再往下分层；同类能力先想清模式再减少重复
+
+## Learned Workspace Facts
+
+- 前端现行栈是 Next.js App Router（`apps/web`），不再以 Vite/Remix 为当前方向
+- Harness 方向已定案为森林理论（ADR-0012）：propose → critique → hard gate → merge；角色产出默认不信任

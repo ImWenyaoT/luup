@@ -215,3 +215,196 @@ describe("Home sticky artifact errors", () => {
     window.localStorage.removeItem(RUN_WORKING_SET_KEY);
   });
 });
+
+const science125 = {
+  source: "fixture",
+  retrievedAt: "2025-01-01",
+  total: 1,
+  domains: [
+    {
+      domain: "Physics",
+      count: 1,
+      questions: [{ id: 1, domain: "Physics", question: "暗物质是什么？" }],
+    },
+  ],
+};
+
+describe("Home shell flows", () => {
+  test("无 run 时展示 Welcome，创建失败可关闭横幅", async () => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/api/science125")) return respond(200, science125);
+      if (url.endsWith("/api/runs") && init?.method === "POST") {
+        return respond(500, { detail: "创建失败" });
+      }
+      return respond(404, { detail: "not found" });
+    }) as typeof fetch;
+
+    render(<Home />, {
+      wrapper: createTestWrapper({ client: createApiClient({ fetchImpl }), initialEntries: ["/"] }),
+    });
+
+    expect(await screen.findByTestId("welcome-panel")).toBeInTheDocument();
+    fireEvent.change(screen.getByTestId("welcome-question-input"), {
+      target: { value: "会失败的问题" },
+    });
+    fireEvent.click(screen.getByTestId("start-research"));
+    expect(await screen.findByTestId("error-banner")).toHaveTextContent("创建失败");
+    fireEvent.click(within(screen.getByTestId("error-banner")).getByRole("button", { name: "关闭" }));
+    expect(screen.queryByTestId("error-banner")).not.toBeInTheDocument();
+  });
+
+  test("加载中与硬失败分别展示 loading / run-error", async () => {
+    let release!: (value: Response) => void;
+    const pending = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/api/science125")) return respond(200, science125);
+      if (url.includes("/api/runs/missing")) return pending;
+      return respond(404, { detail: "not found" });
+    }) as typeof fetch;
+
+    render(<Home />, {
+      wrapper: createTestWrapper({
+        client: createApiClient({ fetchImpl }),
+        initialEntries: ["/?run=missing"],
+      }),
+    });
+
+    expect(await screen.findByTestId("run-loading")).toBeInTheDocument();
+    release(respond(404, { detail: "run gone" }));
+    expect(await screen.findByTestId("run-error")).toHaveTextContent("run gone");
+  });
+
+  test("宽屏自动打开 artifacts inspector；新研究回到 Welcome", async () => {
+    const original = window.matchMedia;
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn((query: string) => ({
+        matches: query.includes("min-width: 1200px"),
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+        onchange: null,
+      })),
+    });
+
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/api/science125")) return respond(200, science125);
+      if (url.includes("/api/runs/run-1")) return respond(200, completedSnapshot);
+      return respond(404, { detail: "not found" });
+    }) as typeof fetch;
+
+    render(<Home />, {
+      wrapper: createTestWrapper({
+        client: createApiClient({ fetchImpl }),
+        initialEntries: ["/?run=run-1"],
+      }),
+    });
+
+    await screen.findAllByText("first question");
+    expect(await screen.findByTestId("workspace-inspector")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "＋ 新研究" }));
+    expect(await screen.findByTestId("welcome-panel")).toBeInTheDocument();
+    expect(screen.queryByTestId("workspace-inspector")).not.toBeInTheDocument();
+
+    Object.defineProperty(window, "matchMedia", { configurable: true, value: original });
+  });
+
+  test("题库开跑创建 run；持久化错误横幅可关闭", async () => {
+    const storage = new Map<string, string>();
+    storage.set(RUN_WORKING_SET_KEY, "{}");
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => storage.set(key, value),
+        removeItem: (key: string) => storage.delete(key),
+      },
+    });
+
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/api/science125")) return respond(200, science125);
+      if (url.endsWith("/api/runs") && init?.method === "POST") return respond(200, nextSnapshot);
+      if (url.includes("/api/runs/run-2")) return respond(200, nextSnapshot);
+      return respond(404, { detail: "not found" });
+    }) as typeof fetch;
+
+    render(<Home />, {
+      wrapper: createTestWrapper({ client: createApiClient({ fetchImpl }), initialEntries: ["/"] }),
+    });
+
+    expect(await screen.findByTestId("error-banner")).toHaveTextContent("无法恢复运行标签");
+    fireEvent.click(within(screen.getByTestId("error-banner")).getByRole("button", { name: "关闭" }));
+    expect(screen.queryByTestId("error-banner")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Science 125 题库/ }));
+    const start = await screen.findByRole("button", { name: "开跑 →" });
+    fireEvent.click(start);
+    await waitFor(() => expect(screen.getAllByText("第二个研究问题").length).toBeGreaterThan(0));
+    window.localStorage.removeItem(RUN_WORKING_SET_KEY);
+  });
+
+  test("refetch 失败保留 lastSnapshot 时可关闭错误横幅", async () => {
+    const running: Snapshot = {
+      ...completedSnapshot,
+      status: "running",
+      current_role: "researcher",
+    };
+    let runCalls = 0;
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/api/science125")) return respond(200, science125);
+      if (url.includes("/api/runs/run-1") && !url.includes("/events")) {
+        runCalls += 1;
+        if (runCalls === 1) return respond(200, running);
+        return respond(404, { detail: "refetch failed" });
+      }
+      return respond(404, { detail: "not found" });
+    }) as typeof fetch;
+
+    class FakeEventSource {
+      listeners = new Map<string, Array<(event: Event) => void>>();
+      constructor(_url: string) {
+        queueMicrotask(() => {
+          for (const listener of this.listeners.get("error") ?? []) {
+            listener(new Event("error"));
+          }
+        });
+      }
+      addEventListener(type: string, listener: (event: Event) => void) {
+        const bucket = this.listeners.get(type) ?? [];
+        bucket.push(listener);
+        this.listeners.set(type, bucket);
+      }
+      close() {}
+    }
+    const previous = globalThis.EventSource;
+    globalThis.EventSource = FakeEventSource as unknown as typeof EventSource;
+
+    try {
+      render(<Home />, {
+        wrapper: createTestWrapper({
+          client: createApiClient({ fetchImpl }),
+          initialEntries: ["/?run=run-1"],
+        }),
+      });
+
+      await screen.findAllByText("first question");
+      expect(await screen.findByTestId("error-banner")).toHaveTextContent("refetch failed");
+      fireEvent.click(within(screen.getByTestId("error-banner")).getByRole("button", { name: "关闭" }));
+      expect(screen.queryByTestId("error-banner")).not.toBeInTheDocument();
+      expect(screen.getByTestId("run-header")).toBeInTheDocument();
+    } finally {
+      globalThis.EventSource = previous;
+    }
+  });
+});

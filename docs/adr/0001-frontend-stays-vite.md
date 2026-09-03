@@ -2,11 +2,11 @@
 
 ## 状态
 
-**Superseded by [ADR-0008](0008-frontend-react-router-v8.md)**，2026-08-26。前端已绿field 重写为 React Router 8 SPA；
-下文保留为历史决策记录。
+**Superseded by [ADR-0008](0008-frontend-react-router-v8.md)**，2026-08-26；**最终由 [ADR-0010](0010-next-app-router-and-vercel-shape.md) 取代**（经 0008）。
+前端先后经历 React Router 8 SPA 与 Next.js App Router；下文保留为历史决策记录。
 
 （废止前最后修订，2026-08-15，ADR-0004：Python 栈已退役；同端口托管由 `apps/server/src/server.ts` 承担。
-「不换 Next、单进程交付」的主张由 ADR-0008 继承；TanStack Router 与 `apps/web/dist` 扁平产物路径不再适用。）
+「不换 Next、单进程交付」的主张曾由 ADR-0008 继承，再被 ADR-0010 废止；TanStack Router 与 `apps/web/dist` 扁平产物路径不再适用。）
 
 ## 背景
 

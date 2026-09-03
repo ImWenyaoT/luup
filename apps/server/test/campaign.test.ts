@@ -54,7 +54,7 @@ test("a campaign line carries verdict, title, references and failure class", () 
     formatQuestionEntry(facts({ status: "failed", failureCode: "verifier_refs", title: null, references: [] }), NOW),
     `${ENTRY_PREFIX}2026-08-14T09:15:30Z] FAILED | run run7a | 未产出 research-plan｜cls=verifier_refs\n`,
   );
-  // 被拒的计划不是交付。它的标题与引用仍要记下来，下一次才知道这条路走过。
+  // 被拒的计划不是交付。格式串仍可生成 FAILED；写入路径不再把它追加到题页。
   assert.match(
     formatQuestionEntry(facts({ status: "review_rejected", failureCode: "review_rejected" }), NOW),
     /FAILED \| run run7a \| 论文标题｜引用 2301\.00001v1.*｜cls=review_rejected/,
@@ -77,19 +77,27 @@ test("references shrink to arXiv ids and anything else stays verbatim", () => {
   assert.equal(referenceLabel("https://doi.org/10.1000/xyz"), "https://doi.org/10.1000/xyz");
 });
 
-test("recording a run appends to both the log and the question page", () => {
+test("completed appends SUCCESS to the question page; failures only hit the audit log", () => {
   const t = { onTestFinished };
   const dir = memoryDir(t);
   const memory = open(t, dir);
 
   memory.recordRun(facts(), NOW);
   memory.recordRun(facts({ runId: "run7b", status: "failed", failureCode: "infra_error", title: null }), NOW);
+  memory.recordRun(facts({ runId: "run7c", status: "review_rejected", failureCode: "review_rejected" }), NOW);
 
   const page = readFileSync(join(dir, "questions", "q7.md"), "utf8");
   assert.match(page, /^# q7\n/, "新题页要有种子抬头");
   assert.match(page, /append-only/);
-  assert.equal(page.split("\n").filter((line) => line.startsWith(ENTRY_PREFIX)).length, 2);
-  assert.equal(readFileSync(join(dir, "log.md"), "utf8").split("## [").length - 1, 2);
+  const pageLines = page.split("\n").filter((line) => line.startsWith(ENTRY_PREFIX));
+  assert.equal(pageLines.length, 1, "失败 / review_rejected 不得进注入题页");
+  assert.match(pageLines[0]!, /SUCCESS \| run run7a/);
+  assert.doesNotMatch(page, /FAILED/);
+
+  const log = readFileSync(join(dir, "log.md"), "utf8");
+  assert.equal(log.split("## [").length - 1, 3, "审计日志仍记全量终态");
+  assert.match(log, /q7 \| FAILED/);
+  assert.match(log, /q7 \| SUCCESS/);
 });
 
 test("existing campaign history is appended to, never rewritten", () => {
@@ -113,7 +121,7 @@ test("a run without a question id writes the log but no question page", () => {
   assert.throws(() => readFileSync(join(dir, "questions", "q7.md"), "utf8"));
 });
 
-test("prior attempts are the last three deterministic lines of the question page", () => {
+test("prior attempts return only SUCCESS lines, ignoring legacy FAILED on disk", () => {
   const t = { onTestFinished };
   const dir = memoryDir(
     t,
@@ -122,9 +130,12 @@ test("prior attempts are the last three deterministic lines of the question page
       "",
       "散文行，不是记录，读取端不能把它当条目",
       "- [2026-08-01T00:00:00Z] FAILED | run a | 一",
-      "- [2026-08-02T00:00:00Z] FAILED | run b | 二",
-      "- [2026-08-03T00:00:00Z] SUCCESS | run c | 三",
-      "- [2026-08-04T00:00:00Z] FAILED | run d | 四",
+      "- [2026-08-02T00:00:00Z] SUCCESS | run b | 二",
+      "- [2026-08-03T00:00:00Z] FAILED | run c | 三",
+      "- [2026-08-04T00:00:00Z] SUCCESS | run d | 四",
+      "- [2026-08-05T00:00:00Z] SUCCESS | run e | 五",
+      "- [2026-08-06T00:00:00Z] FAILED | run f | 六",
+      "- [2026-08-07T00:00:00Z] SUCCESS | run g | 七",
       "",
     ].join("\n"),
   );
@@ -132,9 +143,22 @@ test("prior attempts are the last three deterministic lines of the question page
 
   const prior = memory.readPriorAttempts(7);
   assert.equal(prior.status, "available");
-  assert.equal(prior.entries.length, 3);
-  assert.match(prior.entries[0]!, /run b/);
-  assert.match(prior.entries[2]!, /run d/);
+  assert.equal(prior.entries.length, 3, "上限仍是末 3 条 SUCCESS");
+  assert.match(prior.entries[0]!, /run d/);
+  assert.match(prior.entries[1]!, /run e/);
+  assert.match(prior.entries[2]!, /run g/);
+  assert.ok(prior.entries.every((line) => line.includes("] SUCCESS |")));
+  assert.ok(prior.entries.every((line) => !line.includes("FAILED")));
+
+  // 题页上只有 FAILED 遗留行：注入面为空，不改写磁盘。
+  const failedOnlyDir = memoryDir(t, "# q7\n\n- [2026-08-01T00:00:00Z] FAILED | run x | 旧失败\n");
+  assert.deepEqual(open(t, failedOnlyDir).readPriorAttempts(7), {
+    status: "empty",
+    entries: [],
+    reason: null,
+  });
+  assert.match(readFileSync(join(failedOnlyDir, "questions", "q7.md"), "utf8"), /FAILED \| run x/);
+
   // 没跑过的题、没有题号的 run：空数组，不是异常。
   assert.deepEqual(memory.readPriorAttempts(99), { status: "empty", entries: [], reason: null });
   assert.deepEqual(memory.readPriorAttempts(null), { status: "not_applicable", entries: [], reason: null });
@@ -220,7 +244,7 @@ function capturing(): { execute: StageExecutor; inputs: Array<Record<string, unk
 
 test("the researcher input carries prior attempts after the stable prefix", async () => {
   const t = { onTestFinished };
-  const dir = memoryDir(t, "# q7\n\n- [2026-08-01T00:00:00Z] FAILED | run a | 走死过的路\n");
+  const dir = memoryDir(t, "# q7\n\n- [2026-08-01T00:00:00Z] SUCCESS | run a | 已交付线索\n");
   const store = new SqliteStore(":memory:");
   t.onTestFinished(() => store.close());
   const { execute, inputs } = capturing();
@@ -228,7 +252,7 @@ test("the researcher input carries prior attempts after the stable prefix", asyn
   const runId = store.createRun("问题", { science125Id: 7 });
   await new Harness(store, execute, { memory: open(t, dir) }).execute(runId);
 
-  assert.deepEqual(inputs[0]!.prior_attempts, ["- [2026-08-01T00:00:00Z] FAILED | run a | 走死过的路"]);
+  assert.deepEqual(inputs[0]!.prior_attempts, ["- [2026-08-01T00:00:00Z] SUCCESS | run a | 已交付线索"]);
   // 前缀稳定：记忆接在 input_artifacts 之后、纠错材料之前。
   assert.deepEqual(Object.keys(inputs[0]!), ["question", "goal", "input_artifacts", "prior_attempts"]);
 });
@@ -251,12 +275,10 @@ test("the ablation arm injects nothing and the fact is on the record", async () 
   assert.throws(() => readFileSync(join(dir, "log.md"), "utf8"));
 });
 
-test("a run records what it injected even when it fails", async () => {
+test("a failed run still audits to the log but does not enlarge the inject page", async () => {
   const t = { onTestFinished };
-  const dir = memoryDir(
-    t,
-    "# q7\n\n- [2026-08-01T00:00:00Z] FAILED | run a | 一\n- [2026-08-02T00:00:00Z] FAILED | run b | 二\n",
-  );
+  const seed = "# q7\n\n- [2026-08-01T00:00:00Z] SUCCESS | run a | 一\n- [2026-08-02T00:00:00Z] FAILED | run b | 二\n";
+  const dir = memoryDir(t, seed);
   const store = new SqliteStore(":memory:");
   t.onTestFinished(() => store.close());
 
@@ -264,8 +286,9 @@ test("a run records what it injected even when it fails", async () => {
   await new Harness(store, capturing().execute, { memory: open(t, dir) }).execute(runId);
 
   const injected = store.eventsAfter(runId, 0).find((event) => event.kind === "campaign.prior_attempts");
-  assert.deepEqual(injected?.payload, { question_id: 7, count: 2 });
-  // 失败的 run 同样进战役史：下一次要知道这条路已经试过。
+  assert.deepEqual(injected?.payload, { question_id: 7, count: 1 }, "只注入 SUCCESS");
+  // 失败进审计日志，不追加 FAILED 到题页。
+  assert.match(readFileSync(join(dir, "log.md"), "utf8"), /FAILED/);
   const page = readFileSync(join(dir, "questions", "q7.md"), "utf8");
-  assert.match(page, /FAILED \| run \w+ \| 未产出 research-plan｜cls=provider_error/);
+  assert.equal(page, seed, "题页保持种子内容，无新 FAILED 行");
 });
