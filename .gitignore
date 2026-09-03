@@ -5,6 +5,7 @@
 # 会话工具状态：私有配置不入库。
 .claude/
 .codex/
+.cursor/
 .jules/
 
 # 依赖与构建产物
