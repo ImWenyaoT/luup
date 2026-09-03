@@ -22,7 +22,7 @@ TS 栈的 `memory_note` 工具与 `campaignMemory.ts` 已删除且未重建，�
 现在只有一条路径：run 收尾 `campaign.record_run` 确定性追加，零 LLM、append-only、原子替换。
 
 - `log.md`：`## [date] run | q<id> | SUCCESS|FAILED` + 一行 run 目录与摘要。
-- `questions/q<id>.md`：一行 verdict + 胜出标题（或失败分类）+ 引用 id 列表；无题号的 run 只写 log。
+- `questions/q<id>.md`：仅 `completed`（SUCCESS ∧ B1–B4）追加一行；失败 / `review_rejected` 只进 `log.md`，不进注入面（ADR-0012）。
 - 事实来源是本 run 自己的 `proposal.json` 与 `RunOutcome`，不经模型转述，因此没有「声称写了但没写」的空间。
 
 ## 读取：分桶配额，不灌上下文

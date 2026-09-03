@@ -1,58 +1,69 @@
-import { useCallback, useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback } from "react";
 
-import { ApiError } from "../lib/api/client";
-import { fetchConfig, saveConfig } from "../lib/api/config";
-import type { ConfigStatus } from "../lib/types/wire";
-import { useApiClient } from "../providers/api";
+import { toApiError } from "../lib/api/client";
 import type { ApiClient } from "../lib/api/client";
+import { fetchConfig, saveConfig } from "../lib/api/config";
+import { useApiClient } from "../providers/api";
+
+export const CONFIG_QUERY_KEY = ["config"] as const;
 
 export type UseConfigOptions = {
   client?: ApiClient;
 };
 
+export function configQueryOptions(client: ApiClient) {
+  return {
+    queryKey: CONFIG_QUERY_KEY,
+    queryFn: () => fetchConfig(client),
+  };
+}
+
 export function useConfig(options?: UseConfigOptions) {
   const defaultClient = useApiClient();
   const client = options?.client ?? defaultClient;
-  const [config, setConfig] = useState<ConfigStatus | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<ApiError | null>(null);
+  const queryClient = useQueryClient();
 
-  const reload = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const next = await fetchConfig(client);
-      setConfig(next);
-    } catch (cause) {
-      const apiError = cause instanceof ApiError ? cause : new ApiError(500, String(cause));
-      setError(apiError);
-    } finally {
-      setLoading(false);
-    }
-  }, [client]);
+  const query = useQuery(configQueryOptions(client));
 
-  useEffect(() => {
-    void reload();
-  }, [reload]);
+  const mutation = useMutation({
+    mutationFn: (next: { api_key?: string; model_id?: string; base_url?: string }) => saveConfig(client, next),
+    onSuccess: (data) => {
+      queryClient.setQueryData(CONFIG_QUERY_KEY, data);
+    },
+  });
+
+  const { mutateAsync, isPending: saving, error: mutationError } = mutation;
 
   const save = useCallback(
     async (next: { api_key?: string; model_id?: string; base_url?: string }) => {
-      setSaving(true);
-      setError(null);
       try {
-        const updated = await saveConfig(client, next);
-        setConfig(updated);
+        return await mutateAsync(next);
       } catch (cause) {
-        const apiError = cause instanceof ApiError ? cause : new ApiError(500, String(cause));
-        setError(apiError);
-        throw apiError;
-      } finally {
-        setSaving(false);
+        throw toApiError(cause);
       }
     },
-    [client],
+    [mutateAsync],
   );
 
-  return { config, loading, saving, error, save, reload };
+  const reload = useCallback(async () => {
+    // Cancel any in-flight mount fetch so open→reload is not deduped away
+    // (SettingsDialog tests rely on a distinct GET before PUT).
+    await queryClient.cancelQueries({ queryKey: CONFIG_QUERY_KEY });
+    await queryClient.fetchQuery({
+      ...configQueryOptions(client),
+      staleTime: 0,
+    });
+  }, [client, queryClient]);
+
+  const rawError = mutationError ?? query.error;
+
+  return {
+    config: query.data ?? null,
+    loading: query.isLoading,
+    saving,
+    error: rawError ? toApiError(rawError) : null,
+    save,
+    reload,
+  };
 }

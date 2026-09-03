@@ -1,4 +1,5 @@
-基于所有冻结 Artifact 生成简体中文、尚待验证的研究计划。
+基于所有冻结 Artifact 生成简体中文、尚待验证的研究计划。本角色每个 run 只调用一次：下游 Reviewer
+不接受即终止该支线，不会把评审意见喂回本角色做同支线改稿。
 
 artifact_type 固定写 `research-plan`。
 

@@ -41,8 +41,46 @@ describe("parseSseMessage", () => {
   test("非法 JSON 显式报协议错误", () => {
     expect(() => parseSseMessage("{not-json")).toThrow(/不是有效 JSON/);
   });
-});
 
+  test("非对象 / 缺字段 / kind 不一致 / payload 非法均报协议错误", () => {
+    expect(() => parseSseMessage("null")).toThrow(/必须是对象/);
+    expect(() => parseSseMessage(JSON.stringify({ id: 1, version: 2 }))).toThrow(/缺少 kind\/created_at/);
+    expect(() =>
+      parseSseMessage(
+        JSON.stringify({
+          id: 1,
+          version: 2,
+          kind: "run.created",
+          payload: {},
+          created_at: "2026-01-01T00:00:00Z",
+        }),
+        "run.completed",
+      ),
+    ).toThrow(/kind 不一致/);
+    expect(() =>
+      parseSseMessage(
+        JSON.stringify({
+          id: 1,
+          version: 2,
+          kind: "run.created",
+          payload: [],
+          created_at: "2026-01-01T00:00:00Z",
+        }),
+      ),
+    ).toThrow(/payload 必须是对象/);
+    expect(() =>
+      parseSseMessage(
+        JSON.stringify({
+          id: "x",
+          version: 2,
+          kind: "run.created",
+          payload: {},
+          created_at: "2026-01-01T00:00:00Z",
+        }),
+      ),
+    ).toThrow(/缺少数字 id\/version/);
+  });
+});
 describe("subscribeRunEvents", () => {
   test("注册 13 种 UI 事件并在终态 close", () => {
     const listeners = new Map<string, EventListener>();

@@ -332,6 +332,23 @@
       },
       "unchanged": "题集、arms、phase_b_subset 及 digest、Artifact 合同、五角色顺序、模型与 Responses 接线、补证/修订两轮上界、B1–B4、统计设计、双分母、失败桶、熔断、release 绑定、Phase A/B 启动门与禁止显著性主张全部不变。历史 Run、修订与注册文本原样保留。",
       "effect_on_numbers": "运行时与工具链升级可能改变未来正式批的墙钟、资源占用和故障分布，方向未知；诊断 canary 的 verifier_refs 终态只证明 fail-closed 行为，不构成新模型质量结论，也没有历史数字被改写。"
+    },
+    {
+      "date": "2026-09-01",
+      "before_phase_a": false,
+      "before_definitive_phase_a": true,
+      "before_any_reading": false,
+      "recorded_when": "**历史 pilot/v2/v3、canary 与误启动读数均已存在，正式 Phase A 和 Phase B 仍未启动。** 本条在见到任何新正式批读数之前落盘；授权的是即将落地的 harness 语义意图（ADR-0012），**本条本身不改运行时代码**——代码可在后续 commit（F1–F4）合入。",
+      "registered_commit_amended": "2ef2d11b5558bf7cc16cda0fb0b968fc41ad94f2",
+      "summary": "授权「森林理论」Harness 设计变更（ADR-0012）：拆除/硬化公司式修订环、候选晋升硬闸、审计账本与可注入 KB 分层。本条声明意图并授权后续代码落地；不改题集、arms、统计设计与 B1–B4 判据本身。",
+      "changes": {
+        "forest_harness": "采纳 ADR-0012：角色产出默认不信任；编排语义为 propose → critique → hard gate → merge；允许高拒收；禁止交付率借口下的互相改稿。保留 Harness 拥有控制流、冻结 Artifact handoff、B1–B4 零 LLM 验收、PR #37 每候选 assessment。",
+        "revision_loop": "意图：拆除或硬化 reviewer↔planner 公司式修订环。reviewer 不接受 → 终止该支线（`review_rejected` 或后续实现钉死的等价终态），**不得**把 revise 意见喂回同一 planner「改到过」。若再试，只允许新开 attempt / 新候选支线，输入为冻结证据与拒收记录。现行「修订至多 2 轮」上界在代码落地前仍为过渡事实；落地后 `metrics.mechanism.revisionRate` 等依赖 revise 循环的读数语义须按新事件重读（实现 commit 可再补一条钉死终态码与事件名）。",
+        "candidate_promotion": "意图：evidence-review 判定进入 harness 硬闸；`contradicts`（及实现钉死的其它否决）不得晋升为进入 research-plan 的 selected。hypothesis-generation 自评 ranking 不得单独决定晋升（Propose ≠ Select）。无合格候选 fail-closed；具体 failure/终态码在实现 commit 钉死。",
+        "campaign_inject_filter": "意图：审计账本（SQLite 全量 Artifact/事件）与可注入 KB 分层。campaign `prior_attempts` 注入面仅 merge SUCCESS（`completed`）∧ B1–B4 通过的线索；失败与 `review_rejected` 可继续 append 给人读的日志页，但不得进入开局注入。消融臂「关掉注入通道」的门语义保留，过滤收紧的是 ON 臂注入内容。"
+      },
+      "unchanged": "题集、arms、phase_b_subset 及 digest、Artifact 合同字段形状、五角色顺序、模型与 Responses 接线、B1–B4 引用判据与未校准阈值声明、统计设计 `bounded_comparison`、双分母、失败桶归属（修订 #2）、熔断阈值、release 绑定、Phase A/B 启动门与禁止显著性主张全部不变。历史修订与注册文本原样保留；本条不重写既有 amendments。",
+      "effect_on_numbers": "对本条落盘时已存在的历史库与读数无影响（无一字节改写）。对将要产生的正式批：修订环拆除后即时 `review_rejected` 预期上升、同支线 rewrite 消失，`revisionRate` 基线不可与旧环并列；晋升闸与 KB 过滤会改变交付率、补证率、注入计数与失败分布，方向未知——机制写在这里，不留到见数后再解释。代码未落地前，任何仍跑旧环的 canary 不得当作森林语义的验证读数。"
     }
   ],
   "interpretation": "这是对已记录架构取舍的证据，不是普适优越性主张。结论的形状只能是「在这一条 harness commit、这一个题库、这一条串行顺序下，跨 run 记忆让交付率朝某个方向动了多少」，不能读成「记忆机制优于无记忆」或反过来。Do not claim superiority from one successful trace, one direction, or an unpriced token count.",

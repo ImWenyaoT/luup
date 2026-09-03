@@ -10,7 +10,7 @@
 
 ## 一句话
 
-Luup 是一个确定性 Harness 编排五个 LLM 角色的科研 Agent：固定五阶段串行，两条上界写死在控制流里，
+Luup 是一个确定性 Harness 编排五个 LLM 角色的科研 Agent：固定五阶段串行，补证上界与森林硬闸写死在控制流里，
 最后由不问模型的 verifier 决定能否交付。
 
 ```text
@@ -32,7 +32,8 @@ apps/server/src/server.ts ── apps/server/src/harness.ts ── researcher
 
 外部 interface 只有「给定 run id，推进到终态」。`apps/server/src/harness.ts` 拥有：
 
-- 五阶段顺序与两条上界：补证 ≤2 轮、修订 ≤2 轮，写成能一眼读完的 `for` 循环；
+- 五阶段顺序与补证上界：补证 ≤2 轮（`for` 一眼可读）；research-plan → reviewer **单次射击**（无同支线改稿环，ADR-0012）；
+- 候选晋升硬闸：选中候选须 evidence-review `supports` 才进 plan；
 - 每个 Attempt 的证据台账、用量、事件与失败分类落库；
 - 终局引用验收的触发。
 
@@ -75,14 +76,17 @@ wire type 手写在 `apps/web/app/lib/types/`，**不从服务端模块导入类
 
 ## Agent 流程
 
+森林语义（ADR-0012）：角色产出默认不信任；流程是 **propose → critique → hard gate → merge**，不是公司式互改。
+审计账本（SQLite 全量）与可注入 KB（campaign 题页 `prior_attempts`，仅 SUCCESS）分层；高拒收是设计目标。
+
 1. **researcher** 检索 arXiv/Crossref，把命中写进证据台账并冻结成 Artifact。
-2. **hypothesis-generation** 在冻结证据上提出至少两个可区分、可证伪的候选假说，逐条保留支持/反对证据、替代解释与不确定性，再留下比较筛选记录；选中只表示进入计划，不表示已证实。
+2. **hypothesis-generation** 在冻结证据上提出至少两个可区分、可证伪的候选假说，逐条保留支持/反对证据、替代解释与不确定性，再留下比较筛选记录；选中只表示进入计划，不表示已证实（Propose ≠ Select）。
 3. **evidence-review** 独立压力测试每条候选：每个 `candidate_id` 必须恰好有一条证据判定；再汇总缺口，
-   有 gaps 就回到检索，最多两轮。
+   有 gaps 就回到检索，最多两轮。晋升硬闸：选中候选须 `supports` 才进入 research-plan，否则 fail-closed。
 4. **research-plan** 产出研究计划，引用必须能追溯到冻结 Artifact 的 citations
    （`apps/server/src/agent/plan-quality.ts` 的两道门）。
-5. **reviewer** 必须检索到上游未见的新信息再表态；`revise` 触发定向修订，最多两轮，
-   第二次拒绝必定终止。
+5. **reviewer** 必须检索到上游未见的新信息再表态；不接受或插入人反馈即 `review_rejected`，
+   **不**把意见喂回同一 planner 改到过。
 6. **verify**（零 LLM）以 run-local 权威卡检查 B1–B4；任何无法证明的引用事实 fail-closed。
 
 ## 存储裁决
@@ -91,7 +95,8 @@ wire type 手写在 `apps/web/app/lib/types/`，**不从服务端模块导入类
   `LUUP_DATABASE` 可覆盖。单写者锁；重开数据库即把运行中的 run 判 `interrupted`。
 - `memory/`：跨 run 线索库，维持文件制 Markdown、append-only，历史行逐字保留。
   **没有跟着换存储**——它是给人读的，也是竞赛材料的一部分；消融语义「关掉一个目录」
-  可陈述，「关掉一张表的某几行」不可陈述。它只提供线索，引用仍必须在本 run 重新核验。
+  可陈述，「关掉一张表的某几行」不可陈述。`log.md` 全量审计；题页注入面只收 `completed`（SUCCESS）。
+  它只提供线索，引用仍必须在本 run 重新核验。
 - `data/science125.json`：冻结的 125 题输入源，只读。
 - 历史批证据（`runs-ts/` 的 pilot/v2/v3 部分批与 Python 期 `runs/`，ADR-0004）：已迁至
   git tag `archive/phase-a-evidence-20260816`，不在工作树（协议修订 #6，2026-08-16）；

@@ -77,6 +77,15 @@ const EVENT_PAYLOAD_FIELDS: Record<string, readonly string[]> = {
     "retry_reason",
     "rollback_reason",
   ],
+  // ADR-0012 F1：证据审查后的候选晋升硬闸。选中 id + verdict + promoted 是审计必需；
+  // artifact id 是溯源标量，可出网。
+  "evaluation.candidate_gate": [
+    "selected_candidate_id",
+    "verdict",
+    "promoted",
+    "evidence_review_artifact_id",
+    "hypothesis_artifact_id",
+  ],
   // 终局引用验收的计分板。逐条 checks 是数组，即使写进白名单也过不了类型闸，
   // 明细留在库内供报告引用，界面只拿到「查了几条、过没过」。
   "verification.references": [

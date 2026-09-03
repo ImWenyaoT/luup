@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { ApiError, createApiClient, parseJson } from "./client";
+import { ApiError, createApiClient, parseJson, toApiError } from "./client";
 
 function respond(status: number, body: string, ok = status < 400): Response {
   return {
@@ -34,6 +34,20 @@ describe("ApiError", () => {
       message: "临时不可用",
       body: { detail: "临时不可用", code: "stream_error" },
     });
+  });
+});
+
+describe("toApiError", () => {
+  test("ApiError 原样返回", () => {
+    const error = new ApiError(422, "bad");
+    expect(toApiError(error)).toBe(error);
+  });
+
+  test("非 ApiError 包装为 status 500", () => {
+    const error = toApiError(new Error("boom"));
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error.status).toBe(500);
+    expect(error.message).toBe("Error: boom");
   });
 });
 

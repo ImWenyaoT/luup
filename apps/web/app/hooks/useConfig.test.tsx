@@ -51,8 +51,8 @@ describe("useConfig", () => {
       await result.current.save({ model_id: "qwen-new" });
     });
 
+    await waitFor(() => expect(result.current.config?.model_id).toBe("qwen-new"));
     expect(result.current.saving).toBe(false);
-    expect(result.current.config?.model_id).toBe("qwen-new");
   });
 
   test("save 失败设置 error 并抛出 ApiError", async () => {
@@ -78,7 +78,7 @@ describe("useConfig", () => {
 
     expect(thrown).toBeInstanceOf(ApiError);
 
-    expect(result.current.error?.status).toBe(422);
+    await waitFor(() => expect(result.current.error?.status).toBe(422));
   });
 
   test("reload 重新拉取", async () => {
