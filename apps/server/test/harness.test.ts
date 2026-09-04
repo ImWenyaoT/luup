@@ -70,6 +70,8 @@ function fake(
     gapOnce?: boolean;
     /** 选中候选（evidence-gate）在最终 evidence-review 上的 verdict；默认 supports。 */
     selectedVerdict?: "supports" | "contradicts" | "uncertain";
+    /** 非自选候选（prompt-only）的 verdict；用于 Propose≠Select 晋升旁路。 */
+    alternateVerdict?: "supports" | "contradicts" | "uncertain";
     rejectReviews?: number;
     invalidPlanOnce?: boolean;
     hidesASearch?: boolean;
@@ -344,14 +346,24 @@ function fake(
                 {
                   candidate_id: "prompt-only",
                   claim: "仅提示词约束也可能降低无来源引用。",
-                  verdict: "uncertain" as const,
-                  rationale: "冻结证据尚不足以排除任务差异等替代解释。",
-                  evidence_ids: [],
+                  verdict: (options.alternateVerdict ?? "uncertain") as
+                    | "supports"
+                    | "contradicts"
+                    | "uncertain",
+                  rationale:
+                    (options.alternateVerdict ?? "uncertain") === "supports"
+                      ? "冻结证据支持将该对照候选作为可验证主张推进。"
+                      : "冻结证据尚不足以排除任务差异等替代解释。",
+                  evidence_ids:
+                    (options.alternateVerdict ?? "uncertain") === "supports"
+                      ? research.flatMap((item) => item.content.citations.map((c: any) => c.evidence_id))
+                      : [],
                 },
               ]),
         ],
         gaps: gap ? ["comparison source"] : [],
-        supported: selectedVerdict === "supports" && !gap,
+        supported:
+          !gap && (selectedVerdict === "supports" || options.alternateVerdict === "supports"),
       };
     }
 
@@ -871,12 +883,35 @@ test("candidate gate fail-closes when selected verdict is uncertain", async () =
   assert.equal(h.calls.filter((c) => c.role === "research-plan").length, 0);
   const gate = snapshot.recent_events.find((e: any) => e.kind === "evaluation.candidate_gate");
   assert.ok(gate);
-  assert.equal(gate!.payload.verdict, "uncertain");
+  assert.equal(gate!.payload.selected_verdict, "uncertain");
   assert.equal(gate!.payload.promoted, false);
+  assert.equal(gate!.payload.supports_count, 0);
   h.store.close();
 });
 
-test("candidate gate promotes only when selected verdict is supports", async () => {
+test("candidate gate promotes an alternate supports candidate when selected fails (Propose≠Select)", async () => {
+  const h = harness({ selectedVerdict: "uncertain", alternateVerdict: "supports" });
+  const runId = h.harness.createRun("q");
+  await h.harness.execute(runId);
+
+  const snapshot = h.store.snapshot(runId)!;
+  assert.equal(snapshot.status, "completed");
+  assert.ok(h.calls.some((c) => c.role === "research-plan"));
+  const planCall = h.calls.find((c) => c.role === "research-plan");
+  assert.match(String(planCall!.input.goal), /prompt-only/);
+  const gate = snapshot.recent_events.find((e: any) => e.kind === "evaluation.candidate_gate");
+  assert.ok(gate);
+  assert.equal(gate!.payload.selected_candidate_id, "evidence-gate");
+  assert.equal(gate!.payload.selected_verdict, "uncertain");
+  assert.equal(gate!.payload.promoted_candidate_id, "prompt-only");
+  assert.equal(gate!.payload.verdict, "supports");
+  assert.equal(gate!.payload.promoted, true);
+  assert.equal(gate!.payload.selection_overridden, true);
+  assert.equal(gate!.payload.supports_count, 1);
+  h.store.close();
+});
+
+test("candidate gate promotes selected when its verdict is supports", async () => {
   const h = harness({ selectedVerdict: "supports" });
   const runId = h.harness.createRun("q");
   await h.harness.execute(runId);
@@ -887,8 +922,10 @@ test("candidate gate promotes only when selected verdict is supports", async () 
   const gate = snapshot.recent_events.find((e: any) => e.kind === "evaluation.candidate_gate");
   assert.ok(gate);
   assert.equal(gate!.payload.selected_candidate_id, "evidence-gate");
+  assert.equal(gate!.payload.promoted_candidate_id, "evidence-gate");
   assert.equal(gate!.payload.verdict, "supports");
   assert.equal(gate!.payload.promoted, true);
+  assert.equal(gate!.payload.selection_overridden, false);
   h.store.close();
 });
 

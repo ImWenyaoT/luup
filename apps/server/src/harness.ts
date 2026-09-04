@@ -195,30 +195,42 @@ export class Harness {
         if ((evidenceReview.content as EvidenceReview).gaps.length === 0) break;
       }
 
-      // ADR-0012 F1：候选晋升硬闸。hypothesis 自选 ≠ 晋升（Propose ≠ Select）；
-      // 仅 latest EvidenceReview 对选中候选给出 supports 才进入 research-plan。
-      // contradicts / uncertain / 缺评估一律 fail-closed（森林「默认真错」）。
+      // ADR-0012 F1：候选晋升硬闸。hypothesis 自选 ≠ 晋升（Propose ≠ Select）。
+      // 自选若 supports → 晋升自选；否则在 assessments 里按顺序取第一个 supports。
+      // 全无 supports（全是 contradicts / uncertain / 缺评估）→ fail-closed。
       const hypothesisArtifact = hypotheses.at(-1)!;
       const selectedCandidateId = (hypothesisArtifact.content as { comparison: { selected_candidate_id: string } })
         .comparison.selected_candidate_id;
-      const selectedAssessment = (evidenceReview.content as EvidenceReview).assessments.find(
-        (item) => item.candidate_id === selectedCandidateId,
-      );
-      const verdict = selectedAssessment?.verdict ?? null;
-      const promoted = verdict === "supports";
+      const assessments = (evidenceReview.content as EvidenceReview).assessments;
+      const selectedAssessment = assessments.find((item) => item.candidate_id === selectedCandidateId);
+      const selectedVerdict = selectedAssessment?.verdict ?? null;
+      const supported = assessments.filter((item) => item.verdict === "supports");
+      const promotedCandidate =
+        selectedVerdict === "supports"
+          ? (selectedAssessment ?? null)
+          : (supported[0] ?? null);
+      const promoted = promotedCandidate !== null;
+      const promotedCandidateId = promotedCandidate?.candidate_id ?? null;
+      const promotedVerdict = promotedCandidate?.verdict ?? null;
+      const selectionOverridden =
+        promoted && promotedCandidateId !== null && promotedCandidateId !== selectedCandidateId;
       this.#store.emit(runId, "evaluation.candidate_gate", {
         selected_candidate_id: selectedCandidateId,
-        verdict,
+        selected_verdict: selectedVerdict,
+        promoted_candidate_id: promotedCandidateId,
+        verdict: promotedVerdict ?? selectedVerdict,
         promoted,
+        selection_overridden: selectionOverridden,
+        supports_count: supported.length,
         evidence_review_artifact_id: evidenceReview.id,
         hypothesis_artifact_id: hypothesisArtifact.id,
       });
-      if (!promoted) {
+      if (!promoted || promotedCandidateId === null) {
         throw new AttemptFailed(
           "invalid_output",
-          verdict === null
-            ? `candidate gate: no assessment for selected candidate ${selectedCandidateId}`
-            : `candidate gate: selected candidate ${selectedCandidateId} verdict is ${verdict}; only supports may promote`,
+          selectedVerdict === null
+            ? `candidate gate: no assessment for selected candidate ${selectedCandidateId}; no supports among assessments`
+            : `candidate gate: selected ${selectedCandidateId} is ${selectedVerdict}; no supports among assessments`,
         );
       }
 
@@ -226,7 +238,10 @@ export class Harness {
       // Reviewer 不接受或研究者插了人反馈，立刻 review_rejected；禁止把意见喂回 planner 改到过。
       const domainInputs = [...research, ...hypotheses, evidenceReview].map(toInput);
       const evaluationCostBefore = evaluationUsageTokens(this.#store.eventsAfter(runId, 0));
-      const plan = await this.#step(runId, question, "research-plan", domainInputs, "生成可验证研究计划");
+      const planGoal = selectionOverridden
+        ? `生成可验证研究计划；Harness 晋升候选 ${promotedCandidateId}（模型自选 ${selectedCandidateId} 未过证据闸，Propose≠Select）`
+        : `生成可验证研究计划；晋升候选 ${promotedCandidateId}`;
+      const plan = await this.#step(runId, question, "research-plan", domainInputs, planGoal);
       const review = await this.#step(
         runId,
         question,

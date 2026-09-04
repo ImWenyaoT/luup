@@ -5,7 +5,6 @@ import { buildRound, buildTrace, buildUsage, buildVerification, unknownCase } fr
 import {
   isRecord,
   lastEvent,
-  parseChangedFieldsList,
   parseSafeId,
   readArtifacts,
   readEvents,
@@ -99,6 +98,10 @@ export function buildRepresentativeCase(
   };
 }
 
+/**
+ * 森林语义严格门（ADR-0012）：多候选 propose → 硬闸晋升 → 单次 accept → B1–B4。
+ * 不再要求同支线 `revision.applied` / round2（公司式「改到过」已拆除）。
+ */
 export function checkRepresentativeCaseStrict(
   store: RepresentativeCaseReadSource,
   value: RepresentativeCaseExport,
@@ -111,32 +114,37 @@ export function checkRepresentativeCaseStrict(
     reasons.push("science125_id_not_in_frozen_catalog");
   }
   if (value.run.status !== "completed") reasons.push("run_not_completed");
-  if (!value.rounds.round1.present) reasons.push("round1_missing");
-  if (!value.rounds.round2.present) reasons.push("round2_missing");
+
+  const snapshot = value.run_id === null ? null : store.snapshot(value.run_id);
+  const events = snapshot === null ? [] : readEvents(snapshot.recent_events, []);
+  const hypothesis = snapshot === null ? null : readHypothesisContent(snapshot);
+  if (hypothesis === null || hypothesis.candidateCount < 2) {
+    reasons.push("forest_candidates_missing");
+  }
+
+  const gate = lastEvent(events, "evaluation.candidate_gate");
+  if (gate === null || gate.payload.promoted !== true) {
+    reasons.push("forest_gate_not_promoted");
+  } else {
+    const promotedId = parseSafeId(gate.payload.promoted_candidate_id);
+    const selectedId = parseSafeId(gate.payload.selected_candidate_id);
+    if (promotedId === null && selectedId === null) reasons.push("forest_gate_facts_incomplete");
+  }
+
+  const acceptRound = events.some(
+    (event) => event.kind === "evaluation.round" && event.payload.action === "accept",
+  );
+  const acceptFeedback = events.some(
+    (event) => event.kind === "feedback.received" && event.payload.action === "accept",
+  );
+  if (!acceptRound && !acceptFeedback) reasons.push("forest_accept_missing");
+
   if (
     value.source_ledger.status !== "known" ||
     value.source_ledger.records.length === 0 ||
     value.source_ledger.unknown_records > 0
   ) {
     reasons.push("source_ledger_missing_or_unknown");
-  }
-
-  const snapshot = value.run_id === null ? null : store.snapshot(value.run_id);
-  const events = snapshot === null ? [] : readEvents(snapshot.recent_events, []);
-  if (!events.some((event) => event.kind === "feedback.received")) reasons.push("feedback_missing");
-
-  const revisions = events.filter((event) => event.kind === "revision.applied");
-  if (revisions.length === 0) {
-    reasons.push("revision_missing");
-  } else if (
-    !revisions.some((event) => {
-      const from = parseSafeId(event.payload.from_artifact_id);
-      const to = parseSafeId(event.payload.to_artifact_id);
-      const fields = parseChangedFieldsList(event.payload.changed_fields, []);
-      return from !== null && to !== null && fields.length > 0;
-    })
-  ) {
-    reasons.push("revision_facts_incomplete");
   }
 
   const verificationEvent = lastEvent(events, "verification.references");
@@ -170,6 +178,20 @@ export function checkRepresentativeCaseStrict(
     reasons.push("usage_missing_or_unknown");
   }
   return { passed: reasons.length === 0, reasons: unique(reasons) };
+}
+
+function readHypothesisContent(snapshot: Record<string, unknown>): { candidateCount: number } | null {
+  const artifacts = Array.isArray(snapshot.artifacts) ? snapshot.artifacts : [];
+  for (const raw of artifacts) {
+    if (!isRecord(raw)) continue;
+    const type = typeof raw.type === "string" ? raw.type : null;
+    if (type !== "hypothesis") continue;
+    const content = isRecord(raw.content) ? raw.content : null;
+    if (content === null) continue;
+    const candidates = Array.isArray(content.candidates) ? content.candidates : [];
+    return { candidateCount: candidates.length };
+  }
+  return null;
 }
 
 export { renderRepresentativeCaseMarkdown } from "./representative-case-markdown.ts";

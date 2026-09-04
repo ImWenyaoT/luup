@@ -285,7 +285,7 @@ function assemble(options: SubmissionReadinessOptions): ReadinessDocuments {
         state: strict.passed ? "pass" : "fail",
         required: true,
         detail: strict.passed
-          ? "代表案例满足严格双轮、反馈、证据、验证和用量要求。"
+          ? "代表案例满足森林脊骨：多候选、硬闸晋升、单次 accept、证据与用量。"
           : `代表案例严格门未通过：${strict.reasons.join(", ")}`,
       });
     } catch (error) {

@@ -77,12 +77,16 @@ const EVENT_PAYLOAD_FIELDS: Record<string, readonly string[]> = {
     "retry_reason",
     "rollback_reason",
   ],
-  // ADR-0012 F1：证据审查后的候选晋升硬闸。选中 id + verdict + promoted 是审计必需；
+  // ADR-0012 F1：证据审查后的候选晋升硬闸。自选与实际晋升可分叉（Propose≠Select）；
   // artifact id 是溯源标量，可出网。
   "evaluation.candidate_gate": [
     "selected_candidate_id",
+    "selected_verdict",
+    "promoted_candidate_id",
     "verdict",
     "promoted",
+    "selection_overridden",
+    "supports_count",
     "evidence_review_artifact_id",
     "hypothesis_artifact_id",
   ],

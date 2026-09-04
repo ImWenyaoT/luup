@@ -34,6 +34,8 @@ apps/server/src/server.ts ── apps/server/src/harness.ts ── researcher
 
 - 五阶段顺序与补证上界：补证 ≤2 轮（`for` 一眼可读）；research-plan → reviewer **单次射击**（无同支线改稿环，ADR-0012）；
 - 候选晋升硬闸：选中候选须 evidence-review `supports` 才进 plan；
+  自选未过闸时，Harness 可晋升其他已 `supports` 的候选（Propose ≠ Select）；
+  全无 supports 则 fail-closed；
 - 每个 Attempt 的证据台账、用量、事件与失败分类落库；
 - 终局引用验收的触发。
 
@@ -82,7 +84,7 @@ wire type 手写在 `apps/web/app/lib/types/`，**不从服务端模块导入类
 1. **researcher** 检索 arXiv/Crossref，把命中写进证据台账并冻结成 Artifact。
 2. **hypothesis-generation** 在冻结证据上提出至少两个可区分、可证伪的候选假说，逐条保留支持/反对证据、替代解释与不确定性，再留下比较筛选记录；选中只表示进入计划，不表示已证实（Propose ≠ Select）。
 3. **evidence-review** 独立压力测试每条候选：每个 `candidate_id` 必须恰好有一条证据判定；再汇总缺口，
-   有 gaps 就回到检索，最多两轮。晋升硬闸：选中候选须 `supports` 才进入 research-plan，否则 fail-closed。
+   有 gaps 就回到检索，最多两轮。晋升硬闸：须有 `supports` 候选才进 research-plan（自选优先，否则升其他 supports；全无则 fail-closed）。
 4. **research-plan** 产出研究计划，引用必须能追溯到冻结 Artifact 的 citations
    （`apps/server/src/agent/plan-quality.ts` 的两道门）。
 5. **reviewer** 必须检索到上游未见的新信息再表态；不接受或插入人反馈即 `review_rejected`，

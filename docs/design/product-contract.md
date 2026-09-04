@@ -29,10 +29,10 @@
 Harness 是确定性控制面，不是另一个 LLM Agent。角色边界必须以独立证据、受限工具面或确定性职责为理由，而不是为了增加 Agent 数量。
 
 ```text
-question → evidence → candidate hypotheses → comparison → evidence review → research plan → reviewer feedback → bounded revision → deterministic verify
+question → evidence → candidate hypotheses → evidence review → hard gate → research plan → single-shot reviewer → deterministic verify
 ```
 
-上下文默认不共享完整轨迹。只传问题、证据、方案和具体失败项；Harness 只落可复算的 handoff trace、usage 和工件，不引入通用 workflow runtime。
+上下文默认不共享完整轨迹。只传问题、证据、方案和具体失败项；Harness 只落可复算的 handoff trace、usage 和工件，不引入通用 workflow runtime。评审不接受即终止该支线（森林语义），不设同支线「改到过」环。
 
 对用户只暴露三种状态：`working → passed | failed`。内部恢复所需事实继续从工件推导，不扩展成第二套业务状态机。
 
