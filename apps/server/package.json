@@ -5,8 +5,8 @@
   "description": "Luup harness backend: deterministic orchestration over @openai/agents, SQLite fact store, B1-B4 verifiers.",
   "type": "module",
   "scripts": {
-    "dev": "LUUP_RUNTIME=deterministic tsx watch src/main.ts",
-    "dev:live": "tsx watch src/main.ts",
+    "dev": "LUUP_RUNTIME=deterministic LUUP_DATABASE=../../outputs/runtime/typescript-runs.db tsx watch src/main.ts",
+    "dev:live": "LUUP_DATABASE=../../outputs/runtime/typescript-runs.db tsx watch src/main.ts",
     "start": "tsx src/main.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
