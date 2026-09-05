@@ -1,6 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "globalEnv": ["LUUP_API_ORIGIN"],
+  "globalEnv": ["LUUP_API_ORIGIN", "NEXT_PUBLIC_LUUP_WEBMCP"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

@@ -473,6 +473,7 @@ function usageFromEvents(
   const event = events[0]!;
   if (event.malformed || event.payload === null) return { usage: unknownUsage(), unknownReasons: ["usage_malformed"] };
   if (event.payload.agent !== role) return { usage: unknownUsage(), unknownReasons: ["usage_agent_mismatch"] };
+  if (event.payload.incomplete === true) return { usage: unknownUsage(), unknownReasons: ["usage_incomplete"] };
   const input = safeToken(event.payload.input_tokens);
   const output = safeToken(event.payload.output_tokens);
   const total = safeToken(event.payload.total_tokens);

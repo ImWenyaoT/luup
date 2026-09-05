@@ -57,7 +57,7 @@ test("默认模型使用 qwen3.8-max，provider 固定走 Responses API", async 
   assert.equal(modelForRole(), "qwen3.8-max");
   setModelOverride({ apiKey: "sk-from-web" });
   const model = await qwenModelProvider().getModel(modelForRole());
-  assert.equal(model.constructor.name, "OpenAIResponsesModel");
+  assert.equal(model.constructor.name, "QwenResponsesModel");
 });
 
 test("配置版本随每次写入递增——executor 靠它决定重建 Runner", () => {

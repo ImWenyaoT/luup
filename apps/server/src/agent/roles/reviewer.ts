@@ -23,11 +23,15 @@ export default function defineFinalReviewer(ledger: EvidenceLedger): {
 } {
   const capture = createStructuredOutput(reviewSchema);
   const permitSearch = createReviewerSearchPermit();
+  const beforeSearch = () => {
+    capture.assertOpen();
+    permitSearch();
+  };
   const agent = new Agent({
     name: "FinalReviewer",
     model: modelForRole(),
     instructions: [instructionsFrom(import.meta.dirname, "reviewer.md"), STRUCTURED_OUTPUT_INSTRUCTION].join("\n\n"),
-    tools: [createArxivSearchTool(ledger, permitSearch), createCrossrefSearchTool(ledger, permitSearch), capture.tool],
+    tools: [createArxivSearchTool(ledger, beforeSearch), createCrossrefSearchTool(ledger, beforeSearch), capture.tool],
     toolUseBehavior: capture.toolUseBehavior,
     modelSettings: { ...sharedModelSettings, parallelToolCalls: false },
   });

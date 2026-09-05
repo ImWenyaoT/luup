@@ -11,6 +11,12 @@ test("terminal runs cannot start new attempts", () => {
   const runId = store.createRun("q");
   store.finishRun(runId, "failed", { errorCode: "runtime_error" });
 
+  assert.deepEqual(store.finishRun(runId, "completed", { finalArtifactId: "late-plan" }), {
+    status: "failed",
+    finalArtifactId: null,
+    errorCode: "runtime_error",
+  });
+
   assert.throws(() => store.startAttempt(runId, "researcher"), /cannot start.*failed run/);
   assert.deepEqual(store.snapshot(runId)!.attempts, []);
   store.close();
@@ -57,7 +63,9 @@ test("completed runs require no active attempt and a real completed final artifa
   assert.throws(() => store.finishRun(runId, "completed"), /running attempts/);
   const final = store.publishArtifact(runId, attemptId, artifact("research-plan"), [], 0);
   assert.throws(() => store.finishRun(runId, "completed"), /requires finalArtifactId/);
-  store.finishRun(runId, "completed", { finalArtifactId: final.id });
+  const outcome = store.finishRun(runId, "completed", { finalArtifactId: final.id });
+  assert.deepEqual(outcome, { status: "completed", finalArtifactId: final.id, errorCode: null });
+  assert.deepEqual(store.finishRun(runId, "failed", { errorCode: "late_error" }), outcome);
 
   assert.equal(store.snapshot(runId)!.status, "completed");
   assert.equal(store.snapshot(runId)!.final_artifact_id, final.id);

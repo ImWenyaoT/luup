@@ -26,6 +26,8 @@ export type StructuredOutput = {
   readonly tool: FunctionTool<unknown, any, unknown>;
   /** 装到 Agent 上的 `toolUseBehavior`：捕获成功即收束本轮，见下面的说明。 */
   readonly toolUseBehavior: () => ToolsToFinalOutputResult;
+  /** 检索入口的本地闸：成功上报后不得再开始检索。 */
+  readonly assertOpen: () => void;
   /** 开一次新的上报窗口，丢弃上一轮捕获到的值。 */
   beginRound(): void;
   /** 已提交的产物；模型没交或交错就还是 undefined。 */
@@ -98,11 +100,14 @@ export function createStructuredOutput(schema: z.ZodObject<any>): StructuredOutp
     // dsh 在工具体内调 `exec.concludeTurn()`；@openai/agents 的等价物是 toolUseBehavior。
     // 判据是**捕获成功**而不是「调过这个工具」：参数写错时工具返回的是错误结果，
     // 那一轮必须继续跑，模型才有机会在同一个 turn 里改对。捕获之后立刻收束，
-    // 顺带堵死「交完作业又去检索一次」—— 那种检索会落进本轮台账，把 queries 冻结门撞死。
+    // provider 仍可能在同一响应内多调工具；检索入口另用 assertOpen 挡住上报后的新调用。
     toolUseBehavior: () =>
       captured === undefined
         ? { isFinalOutput: false, isInterrupted: undefined }
         : { isFinalOutput: true, isInterrupted: undefined, finalOutput: "structured output recorded" },
+    assertOpen: () => {
+      if (captured !== undefined) throw new Error(`${STRUCTURED_OUTPUT_TOOL} already recorded: no further searches`);
+    },
     beginRound: () => {
       captured = undefined;
     },

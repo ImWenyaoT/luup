@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
 
-import { RunContext } from "@openai/agents";
+import { RunContext, Usage, type Model, type ModelResponse } from "@openai/agents";
 
 import { researchProposalSchema, roleSchema } from "../src/agent/contracts.ts";
 import { EvidenceLedger } from "../src/agent/evidence.ts";
 import { classifyFailure } from "../src/agent/failures.ts";
 import { createRoles } from "../src/agent/roles/index.ts";
 import { createStructuredOutput, STRUCTURED_OUTPUT_TOOL } from "../src/agent/roles/structured-output.ts";
-import { isContextOverflow, maxTurnsFor } from "../src/executor.ts";
+import { createQwenExecutor, isContextOverflow, maxTurnsFor } from "../src/executor.ts";
 import { runTask, type StageExecutor } from "../src/roles.ts";
 import type { TaskContext } from "../src/agent/contracts.ts";
 
@@ -66,6 +66,7 @@ test("bad arguments come back as a tool error and the same turn can still fix th
   assert.match(rejected, /limitations/);
   assert.match(rejected, /too_small|Too small/);
   assert.equal(capture.captured(), undefined);
+  assert.doesNotThrow(() => capture.assertOpen());
   // 参数写错时这一轮不能收束，否则模型没有机会改
   assert.deepEqual(capture.toolUseBehavior(), { isFinalOutput: false, isInterrupted: undefined });
 
@@ -74,6 +75,7 @@ test("bad arguments come back as a tool error and the same turn can still fix th
   assert.equal((capture.captured()!.value as { summary: string }).summary, artifact.summary);
   // 捕获成功才收束本轮 —— 这是 dsh concludeTurn() 的等价物
   assert.equal(capture.toolUseBehavior().isFinalOutput, true);
+  assert.throws(() => capture.assertOpen(), /no further searches/);
 });
 
 test("Research Artifact 必须明确研究对象、范围、变量与知识缺口", () => {
@@ -142,31 +144,34 @@ test("finishing without calling the tool is a contract violation, not a correcti
   assert.match((failure as Error).message, new RegExp(STRUCTURED_OUTPUT_TOOL));
 });
 
-test("a research planner must submit through its structured output tool", async () => {
-  const context: TaskContext = {
-    runId: "run",
-    taskId: "plan-attempt",
-    role: "research-plan",
-    goal: "形成研究计划",
-    question: "问题",
-    inputArtifactIds: [],
-    inputArtifacts: [],
-  };
-  let calls = 0;
-  const failure = await runTask(context, {
-    execute: () => {
-      calls += 1;
-      return Promise.resolve("研究计划已经完成。");
-    },
-  }).then(
-    () => null,
-    (error: unknown) => error,
-  );
+test.each(["research-plan", "hypothesis-generation", "evidence-review"] as const)(
+  "%s must submit through its structured output tool",
+  async (role) => {
+    const context: TaskContext = {
+      runId: "run",
+      taskId: "plan-attempt",
+      role,
+      goal: "形成研究计划",
+      question: "问题",
+      inputArtifactIds: [],
+      inputArtifacts: [],
+    };
+    let calls = 0;
+    const failure = await runTask(context, {
+      execute: () => {
+        calls += 1;
+        return Promise.resolve("研究计划已经完成。");
+      },
+    }).then(
+      () => null,
+      (error: unknown) => error,
+    );
 
-  assert.equal(calls, 1);
-  assert.equal(classifyFailure(failure).code, "invalid_output");
-  assert.match((failure as Error).message, new RegExp(STRUCTURED_OUTPUT_TOOL));
-});
+    assert.equal(calls, 1);
+    assert.equal(classifyFailure(failure).code, "invalid_output");
+    assert.match((failure as Error).message, new RegExp(STRUCTURED_OUTPUT_TOOL));
+  },
+);
 
 test("a primitive executor failure is normalized without hiding the original failure", async () => {
   const context: TaskContext = {
@@ -201,16 +206,13 @@ test("the turn budget keeps researcher headroom while reviewer has a restricted 
 
   for (const role of roleSchema.options) {
     const agent = agents[role];
-    if (agent.tools.length === 0) {
-      // 无工具角色产物即最终输出，正常路径一个 turn 就结束：6 已是宽松余量，
-      // 抬高它救不回任何一次失败，只会在模型空转时多烧几轮 token 才撞同一堵墙。
-      assert.equal(maxTurnsFor(role), 6, `${role} 无工具，不该分到检索余量`);
-    } else if (role === "researcher") {
-      assert.equal(maxTurnsFor(role), 12);
-    } else {
-      assert.ok(role === "reviewer" || role === "research-plan");
-      // Reviewer 做受限检索；ResearchPlan 用合成工具上报。两者 6 turns 都有修正余量。
-      assert.equal(maxTurnsFor(role), 6);
+    assert.ok(agent.tools.some((tool) => tool.name === STRUCTURED_OUTPUT_TOOL));
+    assert.equal(maxTurnsFor(role), role === "researcher" ? 12 : 6);
+    if (role !== "researcher" && role !== "reviewer") {
+      assert.deepEqual(
+        agent.tools.map((tool) => tool.name),
+        [STRUCTURED_OUTPUT_TOOL],
+      );
     }
   }
 
@@ -234,4 +236,109 @@ test("context overflow is recognised across provider wordings", () => {
   // 不能宽泛到吞掉别的失败：这两条都不是上下文超长
   assert.equal(isContextOverflow("Connection error: fetch failed"), false);
   assert.equal(isContextOverflow("tool argument string too long"), false);
+});
+
+test.each(["researcher", "reviewer"] as const)(
+  "%s refuses sibling searches after capture even when the provider ignores parallelToolCalls",
+  async (role) => {
+    const ledger = new EvidenceLedger();
+    ledger.beginScope("capture-boundary");
+    const roles = createRoles(ledger);
+    const agent = roles.agents[role];
+    const report =
+      role === "researcher"
+        ? artifact
+        : {
+            artifact_type: "review",
+            research_plan_artifact_id: "plan",
+            evidence_review_artifact_id: "evidence-review",
+            independent_evidence_ids: ["frozen-search"],
+            scores: { scientific_value: 3, technical_depth: 3, application_potential: 3 },
+            weaknesses: [],
+            feedback: [],
+            suggested_successor_roles: [],
+            accepted: true,
+          };
+    let requests = 0;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = () => {
+      requests += 1;
+      return Promise.reject(new Error("No network is permitted in this test"));
+    };
+    const model: Model = {
+      getResponse(): Promise<ModelResponse> {
+        return Promise.resolve({
+          usage: new Usage(),
+          output: [
+            {
+              type: "function_call",
+              id: "report",
+              callId: "report",
+              name: "structured_output",
+              arguments: JSON.stringify(report),
+              status: "completed",
+            },
+            {
+              type: "function_call",
+              id: "late-search",
+              callId: "late-search",
+              name: "crossref_search",
+              arguments: JSON.stringify({ query: "late query" }),
+              status: "completed",
+            },
+          ],
+        });
+      },
+      getStreamedResponse() {
+        throw new Error("No streaming in this test");
+      },
+    };
+    try {
+      assert.equal(agent.modelSettings.parallelToolCalls, false);
+      const result = await createQwenExecutor(undefined, { getModel: () => model })({
+        runId: "capture-boundary",
+        role,
+        agent,
+        input: "{}",
+        timeoutMs: 5_000,
+      });
+      assert.equal(result, "structured output recorded");
+      assert.equal(requests, 0);
+      assert.equal(ledger.scopedRecords().length, 0);
+      const capture = roles.captures[role];
+      assert.deepEqual(capture.captured()!.value, report);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  },
+);
+
+test("reopening reviewer capture does not replenish its two-search Attempt budget", async () => {
+  const ledger = new EvidenceLedger();
+  ledger.beginScope("reviewer-budget");
+  const { agents, captures } = createRoles(ledger);
+  const searches = agents.reviewer.tools.filter((item) => item.name.endsWith("_search"));
+  let requests = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = () => {
+    requests += 1;
+    return Promise.reject(new Error("No network is permitted in this test"));
+  };
+  try {
+    for (const search of searches) {
+      assert.equal(search.type, "function");
+      if (search.type !== "function") throw new Error("Expected a function tool");
+      await search.invoke(new RunContext(), JSON.stringify({ query: "counterevidence" }));
+    }
+    assert.equal(requests, 2);
+    captures.reviewer.beginRound();
+    const search = searches[0]!;
+    if (search.type !== "function") throw new Error("Expected a function tool");
+    const rejected = await search.invoke(new RunContext(), JSON.stringify({ query: "extra query" }));
+    assert.match(String(rejected), /search budget exhausted/);
+    assert.equal(requests, 2);
+    assert.equal(ledger.scopedRecords().length, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

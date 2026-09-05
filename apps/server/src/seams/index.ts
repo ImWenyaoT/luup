@@ -44,6 +44,7 @@ export type RunStore = Pick<
   | "publishArtifact"
   | "failAttempt"
   | "finishRun"
+  | "readRunOutcome"
   | "emit"
   | "latestArtifact"
   | "eventsAfter"

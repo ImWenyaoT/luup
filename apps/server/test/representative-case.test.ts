@@ -322,7 +322,9 @@ test("representative export preserves the two-round audit spine without artifact
   assert.equal(exported.trace.traces, 1);
   assert.deepEqual(exported.trace.models, ["qwen"]);
   assert.equal(exported.trace.completed, 1);
-  assert.equal(exported.usage.total_tokens, 15);
+  assert.equal(exported.usage.status, "partial");
+  assert.equal(exported.usage.total_tokens, null);
+  assert.equal(exported.usage.by_agent[0]!.total_tokens, 15);
   assert.equal(exported.artifacts.research[0], researchId);
   assert.equal(exported.artifacts.hypothesis[0], hypothesisId);
   assert.equal(exported.artifacts.evidence_review[0], evidenceReviewId);
@@ -615,9 +617,15 @@ test("strict representative export requires forest gate spine without revise loo
     } as never,
     [],
     0,
+    { agent: "hypothesis-generation", inputTokens: 10, outputTokens: 5, totalTokens: 15 },
   );
   const attemptId = store.startAttempt(runId, "research-plan");
-  const planId = store.publishArtifact(runId, attemptId, { artifact_type: "research-plan" } as never, [], 0).id;
+  const planId = store.publishArtifact(runId, attemptId, { artifact_type: "research-plan" } as never, [], 0, {
+    agent: "research-plan",
+    inputTokens: 10,
+    outputTokens: 5,
+    totalTokens: 15,
+  }).id;
   store.emit(runId, "evaluation.candidate_gate", {
     selected_candidate_id: "c1",
     selected_verdict: "uncertain",
@@ -676,3 +684,45 @@ test("strict representative export reports every missing readiness fact", () => 
   assert.ok(strict.reasons.includes("verification_b1_missing"));
   assert.ok(strict.reasons.includes("usage_missing_or_unknown"));
 });
+
+test.each(["researcher", "reviewer"] as const)(
+  "representative usage stays unknown when %s has no usage event",
+  (missingRole) => {
+    const store = testStore();
+    const runId = store.createRun("unknown usage");
+    let planId = "";
+    for (const role of [
+      "researcher",
+      "hypothesis-generation",
+      "evidence-review",
+      "research-plan",
+      "reviewer",
+    ] as const) {
+      const attemptId = store.startAttempt(runId, role);
+      const type =
+        role === "researcher"
+          ? "research"
+          : role === "hypothesis-generation"
+            ? "hypothesis"
+            : role === "reviewer"
+              ? "review"
+              : role;
+      const published = store.publishArtifact(
+        runId,
+        attemptId,
+        { artifact_type: type } as never,
+        [],
+        0,
+        role === missingRole ? null : { agent: role, inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+      );
+      if (role === "research-plan") planId = published.id;
+    }
+    store.finishRun(runId, "completed", { finalArtifactId: planId });
+    const result = buildRepresentativeCase(store, runId);
+    assert.equal(result.usage.status, "partial");
+    assert.equal(result.usage.unknown_records, 1);
+    assert.equal(result.usage.total_tokens, null);
+    assert.ok(result.usage.unknown_reasons.includes("usage_record_missing"));
+    assert.ok(checkRepresentativeCaseStrict(store, result).reasons.includes("usage_missing_or_unknown"));
+  },
+);

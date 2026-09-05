@@ -399,6 +399,8 @@ export type TaskContext = {
   inputArtifacts: StoredInput[];
   /** 同题最近几次 run 的确定性战役记录。消融臂与无题号 run 为空。 */
   priorAttempts?: readonly string[];
+  /** Harness 证据闸实际晋升的候选；planner 不得用模型自选覆盖它。 */
+  promotedCandidateId?: string;
 };
 
 /** 哪个 build 产出了这个 Run —— 模型无从知道也无从上报的事实。 */
@@ -413,6 +415,8 @@ export type UsageFacts = {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
+  /** Only a known subtotal is available; consumers must not treat it as the Attempt total. */
+  incomplete?: true;
 };
 
 /** 冻结输入里的一条 Artifact。 */

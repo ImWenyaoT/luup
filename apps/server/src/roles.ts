@@ -28,6 +28,7 @@ function addUsage(left: StageUsage | null, right: StageUsage | undefined): Stage
   if (!right) return left;
   if (!left) return right;
   return {
+    ...(left.incomplete || right.incomplete ? { incomplete: true as const } : {}),
     requests: left.requests + right.requests,
     inputTokens: left.inputTokens + right.inputTokens,
     outputTokens: left.outputTokens + right.outputTokens,
@@ -54,30 +55,6 @@ export type StageExecutor = (request: {
 
 const normalize = (text: string) => text.split(/\s+/).filter(Boolean).join(" ");
 
-/** 模型返回的文本转成对象。
- *
- * 解析失败抛 ContractError 而不是让 SyntaxError 冒上去：「输出不是合法 JSON」正是
- * 最该给一次纠错的情况，可它原本落进「不可纠错」那一类，Attempt 直接判死。
- * live 上撞到过 —— 模型在 JSON 外面多说了两句话，一次机会都没给就终止了。
- *
- * 带 `outputType` 的四个角色到这里已经是对象，直接放行；researcher 走合成工具上报
- * （见 `capturedArtifact`），也不经过这条围栏剥离的路。
- */
-function parseValue(value: unknown): unknown {
-  if (typeof value !== "string") return value;
-  const text = value
-    .trim()
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```$/, "");
-  try {
-    return JSON.parse(text);
-  } catch (error) {
-    throw new ContractError(
-      `输出不是合法 JSON（${error instanceof Error ? error.message : String(error)}）：只输出 Artifact JSON 本身，不要加解释文字。`,
-    );
-  }
-}
-
 /** 装配一个角色单次调用看到的全部 context。
  *
  * 字段顺序就是序列化顺序，也就是前缀稳定性顺序：`question` 整个 Run 不变放最前，
@@ -92,6 +69,7 @@ function buildStageInput(spec: {
   goal: string;
   inputs: StoredInput[];
   priorAttempts?: readonly string[];
+  promotedCandidateId?: string;
   correction?: { issue: string; candidate: unknown; frozenSearches?: EvidenceRecord[] };
 }): string {
   const payload: Record<string, unknown> = {
@@ -104,6 +82,9 @@ function buildStageInput(spec: {
   // 空数组不写这个键：没有记忆的 run（消融臂、自由输入）的前缀与本波之前逐字节相同。
   if (spec.priorAttempts && spec.priorAttempts.length > 0) {
     payload.prior_attempts = spec.priorAttempts;
+  }
+  if (spec.promotedCandidateId !== undefined) {
+    payload.promoted_candidate_id = spec.promotedCandidateId;
   }
   if (spec.correction) {
     payload.correction = [
@@ -374,37 +355,37 @@ function acceptFor(
         const hypothesis = inputsOfType(context, "hypothesis").at(-1)?.content as
           | {
               candidates?: Array<{ candidate_id: string }>;
-              comparison?: { selected_candidate_id?: string };
             }
           | undefined;
         const candidateIds = new Set(hypothesis?.candidates?.map((item) => item.candidate_id) ?? []);
-        const selectedCandidateId = hypothesis?.comparison?.selected_candidate_id;
-        const candidate = selectedCandidateId
-          ? researchPlanSchema.parse({
-              ...proposed,
-              execution_plan: {
-                ...proposed.execution_plan,
-                predictions: proposed.execution_plan.predictions.map((prediction) => ({
-                  ...prediction,
-                  candidate_id: selectedCandidateId,
-                })),
-              },
-            })
-          : proposed;
+        const promotedCandidateId = context.promotedCandidateId;
+        if (!promotedCandidateId || !candidateIds.has(promotedCandidateId)) {
+          throw new Error("research-plan task is missing a valid Harness-promoted candidate");
+        }
+        const candidate = researchPlanSchema.parse({
+          ...proposed,
+          execution_plan: {
+            ...proposed.execution_plan,
+            predictions: proposed.execution_plan.predictions.map((prediction) => ({
+              ...prediction,
+              candidate_id: promotedCandidateId,
+            })),
+          },
+        });
         const authoredCandidateIds = proposed.execution_plan.predictions.map((item) => item.candidate_id);
-        if (selectedCandidateId && authoredCandidateIds.some((id) => id !== selectedCandidateId)) {
+        if (authoredCandidateIds.some((id) => id !== promotedCandidateId)) {
           onDrift({
             artifactType: proposed.artifact_type,
             field: "execution_plan.predictions.candidate_id",
             before: authoredCandidateIds.join(", "),
-            after: selectedCandidateId,
+            after: promotedCandidateId,
           });
         }
         // 领域门禁与可追溯性一次报全：每个业务 Attempt 只有一次纠错机会，
         // 分两次抛会让模型修好前一半，在后一半上撞死。
         const issues = [
           ...researchPlanQualityIssues(candidate),
-          ...researchPlanExecutionIssues(candidate, candidateIds, selectedCandidateId),
+          ...researchPlanExecutionIssues(candidate, candidateIds, promotedCandidateId),
           ...upstreamTraceabilityIssues(candidate, frozenEvidenceOf(context)),
         ];
         if (issues.length > 0) throw new ContractError(issues.join("；"));
@@ -472,10 +453,10 @@ export type TaskRunResult = {
  * 纠错不虚增 Attempt —— 它是同一个业务 Attempt 内的第二次尝试，只记在 corrections 上。
  * 执行层的 StageError（超时、provider 报错）纠错解决不了，直接往上抛。
  *
- * corrections 与 turn 内自我修正的分工（researcher 上报走合成工具之后仍然成立）：
- * 工具参数校验挡的是 **schema 表达得了** 的失败，模型在同一个 turn 内看着 zod issue
- * 自己改，不花 correction；corrections 挡的是 **schema 表达不了** 的后置约束 ——
- * `.refine()` 的中文正文、`canonicalizeResearch` 的检索冻结门、计划质量门与可追溯性门。
+ * 五角色均通过合成工具上报；本地 schema 校验失败会回灌 zod issue，
+ * 由同一次 Runner 调用内的后续 turn 修正，不花 correction。
+ * corrections 处理依赖冻结输入和检索台账的后置约束：
+ * `canonicalizeResearch` 的检索冻结门、计划质量门与可追溯性门。
  * 后者必须先跑完整个 Attempt 才知道违没违规，只能另起一次调用把材料交还给模型。
  * 两条通路互补，谁也替代不了谁；合成工具只是把第一类失败从 corrections 上卸下来。
  */
@@ -484,15 +465,14 @@ export async function runTask(
   options: { execute: StageExecutor; ledger?: EvidenceLedger; onTrace?: (event: RunTraceEvent) => void },
 ): Promise<TaskRunResult> {
   const ledger = options.ledger ?? new EvidenceLedger();
-  const { agents, capture, planCapture, reviewCapture } = createRoles(ledger);
+  const { agents, captures } = createRoles(ledger);
   const agent = agents[context.role];
   if (
     context.role !== "researcher" &&
-    context.role !== "research-plan" &&
     context.role !== "reviewer" &&
-    agent.tools.length !== 0
+    agent.tools.some((tool) => tool.name !== STRUCTURED_OUTPUT_TOOL)
   ) {
-    throw new Error(`${context.role} cannot use tools`);
+    throw new Error(`${context.role} cannot use retrieval tools`);
   }
   // 漂移记录**按轮作废**：只有被接受的那一轮的覆写才是事实。首轮记下一条覆写、
   // 随后又被别的门驳回时，那条记录属于一份从未发布的产物，不能跟着纠错轮一起落库。
@@ -505,6 +485,7 @@ export async function runTask(
   // 一个 Attempt 最多两次模型调用；成功与失败往上带的都是这个 Attempt 的**合计**已发生用量，
   // 只带最后一次会把纠错轮之前烧掉的 token 从账上抹掉。
   let spent: StageUsage | null = null;
+  let hasUnknownUsage = false;
   // 这道线判的是「卡死」，不是「慢」：一个阶段 5 分钟还没交出 Artifact 就是挂了。
   // 真正给单题兜底的是外层——`batch/runner.ts` 的 `RUN_TIMEOUT_MS`（40 分钟/题）。
   // 两层不是相乘关系：流水线最坏 10 次阶段调用（证据环 3 × 2 + 计划评审环 2 × 2），
@@ -521,24 +502,19 @@ export async function runTask(
   for (let round = 0; round < 2; round += 1) {
     // 台账跨纠错轮累积，上报窗口不跨：纠错轮要求模型重新交一份完整 Artifact，
     // 上一轮捕获到的那份必须先作废，否则守卫会把第二次上报当成重复调用拒掉。
-    const outputCapture =
-      context.role === "researcher"
-        ? capture
-        : context.role === "research-plan"
-          ? planCapture
-          : context.role === "reviewer"
-            ? reviewCapture
-            : undefined;
-    outputCapture?.beginRound();
+    const outputCapture = captures[context.role];
+    outputCapture.beginRound();
     drift = [];
+    let callStarted = false;
+    let callHasUsage = false;
     try {
-      // 先存原始输出再解析：解析失败时纠错提示里也要带上模型写的那份原文，
-      // 否则它只收到一句「不是合法 JSON」，无从对照着改。
+      // 纠错必须重新上报完整产物，并与首轮共享 Attempt deadline。
       const remaining = deadline - Date.now();
       if (remaining <= 0) {
         throw new StageError("deadline_exceeded", `${context.role} exceeded the Attempt deadline`);
       }
-      const returned = await options.execute({
+      callStarted = true;
+      await options.execute({
         runId: context.runId,
         taskId: context.taskId,
         role: context.role,
@@ -550,26 +526,33 @@ export async function runTask(
           goal: context.goal,
           inputs: context.inputArtifacts,
           priorAttempts: context.priorAttempts,
+          promotedCandidateId: context.promotedCandidateId,
           correction,
         }),
         // 模型调用成功了这一段就算花掉了 —— 哪怕紧接着的合同门把产物驳回，
         // 也不能因为「这一轮没交出 Artifact」把已经烧掉的 token 从账上抹掉。
         onUsage: (usage) => {
+          callHasUsage = true;
           spent = addUsage(spent, usage);
         },
         onTrace: options.onTrace,
       });
-      // researcher 交作业走合成工具，最终文本只是收尾回执，产物在上报窗口里。
-      candidate = outputCapture ? capturedArtifact(outputCapture, context.role) : returned;
+      if (!callHasUsage) hasUnknownUsage = true;
+      if (spent && hasUnknownUsage) spent = { ...spent, incomplete: true };
+      // 最终文本只是收尾回执；只有经过本地 schema 校验的工具上报才是产物。
+      candidate = capturedArtifact(outputCapture, context.role);
       return {
-        artifact: accept(parseValue(candidate)),
+        artifact: accept(candidate),
         corrections,
         usage: spent,
         drift,
       };
     } catch (error) {
       const failure = error instanceof Error ? error : new Error(String(error), { cause: error });
-      spent = addUsage(spent, (error as { usage?: StageUsage } | null)?.usage);
+      const failedUsage = (error as { usage?: StageUsage } | null)?.usage;
+      spent = addUsage(spent, failedUsage);
+      if (callStarted && !callHasUsage && !failedUsage) hasUnknownUsage = true;
+      if (spent && hasUnknownUsage) spent = { ...spent, incomplete: true };
       if (round === 1 || !(failure instanceof ContractError || failure.name === "ZodError")) {
         // 把纠错次数挂到异常上：失败的 Attempt 也要记准它试过几次
         (failure as { corrections?: number }).corrections = corrections;

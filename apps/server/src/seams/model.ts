@@ -1,6 +1,8 @@
-import { OpenAIProvider } from "@openai/agents";
+import type { OpenAIProvider } from "@openai/agents";
+import OpenAI from "openai";
 
 import { StageError } from "../agent/failures.ts";
+import { QwenResponsesProvider } from "./qwen-responses.ts";
 
 const DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 
@@ -51,9 +53,9 @@ function effectiveBaseUrl(): string {
 export function qwenModelProvider(): OpenAIProvider {
   const apiKey = override.apiKey || process.env.QWEN_API_KEY;
   if (!apiKey) throw new StageError("missing_credential", "missing QWEN_API_KEY");
-  return new OpenAIProvider({
-    apiKey,
-    baseURL: effectiveBaseUrl(),
+  return new QwenResponsesProvider({
+    // Runner 是唯一重试层；否则 SDK 首次调用仍会叠加客户端默认两次重试。
+    openAIClient: new OpenAI({ apiKey, baseURL: effectiveBaseUrl(), maxRetries: 0 }),
     // 百炼已原生支持 OpenAI-compatible Responses。显式钉住，避免 SDK 全局默认变化
     // 把 Qwen 静默切回 Chat Completions。
     useResponses: true,
@@ -65,7 +67,7 @@ export function modelForRole(): string {
   return override.modelId || process.env.LUUP_MODEL_ID || "qwen3.8-max";
 }
 
-/** 结构化输出场景一律关思考。
+/** 当前已验证基线统一关闭思考；这是 Luup 的配置策略，不是 SDK 或 Qwen 的必然限制。
  *
  * Responses 用 OpenAI 标准 `reasoning.effort`；百炼已声明旧的非标准
  * `enable_thinking` 后续不再支持。Agents SDK 负责把该设置映射到 Responses 请求。

@@ -2,14 +2,7 @@ import { z } from "zod";
 
 import { findQuestion, science125Integrity } from "../domain/science125.ts";
 import { buildRound, buildTrace, buildUsage, buildVerification, unknownCase } from "./representative-case-facts.ts";
-import {
-  isRecord,
-  lastEvent,
-  parseSafeId,
-  readArtifacts,
-  readEvents,
-  unique,
-} from "./representative-case-parsing.ts";
+import { isRecord, lastEvent, parseSafeId, readArtifacts, readEvents, unique } from "./representative-case-parsing.ts";
 import { buildPublicArtifacts } from "./representative-case-public-artifacts.ts";
 import { redactSensitiveText } from "./representative-case-sanitization.ts";
 import { buildSourceLedger } from "./representative-case-source-ledger.ts";
@@ -73,7 +66,7 @@ export function buildRepresentativeCase(
   const round2 = buildRound(2, store, events, artifacts, rootReasons);
   const verification = buildVerification(events, rootReasons);
   const trace = buildTrace(events, rootReasons);
-  const usage = buildUsage(events, rootReasons);
+  const usage = buildUsage(events, rootReasons, snapshot.attempts);
 
   return {
     format: REPRESENTATIVE_CASE_FORMAT,
@@ -131,9 +124,7 @@ export function checkRepresentativeCaseStrict(
     if (promotedId === null && selectedId === null) reasons.push("forest_gate_facts_incomplete");
   }
 
-  const acceptRound = events.some(
-    (event) => event.kind === "evaluation.round" && event.payload.action === "accept",
-  );
+  const acceptRound = events.some((event) => event.kind === "evaluation.round" && event.payload.action === "accept");
   const acceptFeedback = events.some(
     (event) => event.kind === "feedback.received" && event.payload.action === "accept",
   );

@@ -64,6 +64,36 @@ pnpm run dev       # 前端 http://127.0.0.1:3000 + API :8000（确定性 runtim
 也可分开起：`pnpm run dev:api`（仅后端）、`pnpm run dev:web`（仅前端）。
 `pnpm run dev:api:live` 是后端的 live 版本，会真的调 Qwen。
 
+### WebMCP 开发与验收
+
+`pnpm run dev:webmcp` 启动显式开启 WebMCP 的前端，后端另用 `pnpm run dev:api`。
+普通开发和生产构建默认关闭；开关 `NEXT_PUBLIC_LUUP_WEBMCP=1` 在 Next 构建时固化，
+变更后必须重新构建，Turbo 缓存已包含此开关。浏览器不支持 `document.modelContext` 时正常降级。
+
+本地 Chrome 可开启 `chrome://flags/#enable-webmcp-testing` 后重启；E2E 使用 Playwright 自带 Chromium
+及 `--enable-blink-features=WebMCP`。接口按 [Chrome 官方文档](https://developer.chrome.com/docs/ai/webmcp/imperative-api)
+与 [WebMCP 草案](https://webmachinelearning.github.io/webmcp/) 接入，仍属实验能力。
+已兼容 Chromium 151 不提供执行回调取消参数的行为；生命周期通过注册时的 `AbortSignal` 管理。
+
+| 工具 | 用途 |
+| --- | --- |
+| `luup_get_ui_context` | 读取当前 Run、已打开标签、面板、产物引用与加载/错误状态；返回内容有长度上限 |
+| `luup_open_run` | 切换已打开的 Run；`runId: null` 返回欢迎页 |
+| `luup_set_inspector` | `kind: artifacts / process / null` 打开或关闭现有面板 |
+| `luup_select_artifact` | 通过当前 Run 的产物 ID 打开查看器；`artifactId: null` 清空选择 |
+
+工具复用界面导航和选择回调，不创建研究、不提交反馈、不修改模型配置、不返回凭据。
+动作返回的是请求的目标状态；导航/产物读取结束后，再调用上下文工具检查实际状态及错误。
+研究文本作为不可信内容标注。未引入 MCP 服务端、polyfill 或额外依赖。
+
+开启后可在浏览器开发者工具中发现并调用原生工具：
+
+```js
+const tools = await document.modelContext.getTools();
+const contextTool = tools.find((tool) => tool.name === 'luup_get_ui_context');
+JSON.parse(await document.modelContext.executeTool(contextTool, '{}'));
+```
+
 ### API 合同与示例
 
 默认 API 只绑定 `127.0.0.1`；`LUUP_RUNTIME=deterministic` 下不会调用模型。写接口只接受
@@ -245,11 +275,18 @@ Science-125 逐题索引、manifest-scoped 指标、评分、usage JSONL/Markdow
 ## 验证
 
 ```sh
-pnpm run ci            # typecheck → lint → format:check → build → server test:coverage → frontend test，与 CI 同序
+pnpm run ci            # typecheck → lint → format:check → build → server/web test:coverage，与 CI 同序
 pnpm run test:e2e      # Playwright；首次先 pnpm --filter @luup/frontend exec playwright install chromium
+pnpm run test:e2e:webmcp # 开启构建 + 原有 E2E + 原生 WebMCP 调用与界面验证
 ```
 
+CI 的 E2E 矩阵分别测试关闭/开启构建。原生 WebMCP 项目缺少接口或调用失败会直接失败，
+不以 mock 或跳过替代；另测不支持接口的浏览器仍可完成研究流程。
+E2E 不复用外部已启动服务，避免误测 live runtime 或旧构建；执行前请释放 3010/8010 端口。
+失败保留 trace 和截图。server/web 的全局函数及行覆盖率地板均为 80%，空或损坏的报告必须失败。
+
 各门单跑与 seam 纪律见 `AGENTS.md`。
+整体 Agent 测试重点、SDK 与 Harness 的职责取舍及质量评估边界见 [测试设计](docs/design/testing.md)。
 
 ## 运行工件
 

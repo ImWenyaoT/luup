@@ -293,7 +293,11 @@ export function buildTrace(events: readonly CaseEvent[], rootReasons: string[]):
   return output;
 }
 
-export function buildUsage(events: readonly CaseEvent[], rootReasons: string[]): RepresentativeCaseUsage {
+export function buildUsage(
+  events: readonly CaseEvent[],
+  rootReasons: string[],
+  attempts: unknown,
+): RepresentativeCaseUsage {
   const reasons: string[] = [];
   const usageEvents = events.filter((e) => e.kind === "sdk.usage");
   let validRecords = 0;
@@ -330,16 +334,36 @@ export function buildUsage(events: readonly CaseEvent[], rootReasons: string[]):
     }
   }
 
-  const records = usageEvents.length;
-  const status: FactStatus = records === 0 ? "unknown" : unknownRecords === 0 ? "known" : "partial";
+  // sdk.usage 只在已知用量时写入；必须对照 Attempt 事实，不能把其余角色的小计当作总成本。
+  const reportedByRole = new Map<string, number>();
+  for (const event of usageEvents) {
+    const role = event.payload.agent;
+    if (typeof role === "string") reportedByRole.set(role, (reportedByRole.get(role) ?? 0) + 1);
+  }
+  if (!Array.isArray(attempts)) {
+    unknownRecords += 1;
+    reasons.push("usage_attempts_unknown");
+  } else {
+    for (const attempt of attempts) {
+      const role = isRecord(attempt) && typeof attempt.role === "string" ? attempt.role : null;
+      const available = role === null ? 0 : (reportedByRole.get(role) ?? 0);
+      if (available > 0 && role !== null) reportedByRole.set(role, available - 1);
+      else {
+        unknownRecords += 1;
+        reasons.push("usage_record_missing");
+      }
+    }
+  }
+  const records = validRecords + unknownRecords;
+  const status: FactStatus = usageEvents.length === 0 ? "unknown" : unknownRecords === 0 ? "known" : "partial";
   const output: RepresentativeCaseUsage = {
     status,
     records,
     valid_records: validRecords,
     unknown_records: unknownRecords,
-    input_tokens: validRecords > 0 ? inputTotal : null,
-    output_tokens: validRecords > 0 ? outputTotal : null,
-    total_tokens: validRecords > 0 ? totalTotal : null,
+    input_tokens: status === "known" ? inputTotal : null,
+    output_tokens: status === "known" ? outputTotal : null,
+    total_tokens: status === "known" ? totalTotal : null,
     by_agent: [...byAgent.entries()]
       .map(([agent, stats]) => ({ agent, ...stats }))
       .sort((a, b) => a.agent.localeCompare(b.agent)),

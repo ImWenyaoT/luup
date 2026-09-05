@@ -157,7 +157,7 @@ export function createDeterministicRuntime(store: SqliteStore): {
           }),
         ),
       ];
-      return {
+      return await reportStructuredOutput(agent, {
         artifact_type: "hypothesis",
         question: payload.question,
         candidates: [
@@ -217,12 +217,12 @@ export function createDeterministicRuntime(store: SqliteStore): {
         },
         selection_status: "candidate_selected",
         research_artifact_ids: research.map((item) => item.id),
-      };
+      });
     }
 
     if (role === "evidence-review") {
       const research = ofType("research").at(-1)!;
-      return {
+      return await reportStructuredOutput(agent, {
         artifact_type: "evidence-review",
         hypothesis_artifact_id: ofType("hypothesis").at(-1)!.id,
         research_artifact_ids: [research.id],
@@ -244,7 +244,7 @@ export function createDeterministicRuntime(store: SqliteStore): {
         ],
         gaps: [],
         supported: true,
-      };
+      });
     }
 
     if (role === "research-plan") {

@@ -182,6 +182,60 @@ test("partial or malformed usage does not become a zero-cost fact", () => {
   assert.equal(report.runs[0]!.cost.total, null);
 });
 
+test("an incomplete Attempt preserves known usage in audit but never exports it as the total", () => {
+  for (const failed of [false, true]) {
+    const path = databasePath();
+    const store = makeStore(path);
+    const runId = store.createRun("一轮用量已知，另一轮未知", { science125Id: 3 });
+    const attemptId = store.startAttempt(runId, "research-plan");
+    const usage = {
+      agent: "research-plan",
+      inputTokens: 20,
+      outputTokens: 5,
+      totalTokens: 25,
+      incomplete: true as const,
+    };
+    if (failed) {
+      store.failAttempt(
+        runId,
+        attemptId,
+        { code: "provider_error", reason: "second call failed" },
+        "StageError",
+        1,
+        usage,
+      );
+      store.finishRun(runId, "failed", { errorCode: "provider_error" });
+    } else {
+      const artifact = store.publishArtifact(runId, attemptId, researchPlan(), [], 1, usage);
+      store.finishRun(runId, "completed", { finalArtifactId: artifact.id });
+    }
+    const event = store.eventsAfter(runId, 0).find((event) => event.kind === "sdk.usage")!;
+    assert.deepEqual(event.payload, {
+      agent: "research-plan",
+      input_tokens: null,
+      output_tokens: null,
+      total_tokens: null,
+      incomplete: true,
+      known_input_tokens: 20,
+      known_output_tokens: 5,
+      known_total_tokens: 25,
+    });
+    const report = buildUsageReport(path, pricing);
+    for (const record of [
+      report.attempts[0]!,
+      report.roles[0]!,
+      report.runs[0]!,
+      report.questions[0]!,
+      report.summary,
+    ]) {
+      assert.equal(record.total_tokens, null);
+      assert.equal(record.cost.total, null);
+      assert.ok(record.unknown_reasons.includes("usage_incomplete"));
+    }
+    assert.equal(report.summary.unknown_attempts, 1);
+  }
+});
+
 test("JSONL export and Markdown include the same explicit unknown semantics", () => {
   const path = databasePath();
   const store = makeStore(path);

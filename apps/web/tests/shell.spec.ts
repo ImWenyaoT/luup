@@ -18,6 +18,46 @@ test("home page shows Luup heading", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Luup" })).toBeVisible();
 });
 
+test("unsupported WebMCP browser keeps the normal UI usable", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(document, "modelContext", { configurable: true, value: undefined });
+  });
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/");
+  await expect(page.getByTestId("welcome-panel")).toBeVisible();
+  await page.getByTestId("welcome-question-input").fill("Unsupported WebMCP browser");
+  await page.getByTestId("start-research").click();
+  await expect(page.getByTestId("run-workspace")).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("build opt-in controls registration when the browser offers the API", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(document, "modelContext", {
+      configurable: true,
+      value: {
+        calls: 0,
+        async registerTool() {
+          this.calls += 1;
+        },
+      },
+    });
+  });
+  const warnings: string[] = [];
+  page.on("console", (message) => {
+    if (message.text().includes("WebMCP")) warnings.push(message.text());
+  });
+  await page.goto("/");
+  await expect(page.getByTestId("welcome-panel")).toBeVisible();
+  await page.getByRole("button", { name: /Science 125 题库/ }).click();
+  await expect(page.getByTestId("question-search")).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => (document as Document & { modelContext: { calls: number } }).modelContext.calls))
+    .toBe(process.env.NEXT_PUBLIC_LUUP_WEBMCP === "1" ? 4 : 0);
+  expect(warnings).toEqual([]);
+});
+
 test("create run navigates to ?run= query param", async ({ page }) => {
   await page.goto("/");
   const question = "E2E deterministic smoke question";

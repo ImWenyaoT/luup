@@ -16,6 +16,7 @@ import { RunInspector, RunWorkspace } from "./features/workspace/RunWorkspace";
 import { colors } from "./styles";
 import { useRunEvents } from "./hooks/useRunEvents";
 import { useRunWorkingSet } from "./hooks/useRunWorkingSet";
+import { useWebMCP } from "./hooks/useWebMCP";
 import type { InspectorKind } from "./lib/types/inspector";
 import type { Science125Question, Snapshot } from "./lib/types/wire";
 
@@ -157,6 +158,20 @@ export default function Home() {
       setInspector("artifacts");
     }
   }, [snapshot?.id]);
+
+  useWebMCP({
+    runId,
+    status: state.status,
+    snapshot,
+    runs: runTabs,
+    inspector,
+    selectedArtifactId,
+    artifactLoading,
+    error: displayError ?? runErrorMessage,
+    navigateToRun,
+    setInspector,
+    selectArtifact: handleSelectArtifact,
+  });
 
   return (
     <AppShell

@@ -7,17 +7,21 @@ import {
   type ModelProvider,
   type ModelSettings,
   type RetryPolicy,
+  type ModelResponse,
 } from "@openai/agents";
 
 import { ContractError, StageError } from "./agent/failures.ts";
 import { installRunnerTraceHooks, TraceCollector, type TraceUsage } from "./agent/run-trace.ts";
 import { modelConfigVersion, qwenModelProvider } from "./seams/index.ts";
+import { observeQwenResponses, QwenResponseStatusError } from "./seams/qwen-responses.ts";
 import type { StageExecutor } from "./roles.ts";
 import type { Role } from "./agent/contracts.ts";
 
 export type StageMetrics = {
   runId: string;
   role: Role;
+  /** 已知用量只是部分调用的下界，不能当作完整成本。 */
+  incomplete?: true;
   requests: number;
   inputTokens: number;
   outputTokens: number;
@@ -48,7 +52,7 @@ export type StageUsage = Omit<StageMetrics, "runId" | "role" | "outcome">;
 
 /** 一份 `RunState` 形状的观测点：聚合用量 + 已生成的 run item。
  *  `usageOf` 与 `invalidFinalOutput` 观测器读的是同一个形状，所以只写一次。 */
-type UsageSource = { usage?: unknown; _generatedItems?: unknown } | null | undefined;
+type UsageSource = { usage?: unknown; _generatedItems?: unknown; _modelResponses?: unknown } | null | undefined;
 
 function stageUsageOf(source: UsageSource): StageUsage | null {
   const usage = source?.usage as
@@ -56,11 +60,45 @@ function stageUsageOf(source: UsageSource): StageUsage | null {
     | undefined;
   if (!usage || typeof usage.totalTokens !== "number") return null;
   const items = Array.isArray(source?._generatedItems) ? source._generatedItems : [];
+  const responses = Array.isArray(source?._modelResponses) ? source._modelResponses : [];
+  let knownResponses = 0;
+  let incomplete = false;
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let totalTokens = 0;
+  for (const response of responses) {
+    const current = response as {
+      providerData?: { object?: unknown; usage?: Record<string, unknown> };
+      usage?: { inputTokens: number; outputTokens: number; totalTokens: number };
+    };
+    // SDK 会把 Responses 缺失的 usage 补成 0；原始 providerData 才能证明它是否真实报告过。
+    if (current.providerData?.object === "response") {
+      const raw = current.providerData.usage;
+      const valid = [raw?.input_tokens, raw?.output_tokens, raw?.total_tokens].every(
+        (value) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0,
+      );
+      if (!valid) {
+        incomplete = true;
+        continue;
+      }
+      inputTokens += raw!.input_tokens as number;
+      outputTokens += raw!.output_tokens as number;
+      totalTokens += raw!.total_tokens as number;
+      knownResponses += 1;
+    } else if (current.usage) {
+      inputTokens += current.usage.inputTokens;
+      outputTokens += current.usage.outputTokens;
+      totalTokens += current.usage.totalTokens;
+      knownResponses += 1;
+    }
+  }
+  if (incomplete && knownResponses === 0) return null;
   return {
+    ...(incomplete ? { incomplete: true as const } : {}),
     requests: usage.requests ?? 0,
-    inputTokens: usage.inputTokens ?? 0,
-    outputTokens: usage.outputTokens ?? 0,
-    totalTokens: usage.totalTokens,
+    inputTokens: incomplete ? inputTokens : (usage.inputTokens ?? 0),
+    outputTokens: incomplete ? outputTokens : (usage.outputTokens ?? 0),
+    totalTokens: incomplete ? totalTokens : usage.totalTokens,
     toolCalls: items.filter((item) => (item as { type?: string }).type === "tool_call_item").length,
   };
 }
@@ -105,9 +143,9 @@ export function isContextOverflow(detail: string): boolean {
 
 /** 每个角色一次 `runner.run` 允许的 turn 数。
  *
- * SDK 的判据是 `state._currentTurn > maxTurns`（`runner/turnPreparation.mjs`），而
- * researcher 关掉了 `parallelToolCalls`，所以一次工具调用正好吃掉一个 turn ——
- * 这个数就是「模型最多能开口几次」。
+ * SDK 的判据是 `state._currentTurn > maxTurns`（`runner/turnPreparation.mjs`）。
+ * 它限制模型响应轮数；百炼可能忽略 `parallelToolCalls: false` 并在一轮返回多个工具，
+ * 所以它不是检索次数上限（已记录于协议 queries_authority 修订）。
  *
  * **6 是 luup-old 时代的值，前提已经不成立**：那时 researcher 交作业走自由文本，
  * 一次调用一个 turn 就收尾。现在它走合成工具通路，一个 Attempt 的最小账是
@@ -120,8 +158,8 @@ export function isContextOverflow(detail: string): boolean {
  * researcher 取 12 的推导 = 检索 5 + 上报 1 + 修正余量 6。余量与检索预算同量级，
  * 才谈得上「查完之后每一步都还能错一次」；给 7、8 只是把同一堵墙挪近一点。
  *
- * hypothesis-generation / evidence-review / research-plan 三个角色没有工具，产物即最终输出，
- * 正常路径一个 turn 就结束。Reviewer 只有受限的独立检索面，6 turns 足够完成一次检索并交付；
+ * hypothesis-generation / evidence-review / research-plan 只有结构化上报工具，没有检索面，
+ * 正常路径一次上报即结束。Reviewer 另有受限的独立检索面，6 turns 用于检索和上报；
  * 继续抬高不会救回合同失败，只会让模型空转时多付预算。
  *
  * 抬高不会失控，兜底在外层而不在这个数：阶段 deadline 300s（`roles.ts` 的 `timeoutMs`）
@@ -299,25 +337,45 @@ export function createQwenExecutor(
     // 用量此刻已经累加完（`run.mjs` 每收到一次模型响应就 `state._context.usage.add`）。
     // 处理器返回 undefined 表示不接管，SDK 照常抛原来的错误：这里只观测，不改语义。
     const observed: { usage: StageUsage | null } = { usage: null };
+    const providerResponses: ModelResponse[] = [];
     let result;
     try {
-      result = await runner.run(agent, input, {
-        context: { trace_id: traceId },
-        maxTurns: maxTurnsFor(role),
-        signal,
-        errorHandlers: {
-          invalidFinalOutput: ({ context, runData }) => {
-            observed.usage =
-              stageUsageOf(runData.state as UsageSource) ??
-              stageUsageOf({ usage: context.usage, _generatedItems: runData.newItems });
-            return undefined;
+      result = await observeQwenResponses(providerResponses, () =>
+        runner.run(agent, input, {
+          context: { trace_id: traceId },
+          maxTurns: maxTurnsFor(role),
+          signal,
+          errorHandlers: {
+            invalidFinalOutput: ({ context, runData }) => {
+              observed.usage =
+                stageUsageOf(runData.state as UsageSource) ??
+                stageUsageOf({
+                  usage: context.usage,
+                  _generatedItems: runData.newItems,
+                  _modelResponses: runData.rawResponses,
+                });
+              return undefined;
+            },
           },
-        },
-      });
+        }),
+      );
     } catch (error) {
       // 先记账再分类：下面每条分支都会抛，记账写进分支就会漏掉其中几条。
       // 记账本身失败绝不拖垮 Attempt —— 少一条用量事件，远好过因为记账把 Run 打死。
-      const spent = usageOf(error) ?? observed.usage;
+      const rejectedUsage =
+        error instanceof QwenResponseStatusError
+          ? stageUsageOf({
+              usage: {
+                requests: providerResponses.length,
+                inputTokens: providerResponses.reduce((total, response) => total + response.usage.inputTokens, 0),
+                outputTokens: providerResponses.reduce((total, response) => total + response.usage.outputTokens, 0),
+                totalTokens: providerResponses.reduce((total, response) => total + response.usage.totalTokens, 0),
+              },
+              _modelResponses: providerResponses,
+            })
+          : null;
+      if (rejectedUsage) rejectedUsage.toolCalls = trace.toolCalls;
+      const spent = rejectedUsage ?? usageOf(error) ?? observed.usage;
       trace.ended(
         "failed",
         error instanceof Error ? error.name : "unknown_error",
@@ -364,6 +422,7 @@ export function createQwenExecutor(
           ),
         );
       }
+      if (error instanceof QwenResponseStatusError) fail(error);
       // 走到这里的瞬时故障已经退避重试过（`TRANSIENT_RETRY`）并且仍然失败，或者
       // 判据认定它根本不瞬时（4xx 语义错误）。两种都是终态：`provider_error` 的语义
       // 因此从「provider 报错了」收紧为「provider 报错且重试救不回来」。
@@ -384,14 +443,8 @@ export function createQwenExecutor(
       throw new StageError("provider_error", `${role} returned no final output`);
     }
     const usage = result.runContext.usage;
-    const spent: StageUsage = {
-      requests: usage.requests,
-      inputTokens: usage.inputTokens,
-      outputTokens: usage.outputTokens,
-      totalTokens: usage.totalTokens,
-      toolCalls: result.newItems.filter((item) => item.type === "tool_call_item").length,
-    };
-    trace.ended("completed", "final_output", traceUsageOf(spent, spent.toolCalls));
+    const spent = stageUsageOf({ usage, _generatedItems: result.newItems, _modelResponses: result.rawResponses });
+    trace.ended("completed", "final_output", traceUsageOf(spent, spent?.toolCalls ?? null));
     traces.delete(traceId);
     if (traceWriteError) {
       throw new StageError("runtime_error", "run trace persistence failed", { cause: traceWriteError });
@@ -399,6 +452,7 @@ export function createQwenExecutor(
     // 成功也要记账，而且要落到与失败同一条通路上：`onUsage` 把用量交还给 runTask，
     // 由它按 Attempt 累加、再由 harness 落成唯一一条 `sdk.usage`。
     // `onComplete` 只是进程内遥测（canary 报告），不写库 —— 两者不重复记账。
+    if (!spent) return result.finalOutput;
     try {
       onUsage?.(spent);
     } catch (error) {
@@ -416,9 +470,9 @@ export function createQwenExecutor(
 function traceUsageOf(usage: StageUsage | null, toolCalls: number | null): TraceUsage {
   return {
     requests: usage?.requests ?? null,
-    input_tokens: usage?.inputTokens ?? null,
-    output_tokens: usage?.outputTokens ?? null,
-    total_tokens: usage?.totalTokens ?? null,
+    input_tokens: usage?.incomplete ? null : (usage?.inputTokens ?? null),
+    output_tokens: usage?.incomplete ? null : (usage?.outputTokens ?? null),
+    total_tokens: usage?.incomplete ? null : (usage?.totalTokens ?? null),
     tool_calls: usage?.toolCalls ?? (usage ? toolCalls : null),
   };
 }

@@ -51,6 +51,12 @@ jobs:
 
   # 交付形态的端到端：确定性 API + Next.js 两进程，零 LLM 调用、零外部网络。
   e2e:
+    strategy:
+      fail-fast: false
+      matrix:
+        webmcp: ["0", "1"]
+    env:
+      NEXT_PUBLIC_LUUP_WEBMCP: ${{ matrix.webmcp }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -76,7 +82,7 @@ jobs:
         if: ${{ failure() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: playwright-traces
+          name: playwright-traces-webmcp-${{ matrix.webmcp }}
           path: outputs/playwright/results/
           include-hidden-files: true
           retention-days: 7

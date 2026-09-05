@@ -41,11 +41,7 @@ class AttemptFailed extends Error {
   }
 }
 
-export type RunOutcome = {
-  status: "completed" | "review_rejected" | "failed";
-  finalArtifactId: string | null;
-  errorCode: string | null;
-};
+export type RunOutcome = ReturnType<RunStore["finishRun"]>;
 
 /** 固定五阶段编排。
  *
@@ -104,6 +100,8 @@ export class Harness {
    * 没有记忆通道时它照样发，count 记 0：缺失与零在这里是两回事，不能靠「没有事件」来推断。
    */
   async execute(runId: string): Promise<RunOutcome> {
+    const settled = this.#store.readRunOutcome(runId);
+    if (settled) return settled;
     const questionId = this.#store.science125Id(runId);
     let memoryRead: CampaignReadResult | null = null;
     if (this.#memory) {
@@ -205,10 +203,7 @@ export class Harness {
       const selectedAssessment = assessments.find((item) => item.candidate_id === selectedCandidateId);
       const selectedVerdict = selectedAssessment?.verdict ?? null;
       const supported = assessments.filter((item) => item.verdict === "supports");
-      const promotedCandidate =
-        selectedVerdict === "supports"
-          ? (selectedAssessment ?? null)
-          : (supported[0] ?? null);
+      const promotedCandidate = selectedVerdict === "supports" ? (selectedAssessment ?? null) : (supported[0] ?? null);
       const promoted = promotedCandidate !== null;
       const promotedCandidateId = promotedCandidate?.candidate_id ?? null;
       const promotedVerdict = promotedCandidate?.verdict ?? null;
@@ -241,7 +236,7 @@ export class Harness {
       const planGoal = selectionOverridden
         ? `生成可验证研究计划；Harness 晋升候选 ${promotedCandidateId}（模型自选 ${selectedCandidateId} 未过证据闸，Propose≠Select）`
         : `生成可验证研究计划；晋升候选 ${promotedCandidateId}`;
-      const plan = await this.#step(runId, question, "research-plan", domainInputs, planGoal);
+      const plan = await this.#step(runId, question, "research-plan", domainInputs, planGoal, [], promotedCandidateId);
       const review = await this.#step(
         runId,
         question,
@@ -314,11 +309,9 @@ export class Harness {
         });
         if (!verification.ok) {
           const code = verificationFailureCode(verification);
-          this.#store.finishRun(runId, "failed", { errorCode: code });
-          return { status: "failed", finalArtifactId: null, errorCode: code };
+          return this.#store.finishRun(runId, "failed", { errorCode: code });
         }
-        this.#store.finishRun(runId, "completed", { finalArtifactId: plan.id });
-        return { status: "completed", finalArtifactId: plan.id, errorCode: null };
+        return this.#store.finishRun(runId, "completed", { finalArtifactId: plan.id });
       }
 
       const stopReason = "reviewer_rejected";
@@ -368,12 +361,10 @@ export class Harness {
         stop_reason: stopReason,
         rollback_reason: null,
       });
-      this.#store.finishRun(runId, "review_rejected", { errorCode: "review_rejected" });
-      return { status: "review_rejected", finalArtifactId: null, errorCode: "review_rejected" };
+      return this.#store.finishRun(runId, "review_rejected", { errorCode: "review_rejected" });
     } catch (error) {
       const code = error instanceof AttemptFailed ? error.code : "runtime_error";
-      this.#store.finishRun(runId, "failed", { errorCode: code });
-      return { status: "failed", finalArtifactId: null, errorCode: code };
+      return this.#store.finishRun(runId, "failed", { errorCode: code });
     }
   }
 
@@ -385,6 +376,7 @@ export class Harness {
     inputs: StoredInput[],
     goal: string,
     priorAttempts: readonly string[] = [],
+    promotedCandidateId?: string,
   ): Promise<StoredArtifact> {
     const attemptId = this.#store.startAttempt(runId, role);
     const context: TaskContext = {
@@ -396,6 +388,7 @@ export class Harness {
       inputArtifactIds: inputs.map((item) => item.id),
       inputArtifacts: inputs,
       priorAttempts,
+      ...(promotedCandidateId === undefined ? {} : { promotedCandidateId }),
     };
     const ledger = this.#createLedger({ runId, attemptId });
     try {
@@ -479,6 +472,7 @@ function usageFacts(role: Role, usage: StageUsage | null | undefined): UsageFact
     inputTokens: usage.inputTokens,
     outputTokens: usage.outputTokens,
     totalTokens: usage.totalTokens,
+    ...(usage.incomplete ? { incomplete: true } : {}),
   };
 }
 

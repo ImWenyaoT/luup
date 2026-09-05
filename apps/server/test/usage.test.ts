@@ -203,45 +203,48 @@ const review = {
   accepted: true,
 };
 
-test("a successful Attempt carries the usage of every call it made", async () => {
-  const spent: StageUsage = { requests: 1, inputTokens: 10, outputTokens: 4, totalTokens: 14, toolCalls: 0 };
-  const ledger = new EvidenceLedger();
-  let call = 0;
-  const execute: StageExecutor = ({ agent, onUsage }) => {
-    call += 1;
-    // 首轮：模型调用成功（用量已经发生），产物被合同门驳回。
-    if (call === 1) {
-      onUsage?.(spent);
-      return Promise.reject(new ContractError("产物违反后置约束"));
-    }
-    onUsage?.(spent);
-    const evidence = ledger.record({
-      tool: "arxiv_search",
-      sourceType: "arxiv",
-      query: "reviewer search",
-      status: "succeeded",
-      resultSummary: "one source",
-      citations: [{ source_type: "arxiv", title: "source", locator: "arxiv:1", url: null }],
+test.each([null, true, false])(
+  "successful correction accounts for known and unknown calls (%s)",
+  async (knownFirst) => {
+    const spent: StageUsage = { requests: 1, inputTokens: 10, outputTokens: 4, totalTokens: 14, toolCalls: 0 };
+    const ledger = new EvidenceLedger();
+    let call = 0;
+    const execute: StageExecutor = ({ agent, onUsage }) => {
+      call += 1;
+      if (knownFirst === null || (call === 1) === knownFirst) onUsage?.(spent);
+      // 首轮：模型调用成功（用量已经发生），产物被合同门驳回。
+      if (call === 1) {
+        return Promise.reject(new ContractError("产物违反后置约束"));
+      }
+      const evidence = ledger.record({
+        tool: "arxiv_search",
+        sourceType: "arxiv",
+        query: "reviewer search",
+        status: "succeeded",
+        resultSummary: "one source",
+        citations: [{ source_type: "arxiv", title: "source", locator: "arxiv:1", url: null }],
+      });
+      return reportStructuredOutput(agent, { ...review, independent_evidence_ids: [evidence.evidenceId] });
+    };
+
+    const result = await runTask(
+      { ...context, inputArtifacts: reviewerInputs, inputArtifactIds: ["plan", "review"] },
+      { execute, ledger },
+    );
+
+    assert.equal(call, 2);
+    assert.equal(result.corrections, 1);
+    // 被驳回的那一轮同样烧掉了 token —— 只记交出 Artifact 的那次就是漏账。
+    assert.deepEqual(result.usage, {
+      ...(knownFirst === null ? {} : { incomplete: true }),
+      requests: knownFirst === null ? 2 : 1,
+      inputTokens: knownFirst === null ? 20 : 10,
+      outputTokens: knownFirst === null ? 8 : 4,
+      totalTokens: knownFirst === null ? 28 : 14,
+      toolCalls: 0,
     });
-    return reportStructuredOutput(agent, { ...review, independent_evidence_ids: [evidence.evidenceId] });
-  };
-
-  const result = await runTask(
-    { ...context, inputArtifacts: reviewerInputs, inputArtifactIds: ["plan", "review"] },
-    { execute, ledger },
-  );
-
-  assert.equal(call, 2);
-  assert.equal(result.corrections, 1);
-  // 被驳回的那一轮同样烧掉了 token —— 只记交出 Artifact 的那次就是漏账。
-  assert.deepEqual(result.usage, {
-    requests: 2,
-    inputTokens: 20,
-    outputTokens: 8,
-    totalTokens: 28,
-    toolCalls: 0,
-  });
-});
+  },
+);
 
 test("an executor that reports no usage leaves the Attempt usage unknown", async () => {
   const ledger = new EvidenceLedger();
@@ -335,3 +338,20 @@ test("every completed Attempt of a whole run lands exactly one usage event", asy
   );
   store.close();
 });
+
+test.each([true, false])(
+  "correction usage is incomplete when one call is unknown (known first: %s)",
+  async (knownFirst) => {
+    const usage: StageUsage = { requests: 1, inputTokens: 10, outputTokens: 4, totalTokens: 14, toolCalls: 0 };
+    let calls = 0;
+    const execute: StageExecutor = () => {
+      const first = calls++ === 0;
+      const error = first ? new ContractError("修正结构") : new StageError("provider_error", "provider unavailable");
+      return Promise.reject(first === knownFirst ? Object.assign(error, { usage }) : error);
+    };
+    await assert.rejects(runTask(context, { execute }), (error: unknown) => {
+      assert.deepEqual((error as { usage?: StageUsage }).usage, { ...usage, incomplete: true });
+      return true;
+    });
+  },
+);

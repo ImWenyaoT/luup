@@ -17,6 +17,7 @@
     "@openai/agents": "0.17.0",
     "elysia": "^1.4.30",
     "fast-xml-parser": "^5.11.1",
+    "openai": "7.8.0",
     "zod": "^4.5.2"
   },
   "devDependencies": {

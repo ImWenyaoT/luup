@@ -32,6 +32,12 @@ export type StoredArtifact = {
 
 export type ResearcherFeedback = { id: string; text: string; round: 1 };
 
+export type RunOutcome = {
+  status: Exclude<RunStatus, "running">;
+  finalArtifactId: string | null;
+  errorCode: string | null;
+};
+
 export class FeedbackSubmissionError extends Error {
   readonly code: "invalid" | "conflict" | "not_found";
 
@@ -498,9 +504,17 @@ export class SqliteStore {
       if (usage) {
         emitEvent(db, runId, "sdk.usage", {
           agent: usage.agent,
-          input_tokens: usage.inputTokens,
-          output_tokens: usage.outputTokens,
-          total_tokens: usage.totalTokens,
+          input_tokens: usage.incomplete ? null : usage.inputTokens,
+          output_tokens: usage.incomplete ? null : usage.outputTokens,
+          total_tokens: usage.incomplete ? null : usage.totalTokens,
+          ...(usage.incomplete
+            ? {
+                incomplete: true,
+                known_input_tokens: usage.inputTokens,
+                known_output_tokens: usage.outputTokens,
+                known_total_tokens: usage.totalTokens,
+              }
+            : {}),
         });
       }
       db.prepare(
@@ -567,9 +581,17 @@ export class SqliteStore {
       if (usage) {
         emitEvent(db, runId, "sdk.usage", {
           agent: usage.agent,
-          input_tokens: usage.inputTokens,
-          output_tokens: usage.outputTokens,
-          total_tokens: usage.totalTokens,
+          input_tokens: usage.incomplete ? null : usage.inputTokens,
+          output_tokens: usage.incomplete ? null : usage.outputTokens,
+          total_tokens: usage.incomplete ? null : usage.totalTokens,
+          ...(usage.incomplete
+            ? {
+                incomplete: true,
+                known_input_tokens: usage.inputTokens,
+                known_output_tokens: usage.outputTokens,
+                known_total_tokens: usage.totalTokens,
+              }
+            : {}),
         });
       }
       db.prepare(
@@ -628,9 +650,28 @@ export class SqliteStore {
     });
   }
 
-  finishRun(runId: string, status: RunStatus, options: { finalArtifactId?: string; errorCode?: string } = {}): void {
-    this.#write((db) => {
-      const run = db.prepare("SELECT status FROM runs WHERE id = ?").get(runId) as Row | undefined;
+  /** 只读终态；运行中返回 null，避免重复执行已结束的 Run。 */
+  readRunOutcome(runId: string): RunOutcome | null {
+    const run = this.#get("SELECT status, final_artifact_id, error_code FROM runs WHERE id = ?", runId);
+    if (!run) throw new Error(`unknown run: ${runId}`);
+    if (run.status === "running") return null;
+    return {
+      status: run.status as RunOutcome["status"],
+      finalArtifactId: run.final_artifact_id as string | null,
+      errorCode: run.error_code as string | null,
+    };
+  }
+
+  /** 返回持久化终态；被批跑提前收尾后，迟到调用也必须服从同一份事实。 */
+  finishRun(
+    runId: string,
+    status: RunOutcome["status"],
+    options: { finalArtifactId?: string; errorCode?: string } = {},
+  ): RunOutcome {
+    return this.#write((db) => {
+      const run = db.prepare("SELECT status, final_artifact_id, error_code FROM runs WHERE id = ?").get(runId) as
+        | Row
+        | undefined;
       if (!run) throw new Error(`unknown run: ${runId}`);
       // 终态是不可逆事实：取消/重启已经收尾后，迟到的执行流只能幂等忽略。
       if (run.status !== "running") {
@@ -639,7 +680,11 @@ export class SqliteStore {
           requested_status: status,
           run_status: run.status,
         });
-        return;
+        return {
+          status: run.status as RunOutcome["status"],
+          finalArtifactId: run.final_artifact_id as string | null,
+          errorCode: run.error_code as string | null,
+        };
       }
       const active = db
         .prepare("SELECT COUNT(*) AS n FROM attempts WHERE run_id = ? AND status = 'running'")
@@ -677,6 +722,7 @@ export class SqliteStore {
         final_artifact_id: options.finalArtifactId ?? null,
         failure_code: options.errorCode ?? null,
       });
+      return { status, finalArtifactId: options.finalArtifactId ?? null, errorCode: options.errorCode ?? null };
     });
   }
 

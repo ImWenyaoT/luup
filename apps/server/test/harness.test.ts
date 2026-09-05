@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { onTestFinished, test } from "vitest";
@@ -10,6 +10,7 @@ import { EvidenceLedger, type EvidenceCitation, type EvidenceRecord } from "../s
 import { StageError } from "../src/agent/failures.ts";
 import { reportStructuredOutput } from "../src/agent/roles/structured-output.ts";
 import { Harness } from "../src/harness.ts";
+import { CampaignMemory } from "../src/campaign/campaign.ts";
 import { runTask, type StageExecutor } from "../src/roles.ts";
 import { SqliteStore } from "../src/store/store.ts";
 import { createReferenceVerifier, type ArxivLookup } from "../src/verify/verifier.ts";
@@ -250,7 +251,7 @@ function fake(
       const evidenceIds = [
         ...new Set(research.flatMap((item) => item.content.citations.map((c: any) => c.evidence_id))),
       ];
-      return {
+      return await reportStructuredOutput(agent, {
         artifact_type: "hypothesis",
         question: options.rewritesHypothesisQuestion ? DRIFTED_QUESTION : payload.question,
         candidates: [
@@ -309,7 +310,7 @@ function fake(
         },
         selection_status: "candidate_selected",
         research_artifact_ids: research.map((item) => item.id),
-      };
+      });
     }
 
     if (role === "evidence-review") {
@@ -318,7 +319,7 @@ function fake(
       const research = ofType("research");
       // 补证首轮仍用 uncertain（触发 gaps）；最终轮才应用 selectedVerdict 门禁夹具。
       const selectedVerdict = gap ? "uncertain" : (options.selectedVerdict ?? "supports");
-      return {
+      return await reportStructuredOutput(agent, {
         artifact_type: "evidence-review",
         hypothesis_artifact_id: ofType("hypothesis").at(-1)!.id,
         research_artifact_ids: research.map((item) => item.id),
@@ -346,10 +347,7 @@ function fake(
                 {
                   candidate_id: "prompt-only",
                   claim: "仅提示词约束也可能降低无来源引用。",
-                  verdict: (options.alternateVerdict ?? "uncertain") as
-                    | "supports"
-                    | "contradicts"
-                    | "uncertain",
+                  verdict: (options.alternateVerdict ?? "uncertain") as "supports" | "contradicts" | "uncertain",
                   rationale:
                     (options.alternateVerdict ?? "uncertain") === "supports"
                       ? "冻结证据支持将该对照候选作为可验证主张推进。"
@@ -362,9 +360,8 @@ function fake(
               ]),
         ],
         gaps: gap ? ["comparison source"] : [],
-        supported:
-          !gap && (selectedVerdict === "supports" || options.alternateVerdict === "supports"),
-      };
+        supported: !gap && (selectedVerdict === "supports" || options.alternateVerdict === "supports"),
+      });
     }
 
     if (role === "research-plan") {
@@ -889,27 +886,40 @@ test("candidate gate fail-closes when selected verdict is uncertain", async () =
   h.store.close();
 });
 
-test("candidate gate promotes an alternate supports candidate when selected fails (Propose≠Select)", async () => {
-  const h = harness({ selectedVerdict: "uncertain", alternateVerdict: "supports" });
-  const runId = h.harness.createRun("q");
-  await h.harness.execute(runId);
+test.each(["uncertain", "contradicts"] as const)(
+  "candidate gate promotes an alternate supports candidate when selected is %s",
+  async (selectedVerdict) => {
+    const h = harness({ selectedVerdict, alternateVerdict: "supports" });
+    const runId = h.harness.createRun("q");
+    await h.harness.execute(runId);
 
-  const snapshot = h.store.snapshot(runId)!;
-  assert.equal(snapshot.status, "completed");
-  assert.ok(h.calls.some((c) => c.role === "research-plan"));
-  const planCall = h.calls.find((c) => c.role === "research-plan");
-  assert.match(String(planCall!.input.goal), /prompt-only/);
-  const gate = snapshot.recent_events.find((e: any) => e.kind === "evaluation.candidate_gate");
-  assert.ok(gate);
-  assert.equal(gate!.payload.selected_candidate_id, "evidence-gate");
-  assert.equal(gate!.payload.selected_verdict, "uncertain");
-  assert.equal(gate!.payload.promoted_candidate_id, "prompt-only");
-  assert.equal(gate!.payload.verdict, "supports");
-  assert.equal(gate!.payload.promoted, true);
-  assert.equal(gate!.payload.selection_overridden, true);
-  assert.equal(gate!.payload.supports_count, 1);
-  h.store.close();
-});
+    const snapshot = h.store.snapshot(runId)!;
+    assert.equal(snapshot.status, "completed");
+    assert.ok(h.calls.some((c) => c.role === "research-plan"));
+    const planCall = h.calls.find((c) => c.role === "research-plan");
+    assert.match(String(planCall!.input.goal), /prompt-only/);
+    const gate = snapshot.recent_events.find((e: any) => e.kind === "evaluation.candidate_gate");
+    assert.ok(gate);
+    assert.equal(gate!.payload.selected_candidate_id, "evidence-gate");
+    assert.equal(gate!.payload.selected_verdict, selectedVerdict);
+    assert.equal(gate!.payload.promoted_candidate_id, "prompt-only");
+    assert.equal(gate!.payload.verdict, "supports");
+    assert.equal(gate!.payload.promoted, true);
+    assert.equal(gate!.payload.selection_overridden, true);
+    assert.equal(gate!.payload.supports_count, 1);
+    const plan = h.store.latestArtifact(runId, "research-plan")!.content as ResearchPlan;
+    assert.deepEqual(
+      plan.execution_plan.predictions.map((prediction) => prediction.candidate_id),
+      ["prompt-only"],
+    );
+    assert.equal(planCall!.input.promoted_candidate_id, "prompt-only");
+    const frozenHypothesis = h.store.latestArtifact(runId, "hypothesis")!.content as {
+      comparison: { selected_candidate_id: string };
+    };
+    assert.equal(frozenHypothesis.comparison.selected_candidate_id, "evidence-gate");
+    h.store.close();
+  },
+);
 
 test("candidate gate promotes selected when its verdict is supports", async () => {
   const h = harness({ selectedVerdict: "supports" });
@@ -1044,9 +1054,9 @@ test("records the drift of the accepted round only", async () => {
       citations: [{ evidence_id: "ev_1", url: null }],
     },
   };
-  const execute: StageExecutor = () => {
+  const execute: StageExecutor = ({ agent }) => {
     call += 1;
-    return Promise.resolve({
+    return reportStructuredOutput(agent, {
       artifact_type: "hypothesis",
       question: DRIFTED_QUESTION,
       candidates: [
@@ -1501,4 +1511,95 @@ test("rejects late evidence without mutating the ledger and records the drop", (
     created_at: snapshot.recent_events.at(-1)!.created_at,
   });
   store.close();
+});
+
+for (const verifierFails of [false, true]) {
+  test(`late verifier preserves the settled outcome and cannot inject success (fails=${verifierFails})`, async () => {
+    const directory = mkdtempSync(join(tmpdir(), "luup-terminal-race-"));
+    const store = new SqliteStore(":memory:");
+    onTestFinished(() => {
+      store.close();
+      rmSync(directory, { recursive: true, force: true });
+    });
+    const fixture = fake();
+    const memory = new CampaignMemory({ memoryDir: directory, locate: (id) => `test.db#${id}` });
+    let enter!: () => void;
+    let resume!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      enter = resolve;
+    });
+    const release = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    const verifier = createReferenceVerifier({ lookup: fixtureLookup });
+    const runner = new Harness(store, fixture.execute, {
+      memory,
+      createLedger: (scope) => {
+        const ledger = new EvidenceLedger({
+          namespace: `${scope.attemptId}_`,
+          onRecord: (record) => store.recordEvidence(scope.runId, scope.attemptId, record),
+        });
+        fixture.useLedger(ledger);
+        return ledger;
+      },
+      verifyReferences: async (input) => {
+        const result = await verifier(input);
+        assert.equal(result.ok, true);
+        enter();
+        await release;
+        if (verifierFails) throw new Error("late verifier failure");
+        return result;
+      },
+    });
+    const runId = store.createRun(FROZEN_QUESTION, { science125Id: 1 });
+    const running = runner.execute(runId);
+    await entered;
+    assert.equal(store.settleAbandonedRun(runId, "infra_timeout", "BatchTimeout"), true);
+    resume();
+    const outcome = await running;
+    assert.deepEqual(outcome, { status: "failed", finalArtifactId: null, errorCode: "infra_timeout" });
+    assert.equal(store.snapshot(runId)!.status, "failed");
+    assert.equal(store.snapshot(runId)!.error_code, "infra_timeout");
+    assert.equal(store.snapshot(runId)!.final_artifact_id, null);
+    const log = readFileSync(join(directory, "log.md"), "utf8");
+    assert.match(log, /FAILED/);
+    assert.match(log, /cls=infra_timeout/);
+    assert.equal(existsSync(join(directory, "questions/q1.md")), false);
+    assert.deepEqual(memory.readPriorAttempts(1).entries, []);
+  });
+}
+
+test("executing a completed run returns durable facts without duplicating campaign success", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "luup-repeat-run-"));
+  const store = new SqliteStore(":memory:");
+  onTestFinished(() => {
+    store.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
+  const fixture = fake();
+  const memory = new CampaignMemory({ memoryDir: directory, locate: (id) => `test.db#${id}` });
+  const runner = new Harness(store, fixture.execute, {
+    memory,
+    verifyReferences: createReferenceVerifier({ lookup: fixtureLookup }),
+    createLedger: (scope) => {
+      const ledger = new EvidenceLedger({
+        namespace: `${scope.attemptId}_`,
+        onRecord: (record) => store.recordEvidence(scope.runId, scope.attemptId, record),
+      });
+      fixture.useLedger(ledger);
+      return ledger;
+    },
+  });
+  const runId = store.createRun(FROZEN_QUESTION, { science125Id: 1 });
+  const outcome = await runner.execute(runId);
+  assert.equal(outcome.status, "completed");
+  const snapshot = store.snapshot(runId);
+  const log = readFileSync(join(directory, "log.md"), "utf8");
+  const page = readFileSync(join(directory, "questions/q1.md"), "utf8");
+  assert.match(page, /SUCCESS/);
+  assert.deepEqual(await runner.execute(runId), outcome);
+  assert.deepEqual(store.snapshot(runId), snapshot);
+  assert.equal(readFileSync(join(directory, "log.md"), "utf8"), log);
+  assert.equal(readFileSync(join(directory, "questions/q1.md"), "utf8"), page);
+  assert.equal(memory.readPriorAttempts(1).entries.length, 1);
 });

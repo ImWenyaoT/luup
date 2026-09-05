@@ -167,7 +167,7 @@ test("does not fetch after its Attempt signal is cancelled", async () => {
   assert.equal(called, false);
 });
 
-test("Researcher and Reviewer have retrieval surfaces, and other roles remain tool-free", () => {
+test("only Researcher and Reviewer have retrieval surfaces; every role can report its artifact", () => {
   const { agents } = createRoles(new EvidenceLedger());
   // 检索面两个源，外加一个上报面 —— structured_output 不是来源，是交作业的通道
   assert.deepEqual(
@@ -180,14 +180,13 @@ test("Researcher and Reviewer have retrieval surfaces, and other roles remain to
   );
   assert.match(agents.reviewer.instructions as string, /反证/);
   assert.match(agents.reviewer.instructions as string, /方法风险/);
-  // 其余领域角色零工具；ResearchPlan 只有合成上报工具，不是检索面。
-  for (const role of ["hypothesis-generation", "evidence-review"] as const) {
-    assert.equal(agents[role].tools.length, 0, `${role} must not have tools`);
+  // 其它角色只有合成上报工具，不能检索或扩大输入证据面。
+  for (const role of ["hypothesis-generation", "evidence-review", "research-plan"] as const) {
+    assert.deepEqual(
+      agents[role].tools.map((tool) => tool.name),
+      ["structured_output"],
+    );
   }
-  assert.deepEqual(
-    agents["research-plan"].tools.map((tool) => tool.name),
-    ["structured_output"],
-  );
   // 不设具名 toolChoice：Qwen 挂两个工具时拒绝 required，具名又会锁死只能用一个源
   assert.equal(agents.researcher.modelSettings.toolChoice, undefined);
 });
