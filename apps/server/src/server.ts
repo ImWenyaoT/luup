@@ -632,8 +632,6 @@ function createElysiaApp(options: ServerOptions) {
   return app;
 }
 
-export type App = ReturnType<typeof createElysiaApp>;
-
 export function createApp(options: ServerOptions): LuupServer {
   const reportError = options.reportError ?? ((message, error) => console.error(message, error));
   const app = createElysiaApp(options);

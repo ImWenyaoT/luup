@@ -1,17 +1,11 @@
 import assert from "node:assert/strict";
-import { createServer } from "node:http";
 import { Agent, tool } from "@openai/agents";
 import { z } from "zod";
-import { afterEach, test, vi } from "vitest";
+import { test } from "vitest";
 
 import { StageError } from "../src/agent/failures.ts";
 import { createQwenExecutor, type StageUsage } from "../src/executor.ts";
-import { clearModelOverride, setModelOverride } from "../src/seams/model.ts";
-
-afterEach(() => {
-  clearModelOverride();
-  vi.unstubAllGlobals();
-});
+import { providerFixture } from "./provider-fixture.ts";
 
 const known = { input_tokens: 10, output_tokens: 4, total_tokens: 14 };
 const text = [
@@ -28,69 +22,58 @@ const call = [
 ];
 
 async function runFixture(responses: Record<string, unknown>[], httpStatus = 200) {
-  let requests = 0;
   let toolCalls = 0;
-  const server = createServer((request, response) => {
-    request.resume();
-    request.on("end", () => {
-      const current = responses[requests++] ?? { status: "completed", output: text, usage: known };
-      response.statusCode = httpStatus;
-      response.setHeader("content-type", "application/json");
-      if (httpStatus !== 200) {
-        response.setHeader("retry-after-ms", "0");
-        response.end(JSON.stringify({ error: { message: "local transport failure" } }));
-        return;
-      }
-      response.end(JSON.stringify({ id: `resp_${requests}`, object: "response", created_at: 0, ...current }));
-    });
-  });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const address = server.address();
-  assert.ok(address && typeof address !== "string");
-  const origin = `http://127.0.0.1:${address.port}`;
-  const originalFetch = globalThis.fetch;
-  vi.stubGlobal("fetch", ((input, init) => {
-    const url = new URL(input instanceof Request ? input.url : String(input));
-    if (url.origin !== origin) throw new Error("Only the local provider fixture is allowed");
-    return originalFetch(input, init);
-  }) satisfies typeof fetch);
-  setModelOverride({ apiKey: "local-test-only", baseUrl: `${origin}/v1`, modelId: "status-test" });
+  const requests = await providerFixture("status-test", (index) => ({
+    status: httpStatus,
+    headers: { "retry-after-ms": "0" },
+    body:
+      httpStatus !== 200
+        ? { error: { message: "local transport failure" } }
+        : {
+            id: `resp_${index + 1}`,
+            object: "response",
+            created_at: 0,
+            ...(responses[index] ?? { status: "completed", output: text, usage: known }),
+          },
+  }));
+  let output: unknown;
+  let error: unknown;
+  let metrics: StageUsage | undefined;
   try {
-    let output: unknown;
-    let error: unknown;
-    let metrics: StageUsage | undefined;
-    try {
-      output = await createQwenExecutor((value) => {
-        metrics = value;
-      })({
-        runId: "status-test",
-        role: "reviewer",
-        input: "{}",
-        timeoutMs: 5_000,
-        agent: new Agent({
-          name: "status-test",
-          model: "status-test",
-          tools: [
-            tool({
-              name: "probe",
-              description: "Track actual tool execution",
-              parameters: z.object({}),
-              execute: () => {
-                toolCalls += 1;
-                return "done";
-              },
-            }),
-          ],
-        }),
-      });
-    } catch (cause) {
-      error = cause;
-    }
-    return { output, error, requests, toolCalls, usage: (error as { usage?: StageUsage } | undefined)?.usage, metrics };
-  } finally {
-    server.closeAllConnections();
-    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+    output = await createQwenExecutor((value) => {
+      metrics = value;
+    })({
+      runId: "status-test",
+      role: "reviewer",
+      input: "{}",
+      timeoutMs: 5_000,
+      agent: new Agent({
+        name: "status-test",
+        model: "status-test",
+        tools: [
+          tool({
+            name: "probe",
+            description: "Track actual tool execution",
+            parameters: z.object({}),
+            execute: () => {
+              toolCalls += 1;
+              return "done";
+            },
+          }),
+        ],
+      }),
+    });
+  } catch (cause) {
+    error = cause;
   }
+  return {
+    output,
+    error,
+    requests: requests.length,
+    toolCalls,
+    usage: (error as { usage?: StageUsage } | undefined)?.usage,
+    metrics,
+  };
 }
 
 for (const status of ["failed", "incomplete", "cancelled", "in_progress", "queued", undefined, "future_status"]) {

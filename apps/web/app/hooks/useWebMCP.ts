@@ -13,7 +13,7 @@ export type WebMCPTool = {
   execute: (input: unknown, options?: { signal?: AbortSignal }) => Promise<string>;
 };
 
-export type WebMCPContext = {
+type WebMCPContext = {
   registerTool: (tool: WebMCPTool, options: { signal: AbortSignal }) => Promise<void>;
 };
 

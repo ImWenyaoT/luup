@@ -31,8 +31,6 @@ export const RUN_EVENT_KINDS = [
   "sdk.trace.callback_error",
 ] as const;
 
-export type RunEventKind = (typeof RUN_EVENT_KINDS)[number];
-
 /** UI 订阅的 13 种核心 SSE event（与旧 api.ts subscribe 一致）。 */
 export const UI_SSE_EVENT_KINDS = [
   "run.created",
@@ -50,8 +48,4 @@ export const UI_SSE_EVENT_KINDS = [
   "run.failed",
 ] as const;
 
-export type UiSseEventKind = (typeof UI_SSE_EVENT_KINDS)[number];
-
 export const TERMINAL_SSE_EVENT_KINDS = ["run.completed", "run.failed", "run.review_rejected"] as const;
-
-export type SseTickHandler = () => void;

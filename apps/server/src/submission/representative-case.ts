@@ -188,13 +188,6 @@ function readHypothesisContent(snapshot: Record<string, unknown>): { candidateCo
 export { renderRepresentativeCaseMarkdown } from "./representative-case-markdown.ts";
 export {
   type RepresentativeCaseExport,
-  type RepresentativeCasePublicArtifact,
   type RepresentativeCaseReadSource,
-  type RepresentativeCaseRound,
-  type RepresentativeCaseSourceLedger,
-  type RepresentativeCaseSourceLedgerEntry,
   type RepresentativeCaseStrictReport,
-  type RepresentativeCaseTrace,
-  type RepresentativeCaseUsage,
-  type RepresentativeCaseVerification,
 } from "./representative-case-types.ts";

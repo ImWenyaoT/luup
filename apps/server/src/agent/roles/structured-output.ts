@@ -34,30 +34,9 @@ export type StructuredOutput = {
   captured(): { value: unknown } | undefined;
 };
 
-/** 把「交作业」从自由文本换成一次工具调用。
- *
- * 形状取自 dsh `packages/subagent/subagent-in-process-driver/src/structured.ts:74-97`：
- * 用真实 schema 注册一个合成工具，产物由工具参数承载，工具体内 stage 值。
- * 它换掉的是 `roles.ts` 里那条「剥围栏 → JSON.parse → zod」的自由文本通路 ——
- * 那条通路上，「JSON 外面多说了两句话」和「字段写错了」是同一类失败，都要多花一次调用。
- *
- * 三件配套照抄 dsh，缺一件这个工具就只是个装饰：
- *
- * 1. **提示词声明**：`STRUCTURED_OUTPUT_INSTRUCTION` 明说只有工具调用算最终答案。
- * 2. **捕获后拒绝后续调用**：第二次调用直接抛，错误回灌给模型而不是把 Attempt 打死。
- *    这就是 deny-only 纪律的落点 —— 守卫只会「拒绝或弃权」，永远不会把一次被拒的调用
- *    重新放行；所以哪怕以后再加守卫，也不必建一张注册表来仲裁它们的先后。
- * 3. **staged → captured 的提交时机**：dsh 分两阶段，是因为它的管线还能把一次成功的
- *    execute 变成错误结果，所以提交要等权威的 `tools/result` 落定。@openai/agents 的函数
- *    工具没有这层瀑布 —— 未声明 outputSchema 时 execute 返回即结果 —— 两个阶段因此塌成
- *    同一行赋值。**不给它保留一个空壳的 staged 变量**：那只会让读的人以为这里还有一个
- *    等待窗口。真正要守住的是顺序，写在 execute 里：校验通过才写 `captured`。
- *
- * 与 `runTask` 那套 corrections 的分工：**工具内校验管 schema 表达得了的约束**
- * （字段缺失、类型、枚举、长度），模型在同一个 turn 内看着 zod 的逐条 issue 自己改；
- * **corrections 管 schema 表达不了的后置约束** —— `.refine()` 的中文正文、
- * 「queries 必须恰好冻结本轮每一次检索」、计划质量门。后者要先跑完整个 Attempt
- * 才知道违没违规，只能另起一次调用把材料交还给模型。两者互补，谁也替代不了谁。
+/** 五角色共用的上报通路：本地 schema 校验通过后才捕获，并终止当前 Runner 调用。
+ * 错误参数回灌给模型；捕获后拒绝重复上报和新增检索，纠错时显式重开窗口。
+ * 领域后置约束由 runTask 验收，不依赖 provider 遵守 strict 参数。
  */
 export function createStructuredOutput(schema: z.ZodObject<any>): StructuredOutput {
   let captured: { value: unknown } | undefined;
@@ -80,8 +59,7 @@ export function createStructuredOutput(schema: z.ZodObject<any>): StructuredOutp
     ].join(" "),
     // 传 JSON Schema 而不是 zod，是为了让校验发生在**工具体内**：SDK 对 zod 参数的解析
     // 失败会被 `dontLogToolData` 默认打码，模型只收到一句「Invalid JSON input for tool」，
-    // 无从对照着改。自己解析就能把 zod 的逐条 issue 原样回灌 —— 这正是 dsh 用
-    // ToolArgsError(violations) 达到的效果，不必为此去翻全局的敏感数据日志开关。
+    // 无从对照着改。工具体内解析可回灌逐条 issue，无需打开全局敏感数据日志。
     strict: true,
     parameters,
     async execute(args: unknown) {
@@ -97,7 +75,6 @@ export function createStructuredOutput(schema: z.ZodObject<any>): StructuredOutp
 
   return {
     tool: captureTool as unknown as FunctionTool<unknown, any, unknown>,
-    // dsh 在工具体内调 `exec.concludeTurn()`；@openai/agents 的等价物是 toolUseBehavior。
     // 判据是**捕获成功**而不是「调过这个工具」：参数写错时工具返回的是错误结果，
     // 那一轮必须继续跑，模型才有机会在同一个 turn 里改对。捕获之后立刻收束，
     // provider 仍可能在同一响应内多调工具；检索入口另用 assertOpen 挡住上报后的新调用。

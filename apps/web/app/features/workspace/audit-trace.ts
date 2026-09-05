@@ -3,7 +3,7 @@ import type { Snapshot } from "../../lib/types/wire";
 type PublicEvent = Snapshot["recent_events"][number];
 type Scalar = string | number | boolean | null;
 
-export type ToolCall = {
+type ToolCall = {
   agent: string | null;
   tool: string | null;
   ordinal: number | null;

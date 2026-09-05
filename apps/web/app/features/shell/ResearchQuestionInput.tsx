@@ -3,7 +3,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } fro
 import type { Science125Question } from "../../lib/types/wire";
 import { Button, colors, mono, Surface, Textarea } from "../../styles";
 
-export type ResearchQuestionInputVariant = "welcome" | "footer";
+type ResearchQuestionInputVariant = "welcome" | "footer";
 
 export type ResearchQuestionInputProps = {
   variant: ResearchQuestionInputVariant;

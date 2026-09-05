@@ -7,7 +7,7 @@ export type RunStatus = "running" | "completed" | "review_rejected" | "failed";
 
 export type Role = "researcher" | "hypothesis-generation" | "evidence-review" | "research-plan" | "reviewer";
 
-export type AttemptStatus = "running" | "completed" | "failed";
+type AttemptStatus = "running" | "completed" | "failed";
 
 export type Attempt = {
   id: string;
@@ -20,7 +20,7 @@ export type Attempt = {
   finished_at: string | null;
 };
 
-export type Subagent = {
+type Subagent = {
   id: string;
   parent_run_id: string;
   role: Role;
@@ -32,7 +32,7 @@ export type Subagent = {
   finished_at: string | null;
 };
 
-export type Citation = {
+type Citation = {
   title: string;
   locator: string;
   url: string | null;
@@ -48,9 +48,9 @@ export type Evidence = {
   output: { result_summary: string | null; citations: Citation[] };
 };
 
-export type ArtifactReference = { id: string; type: string };
+type ArtifactReference = { id: string; type: string };
 
-export type DisplayScalar = string | number | boolean | null;
+type DisplayScalar = string | number | boolean | null;
 
 export type RunEvent = {
   id: number;

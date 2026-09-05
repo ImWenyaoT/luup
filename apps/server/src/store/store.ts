@@ -501,22 +501,7 @@ export class SqliteStore {
       }
       const artifactId = shortId();
       const now = nowIso();
-      if (usage) {
-        emitEvent(db, runId, "sdk.usage", {
-          agent: usage.agent,
-          input_tokens: usage.incomplete ? null : usage.inputTokens,
-          output_tokens: usage.incomplete ? null : usage.outputTokens,
-          total_tokens: usage.incomplete ? null : usage.totalTokens,
-          ...(usage.incomplete
-            ? {
-                incomplete: true,
-                known_input_tokens: usage.inputTokens,
-                known_output_tokens: usage.outputTokens,
-                known_total_tokens: usage.totalTokens,
-              }
-            : {}),
-        });
-      }
+      emitUsage(db, runId, usage);
       db.prepare(
         "INSERT INTO artifacts(id, run_id, attempt_id, type, content_json, input_artifact_ids_json, " +
           "created_at) VALUES(?, ?, ?, ?, ?, ?, ?)",
@@ -578,22 +563,7 @@ export class SqliteStore {
         throw new RejectedTransition(`cannot fail ${attempt.status} attempt on ${run.status} run`);
       }
       const now = nowIso();
-      if (usage) {
-        emitEvent(db, runId, "sdk.usage", {
-          agent: usage.agent,
-          input_tokens: usage.incomplete ? null : usage.inputTokens,
-          output_tokens: usage.incomplete ? null : usage.outputTokens,
-          total_tokens: usage.incomplete ? null : usage.totalTokens,
-          ...(usage.incomplete
-            ? {
-                incomplete: true,
-                known_input_tokens: usage.inputTokens,
-                known_output_tokens: usage.outputTokens,
-                known_total_tokens: usage.totalTokens,
-              }
-            : {}),
-        });
-      }
+      emitUsage(db, runId, usage);
       db.prepare(
         "UPDATE attempts SET status = 'failed', corrections = ?, failure_code = ?, error_type = ?, " +
           "finished_at = ? WHERE id = ?",
@@ -862,6 +832,25 @@ function acquireLock(path: string): DatabaseSync {
     lock.close();
     throw error;
   }
+}
+
+/** 成功与失败共用用量口径；调用方持有事务，未知总量保留 null，已知部分单列。 */
+function emitUsage(db: DatabaseSync, runId: string, usage: UsageFacts | null): void {
+  if (!usage) return;
+  emitEvent(db, runId, "sdk.usage", {
+    agent: usage.agent,
+    input_tokens: usage.incomplete ? null : usage.inputTokens,
+    output_tokens: usage.incomplete ? null : usage.outputTokens,
+    total_tokens: usage.incomplete ? null : usage.totalTokens,
+    ...(usage.incomplete
+      ? {
+          incomplete: true,
+          known_input_tokens: usage.inputTokens,
+          known_output_tokens: usage.outputTokens,
+          known_total_tokens: usage.totalTokens,
+        }
+      : {}),
+  });
 }
 
 /** 事件写入的唯一入口。version 是 per-run 单调序号，也是 SSE 游标。 */

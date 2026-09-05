@@ -31,23 +31,7 @@ export type StageMetrics = {
   outcome: "completed" | "failed";
 };
 
-/** 从 SDK 异常里读出**已经发生**的用量。
- *
- * 调用失败不等于没花钱：超时、turn 用尽、模型写错格式，token 都已经烧掉了。
- * 只在成功路径记账，等于把所有失败的成本从账上抹掉 —— 跑完 125 题算总账时，
- * 差的正好是最该被看见的那一块。
- *
- * `errors.d.ts` 上所有错误类都**声明**了 `state?: RunState`（`RunState.usage` 是聚合用量），
- * 但 0.14.3 只有一部分构造点真的传了它。读源码逐条核对过：
- * - `MaxTurnsExceededError`（`runner/turnPreparation.mjs:20`）传了 state，这里读得到；
- * - `ModelBehaviorError`（`runner/turnResolution.mjs:795`，`outputType` 校验失败）没传，
- *   `run.mjs` 的 catch 里那句 `attachRunStateToError` 也只补 ToolCallError ——
- *   这条路改由 `createQwenExecutor` 的 `errorHandlers.invalidFinalOutput` 观测，见下面；
- * - 超时中断与 provider 抛错走的是原始异常，SDK 不暴露 state，也没有等价钩子：
- *   这两条如实记 null，不造数。
- *
- * 拿不到就返回 null，绝不用零顶替：零的意思是「确实没花」，缺失的意思是「不知道」。
- */
+/** 已发生用量覆盖成功与失败；SDK 未暴露的部分保持未知，不能用零替代。 */
 export type StageUsage = Omit<StageMetrics, "runId" | "role" | "outcome">;
 
 /** 一份 `RunState` 形状的观测点：聚合用量 + 已生成的 run item。
@@ -141,30 +125,9 @@ export function isContextOverflow(detail: string): boolean {
   return CONTEXT_OVERFLOW_PATTERNS.some((pattern) => pattern.test(detail));
 }
 
-/** 每个角色一次 `runner.run` 允许的 turn 数。
- *
- * SDK 的判据是 `state._currentTurn > maxTurns`（`runner/turnPreparation.mjs`）。
- * 它限制模型响应轮数；百炼可能忽略 `parallelToolCalls: false` 并在一轮返回多个工具，
- * 所以它不是检索次数上限（已记录于协议 queries_authority 修订）。
- *
- * **6 是 luup-old 时代的值，前提已经不成立**：那时 researcher 交作业走自由文本，
- * 一次调用一个 turn 就收尾。现在它走合成工具通路，一个 Attempt 的最小账是
- * 检索 5 次（arxiv + crossref 合计的意图上限，提示词写「通常 2–3 次」但两个源分头用）
- * + `structured_output` 上报 1 次 = 6，正好顶满：工具参数被 zod 驳回一次要重报，
- * 换关键词重检索一次也要一个 turn，任何一次修正都当场撞墙。
- * Phase A 只读诊断（n=46）量化了这笔账：18 个 failed 里 15 个是
- * `researcher reached the Agent turn limit`。
- *
- * researcher 取 12 的推导 = 检索 5 + 上报 1 + 修正余量 6。余量与检索预算同量级，
- * 才谈得上「查完之后每一步都还能错一次」；给 7、8 只是把同一堵墙挪近一点。
- *
- * hypothesis-generation / evidence-review / research-plan 只有结构化上报工具，没有检索面，
- * 正常路径一次上报即结束。Reviewer 另有受限的独立检索面，6 turns 用于检索和上报；
- * 继续抬高不会救回合同失败，只会让模型空转时多付预算。
- *
- * 抬高不会失控，兜底在外层而不在这个数：阶段 deadline 300s（`roles.ts` 的 `timeoutMs`）
- * 与单题 40 分钟（`batch/runner.ts` 的 `RUN_TIMEOUT_MS`）。两者用尽是不同的失败码
- * （`deadline_exceeded`），与 turn 用尽（`invalid_output`）在报告里也分得开。
+/** 每次 Runner 调用的模型响应轮数，不是工具次数；provider 可能忽略 parallelToolCalls。
+ * Researcher 保留检索与纠错余量，其余角色使用 6 轮；Attempt deadline 另行约束总时长。
+ * 预算与并行调用边界见 docs/design/experiment-protocol.json 的 queries_authority 修订。
  */
 const MAX_TURNS_BY_ROLE: Record<Role, number> = {
   researcher: 12,
@@ -179,58 +142,18 @@ export function maxTurnsFor(role: Role): number {
   return MAX_TURNS_BY_ROLE[role];
 }
 
-/** 明确瞬时的 HTTP 状态：限流与服务端故障。
- *
- * 判据只看 `normalized.statusCode` —— SDK 已经把 status 从 provider 异常里解出来了
- * （`runner/modelRetry.mjs` 的 `getStatusCode`，含 `cause` 递归）。绝不匹配错误正文：
- * 散文匹配会把语义错误（提示词太长、参数非法）误判成瞬时故障，一路重试到超时为止。
- * 4xx 里除 429 之外的全部落在这条判据之外，照旧立即终止。
- */
+/** 只按 SDK 规范化状态码重试 429/5xx，不用错误正文把语义失败误判为瞬时故障。 */
 const TRANSIENT_STATUS: RetryPolicy = ({ normalized }) => {
   const status = normalized.statusCode;
   if (status === undefined) return false;
   return status === 429 || status >= 500;
 };
 
-/** 传输层的有界退避重试。**不是 Attempt 重试**，边界见下。
- *
- * ## 这是什么
- *
- * 同一次模型调用在网络层失败之后，用同一份 input 再发一次。重试的是**传输**：
- * 提示词一字未改，模型没有第二次纠错机会，Attempt 计数与 corrections 计数都不动。
- * 预注册协议 `controls.no_retry` 注册的是「无隐式 Attempt 重试」——契约不合格不重试，
- * 那条纪律原样有效：`ContractError` 与 `MaxTurnsExceededError` 一次都不重发。
- *
- * 起因是 Phase A pilot 结尾连续 5 次 `provider_error` 触发熔断停批：供应商瞬时故障，
- * 而 harness 一次退避都没做，把可恢复的抖动全部记成了终态失败。
- *
- * ## 为什么用 SDK 配置而不是自己写
- *
- * `@openai/agents` 0.14.3 内置 runner 级重试：`modelSettings.retry`（`maxRetries` /
- * `policy` / `backoff`），由 `runner/modelRetry.mjs` 的 `getResponseWithRetry` 执行，
- * `run.mjs` 每一次模型调用都走它。自造一层只会与它叠加成两套语义。三条它已经做对、
- * 自己写很难做对的事：
- *
- * 1. **取消优先于重试**：`evaluateRetry` 见到 `normalized.isAbort` 直接不重试，
- *    退避等待本身也绑在 `request.signal` 上。阶段 deadline（`roles.ts` 的 300s）
- *    与批跑单题 40 分钟因此仍是硬上界 —— 重试**不可能**把一个 Attempt 拖过期限。
- * 2. **重试要记账**：`addFailedRetryAttemptsToUsage` 把失败的尝试补进 `usage.requests`，
- *    于是「这次调用重试过几次」在既有用量事件里就看得见，不必另开一条遥测。
- * 3. **provider 说了算**：`retryPolicies.providerSuggested()` 读 `x-should-retry` 头，
- *    provider 明说「别重试」时是**硬否决**，压过下面两条状态码判据。
- *
- * ## 两层重试的实情
- *
- * 底下的 `openai` 客户端自己默认就重试 2 次（`openai@6` 的 `maxRetries ?? 2`，
- * 亚秒级退避）——这在本次改动**之前就已经在跑**，pilot 那 5 次 `provider_error`
- * 是穿过了它才落到我们手上的。SDK 只在第 2 次及以后的 runner 级尝试上关掉客户端重试
- * （`shouldDisableProviderManagedRetry`），所以最坏路径是：首次尝试（客户端最多 3 发）
- * + 退避 2s 后第 2 次（1 发）+ 退避 8s 后第 3 次（1 发）。加的不是重试的有无，
- * 而是**等待的量级**：客户端那两次亚秒级重试救不了一次持续几秒的抖动。
- *
- * 2s / 8s 由 `initialDelayMs=2000` × `multiplier=4` 得到，`maxDelayMs` 封在 8s，
- * `jitter` 打散 ±12.5%（`getDefaultDelayMs`）——并发批跑下同时撞上限流的几道题
- * 不会踩着同一个节拍一起重发。provider 给了 `Retry-After` 时以它为准。
+/** 同一次模型调用的传输重试，不增加 Attempt 或结构化纠错次数。
+ * SDK 负责取消优先、provider 的禁止重试指示、Retry-After 与失败请求计数。
+ * model seam 禁用 OpenAI 客户端重试；Runner 最多重试两次，总计最多 3 次传输。
+ * 全部请求受 Attempt deadline 约束；本地退避为 2s/8s，附带 jitter。
+ * 依据：docs/design/experiment-protocol.json 的 transient_backoff 修订。
  */
 export const TRANSIENT_RETRY: ModelSettings = {
   retry: {

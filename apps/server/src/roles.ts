@@ -55,15 +55,7 @@ export type StageExecutor = (request: {
 
 const normalize = (text: string) => text.split(/\s+/).filter(Boolean).join(" ");
 
-/** 装配一个角色单次调用看到的全部 context。
- *
- * 字段顺序就是序列化顺序，也就是前缀稳定性顺序：`question` 整个 Run 不变放最前，
- * 纠错材料只在第二次调用出现、放最后。这样首轮的 input 是纠错轮 input 的**真前缀**，
- * 两次调用能共享尽可能长的 KV cache 前缀；把纠错信息拌进 goal 会让前缀当场分叉。
- *
- * 这是 context engineering 的边界所在：角色看得见什么由这里决定，
- * 而不是由提示词里写「你可以参考上文」决定 —— 角色之间不共享对话。
- */
+/** 角色只接收显式冻结输入，不共享对话。稳定字段在前，纠错材料追加在后以复用公共前缀。 */
 function buildStageInput(spec: {
   question: string;
   goal: string;
@@ -77,9 +69,7 @@ function buildStageInput(spec: {
     goal: spec.goal,
     input_artifacts: spec.inputs,
   };
-  // 战役记忆接在稳定段的末尾、纠错材料之前。整个 Run 内它不变，所以首轮 input 仍是
-  // 纠错轮 input 的真前缀；接在纠错材料之后会让前缀在第四个字段上就分叉。
-  // 空数组不写这个键：没有记忆的 run（消融臂、自由输入）的前缀与本波之前逐字节相同。
+  // 空记忆不添加字段，保持消融臂与自由输入的形状；非空记忆放在纠错材料之前。
   if (spec.priorAttempts && spec.priorAttempts.length > 0) {
     payload.prior_attempts = spec.priorAttempts;
   }
@@ -100,23 +90,9 @@ function buildStageInput(spec: {
   return JSON.stringify(payload);
 }
 
-/** 用本次调用真正发生过的检索，改写 Research Artifact 里所有证据字段。
- *
- * 检索台账是每次检索的权威记录，harness 自己持有；模型往 `queries` 里写的那份是**转录**，
- * 不是决定。所以三段分工：
- *
- * 1. `queries` 由台账实录**整体填充**，模型写的降为参考输入。集合不一致时落一条漂移
- *    事件、两向各自计数（漏报 = 台账有而模型没写，虚报 = 模型写了而台账没有），
- *    虚报条目直接丢弃 —— 它们不对应任何真实检索，进不了证据面。
- *    这里曾经是一道死刑门（集合不等即 `ContractError`）。它证伪于 v2 批：turn 预算
- *    6→12 之后模型检索更多、需转录的记录更多，漏报率反而从 6% 升到 24%。转录负担与
- *    检索量同向增长，提示词收敛不了 —— 与 `withFrozenQuestion`、引用元数据回填同一模式，
- *    抄写不可变数据本来就不该由模型负责。
- * 2. 每条 query 的 metadata 由代码写定（source_type / query / status / result_summary），
- *    模型改不动 —— 否则它可以把 `empty` 写成 `succeeded`。
- * 3. 每条 citation 必须逐字出自它所属那次检索的返回值；claims 可以再加上输入 Artifact
- *    里已冻结的证据 —— 论断能基于上一轮的结论继续，检索记录不能。
- *    **这一段是模型的选择行为，不是转录**：引一条从没跑过的检索是捏造，照旧判死。
+/** 台账持有 queries 与检索元数据；模型漏报/虚报只记漂移，不改变事实。
+ * citation 必须来自其引用的本次检索；claim 还可使用输入 Artifact 的冻结证据。
+ * 依据：docs/design/experiment-protocol.json 的 queries_authority 修订。
  */
 function canonicalizeResearch(
   proposed: Research,
@@ -189,23 +165,7 @@ type ArtifactDrift = {
   transcription?: { missing: string[]; invented: string[] };
 };
 
-/** 用冻结 Run question 覆写模型转述的那一份。
- *
- * Artifact 里的 `question` **纯属回显**，没有任何下游读它：公共投影两个角色都没挑这个字段
- * （`api/projection.ts` 的 `publicArtifactContentSchema`）、离线评估读的是 `runs.question` 列、
- * 引用验收与战役记忆都不碰它；下游角色看到的 question 由 `buildStageInput` 直接从 context 给，
- * 输入 Artifact 里那一份只是同一个值的第二个副本。既然是模型无权决定的不可变数据，
- * 就该由代码写定 —— 和 citations/queries 元数据、以及 `research_artifact_ids` 那几个
- * 上游 ID 字段一样，模型抄错了不该由它把整个 Attempt 拖死。
- *
- * live 取证（探针 6 次调用）确认漂移形态是**截断**而不是翻译：题面是英文原题包在中文包装里
- * （`domain/science125.ts` 的 `science125Text`），模型只把「问题：」后面那半截填回来，
- * 中文出处整段丢掉。三次拿到合格结构的调用里两次如此。纠错轮救不回来 ——
- * 冻结值本来就明写在同一份 input 的第一个字段上，它看得见仍然照丢。
- *
- * 覆写不静默：对齐 Python `backfill_reference_metadata` 的 `on_mismatch`，
- * 发生一次落一条漂移记录。
- */
+/** question 是冻结输入的回显，由代码覆写并记录漂移，不消耗模型纠错机会。 */
 function withFrozenQuestion<T extends { artifact_type: string; question: string }>(
   proposed: T,
   context: TaskContext,
@@ -253,12 +213,7 @@ function frozenResearchEvidenceIds(context: TaskContext): ReadonlySet<string> {
   );
 }
 
-/** 每个角色如何把模型的原始输出变成可发布的领域 Artifact。
- *
- * 抛 ContractError 表示「模型写错了、可以纠错」；这些判据全部只看**冻结输入**和
- * 本次调用的检索记录，不依赖任何跨 Task 的内存状态 —— 顺序与依赖已经由 store
- * 的任务图决定，这里只管单个格子里的合同。
- */
+/** 根据冻结输入与本次检索验收角色产物；ContractError 可纠错，角色顺序由 Harness 决定。 */
 function acceptFor(
   context: TaskContext,
   ledger: EvidenceLedger,
@@ -486,16 +441,8 @@ export async function runTask(
   // 只带最后一次会把纠错轮之前烧掉的 token 从账上抹掉。
   let spent: StageUsage | null = null;
   let hasUnknownUsage = false;
-  // 这道线判的是「卡死」，不是「慢」：一个阶段 5 分钟还没交出 Artifact 就是挂了。
-  // 真正给单题兜底的是外层——`batch/runner.ts` 的 `RUN_TIMEOUT_MS`（40 分钟/题）。
-  // 两层不是相乘关系：流水线最坏 10 次阶段调用（证据环 3 × 2 + 计划评审环 2 × 2），
-  // 典型路径 5 次；40 分钟先到就先切，这里只负责不让单个阶段无限期吊住。
-  // 60s 是 luup-old 时代针对当时更简流水线定的值，对现在的 researcher 不成立：
-  // 它一个阶段要做多轮 LLM + 数次 arXiv/Crossref（含 arXiv 官方要求的 3s 间隔）
-  // + 合成工具上报。canary 现场 researcher 撞 deadline 拿到 `deadline_exceeded`；
-  // 修好 arXiv 超时后重跑，同一阶段实测 56s——离 60s 只剩 4 秒，等于没有余量。
-  // 300s 是注册过的硬上界（experiment-protocol.json 的 transient_backoff 修订），
-  // 所以写成常量而不是可调参——运行期能改它就等于给预注册留了后门。
+  // 首轮与纠错共用 300s Attempt deadline；批跑另有单题 40 分钟上限。
+  // 固定值依据 docs/design/experiment-protocol.json 的 transient_backoff 修订。
   const deadline = Date.now() + 300_000;
   // 一个业务 Attempt 共用一本检索账。纠错只是修 Artifact，不要求把刚做过的搜索再做一遍。
   ledger.beginScope(context.taskId);

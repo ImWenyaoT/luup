@@ -24,11 +24,11 @@ function isClientError(status: number): boolean {
   return status >= 400 && status < 500;
 }
 
-export function runQueryKey(runId: string) {
+function runQueryKey(runId: string) {
   return ["run", runId] as const;
 }
 
-export function runQueryOptions(client: ApiClient, runId: string) {
+function runQueryOptions(client: ApiClient, runId: string) {
   return {
     queryKey: runQueryKey(runId),
     queryFn: () => fetchRun(client, runId),

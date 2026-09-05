@@ -6,13 +6,13 @@ import type { ApiClient } from "../lib/api/client";
 import { fetchConfig, saveConfig } from "../lib/api/config";
 import { useApiClient } from "../providers/api";
 
-export const CONFIG_QUERY_KEY = ["config"] as const;
+const CONFIG_QUERY_KEY = ["config"] as const;
 
 export type UseConfigOptions = {
   client?: ApiClient;
 };
 
-export function configQueryOptions(client: ApiClient) {
+function configQueryOptions(client: ApiClient) {
   return {
     queryKey: CONFIG_QUERY_KEY,
     queryFn: () => fetchConfig(client),
