@@ -68,7 +68,7 @@ test.each([1, 8])("researcher reserves synthesis after six searches (provider ba
   const model: Model = {
     async getResponse(request): Promise<ModelResponse> {
       turn += 1;
-      const searching = request.tools.some((tool) => tool.name === "crossref_search");
+      const searching = request.modelSettings.toolChoice !== "structured_output";
       return {
         usage: new Usage(),
         output: Array.from({ length: searching ? batchSize : 1 }, (_, index) => ({
@@ -98,10 +98,15 @@ test.each([1, 8])("researcher reserves synthesis after six searches (provider ba
     assert.equal(ledger.scopedRecords().length, 6);
     assert.deepEqual(roles.captures.researcher.captured()?.value, artifact);
     roles.captures.researcher.beginRound();
-    assert.deepEqual(
-      (await agent.getAllTools(new RunContext())).map((tool) => tool.name),
-      ["structured_output"],
+    assert.equal(agent.modelSettings.toolChoice, "structured_output");
+    const retained = (await agent.getAllTools(new RunContext())).find((tool) => tool.name === "crossref_search");
+    assert.equal(retained?.type, "function");
+    if (retained?.type !== "function") throw new Error("missing retained search tool");
+    assert.match(
+      String(await retained.invoke(new RunContext(), JSON.stringify({ query: "late query" }))),
+      /budget exhausted/,
     );
+    assert.equal(search.mock.calls.length, 6);
     assert.ok(turn <= 7, "synthesis must happen before the 12-turn ceiling");
   } finally {
     search.mockRestore();

@@ -30,21 +30,21 @@ export default function defineResearcher(ledger: EvidenceLedger): {
     }
     // 在 await 前预留，防止 provider 忽略 parallelToolCalls 时同批调用越过上界。
     searches += 1;
+    if (searches >= MAX_SEARCHES) agent.modelSettings.toolChoice = "structured_output";
   };
   const searchTools = [createArxivSearchTool(ledger, beforeSearch), createCrossrefSearchTool(ledger, beforeSearch)];
-  for (const tool of searchTools) {
-    // SDK 每轮重新读取工具可见性；到限后保留上报工具，而不是直接让 Attempt 失败。
-    tool.isEnabled = async () => searches < MAX_SEARCHES && capture.captured() === undefined;
-  }
   const agent = new Agent({
     name: "EvidenceResearcher",
     model: modelForRole(),
     instructions: [instructionsFrom(import.meta.dirname, "researcher.md"), STRUCTURED_OUTPUT_INSTRUCTION].join("\n\n"),
     tools: [...searchTools, capture.tool],
-    // 不强制某一个工具，让模型在两个来源之间选择。
+    // 检索阶段不强制某一个来源，到限后明确要求上报。
     // 「至少查过一次」仍由 EvidenceLedger 检查，不能只靠提示词。
     // 请求串行调用；provider 可能忽略该参数，真正的终止边界是上报闸与阶段 deadline。
     modelSettings: { ...sharedModelSettings, parallelToolCalls: false },
+    // 保留工具定义以识别 Qwen 从历史中发出的旧调用；执行闸拒绝超额调用，
+    // 命名 toolChoice 要求下一回合上报，且不让 SDK 在工具执行后自动清除它。
+    resetToolChoice: false,
     toolUseBehavior: capture.toolUseBehavior,
   });
   return { agent, capture };

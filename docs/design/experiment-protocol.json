@@ -377,6 +377,19 @@
       },
       "unchanged": "schema、字段必填要求、引用真实性门、候选晋升与拒收语义、检索 6 次上限、SDK turn/deadline、模型/provider、题集、统计设计、正式批次和费用授权边界均不变。临时字段诊断代码已移除，未采集凭据。",
       "effect_on_numbers": "预计减少冗长输出及结构化纠错，但也可能遗漏有用背景；真实方向须由后续运行验证。已有诊断不覆盖、不重写，不将试到成功作为一次成功率。"
+    },
+    {
+      "date": "2026-09-06",
+      "before_phase_a": false,
+      "before_definitive_phase_a": true,
+      "before_any_reading": false,
+      "recorded_when": "Q61 v5 诊断在 Researcher 纠错时因 Qwen 仍发出已隐藏的 arxiv_search 调用而失败，原始 Run c1b78393d5c849ae89ea940c1915e42e 保留。真实 SDK 替身可确定性复现 Tool crossref_search not found。正式 Phase A/B 未启动。",
+      "summary": "六次检索后的写作切换改用命名 toolChoice，保留工具定义以处理历史调用，不再用 isEnabled 移除工具。",
+      "changes": {
+        "synthesis_tool_choice": "第六次检索派发时把 Researcher 的 modelSettings.toolChoice 设为 structured_output，并设置 resetToolChoice=false。工具执行入口继续拒绝第七次实际检索。即使 Qwen 引用旧工具名，SDK 仍可识别并把额度用尽错误回给模型，避免 tool-not-found 直接终止；到限仅要求写作，不放宽任何产物或科学验收门。"
+      },
+      "unchanged": "检索 6 次额度、纠错不重置额度、字段 schema、候选晋升、Reviewer 拒收、B1–B4、模型、题集、统计设计及正式启动门保持不变。",
+      "effect_on_numbers": "避免由动态工具移除引入的特定协议失败；对真实写作完成率及 token 的作用尚待验证。旧失败全部保留，不归入正式读数。"
     }
   ],
   "interpretation": "这是对已记录架构取舍的证据，不是普适优越性主张。结论的形状只能是「在这一条 harness commit、这一个题库、这一条串行顺序下，跨 run 记忆让交付率朝某个方向动了多少」，不能读成「记忆机制优于无记忆」或反过来。Do not claim superiority from one successful trace, one direction, or an unpriced token count.",
