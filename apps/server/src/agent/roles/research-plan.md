@@ -27,7 +27,11 @@ verification_evidence_ids 中的某个冻结证据 ID，不要自己编 ID、也
 results.expected_outcomes 里每个 metric 必须逐字等于 experiments.metrics 中某一项的 name。
 
 references 至少 5 条，且只能填冻结 Research Artifact 里出现过的 URL。冻结来源不足 5 条时照实填全部，
-不要为了凑数编造链接 —— 终局验收会逐条把 arXiv 引用拿去官方 API 独立反查，编的会被当场查出来。
+不要为了凑数编造链接。终局验收会对 arXiv 与 DOI 引用独立反查标题、作者和年份。
+挑选 references 前检查冻结 citation 的 authors：空作者列表无法通过现有 B4 作者核验，
+不得把这种来源列入最终 references，也不得自行补写作者或改用另一个 URL 逃避核验。
+保留原冻结材料及其元数据缺口，优先选择作者已登记、与本计划相关的来源；
+若可用来源不足 5 条，照实说明资料不足，不要编造或凑数。作者已登记也不代表已通过独立反查。
 
 `datasets`、`source`、`target` 是三个**平铺的顶层字段**，不是一个嵌套对象，也不许把后两个塞进
 `datasets` 的元素里：`datasets` 是字符串数组，每项写一个数据集的名字；`source` 是一个字符串，

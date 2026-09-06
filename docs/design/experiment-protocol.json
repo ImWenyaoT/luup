@@ -420,6 +420,19 @@
       },
       "unchanged": "没有新增纠错或检索回合，不改变候选晋升/拒收、引用成员性、B1–B4、字段必填/类型边界、模型与正式批启动门。无错误的科学原文不由代码代写；旧失败不覆盖。",
       "effect_on_numbers": "预计减少同一产物跨字段错误的串行拒收；作用须由真实运行验证。离线重放修正仅是回归测试，不得计作模型成功、正式研究报告或可靠性证据。"
+    },
+    {
+      "date": "2026-09-06",
+      "before_phase_a": false,
+      "before_definitive_phase_a": true,
+      "before_any_reading": false,
+      "recorded_when": "已读取 Q61 v9：研究计划与 Reviewer 通过，但最终 B4 拒收 DOI 10.1017/9781108861656.009，因为冻结记录及 Crossref 精确反查均无作者。旧数据库及产物保留，正式批未启动。",
+      "summary": "在 ResearchPlanner 提示词中前置说明既有 B4 的非空作者要求，避免选择确定无法核验的引用。",
+      "changes": {
+        "reference_selection": "选择最终 references 时排除冻结 authors 为空的来源；保留原冻结材料和元数据缺口，不补作者、不改 URL 规避核验。可用来源不足五条须如实说明，不得凑数。"
+      },
+      "unchanged": "仅提示既有必要条件，不改变研究 Artifact、引用门禁、B1–B4、Reviewer、候选晋升、纠错次数、模型与费用授权；作者存在不等于已通过独立反查。",
+      "effect_on_numbers": "可能降低因已知作者缺失导致的终局拒收；后续仅作开发诊断，不与旧失败合并为正式结果，不从单次成功推断可靠性。"
     }
   ],
   "interpretation": "这是对已记录架构取舍的证据，不是普适优越性主张。结论的形状只能是「在这一条 harness commit、这一个题库、这一条串行顺序下，跨 run 记忆让交付率朝某个方向动了多少」，不能读成「记忆机制优于无记忆」或反过来。Do not claim superiority from one successful trace, one direction, or an unpriced token count.",
