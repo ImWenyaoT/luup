@@ -48,7 +48,7 @@
 
 - E0 问题源 = 官网维度 A 指定的《Science》125 前沿科学问题：`data/science125.json`（权威来源抓取，恰 125 条）；pipeline 按题号取题，也接受自由问题输入。
 - E1 单命令跑通 E2E：输入一个科学问题（默认取自 Science-125）→ 完整《科学假设与研究计划》落 SQLite 事实库（Artifact 含 JSON 与 Markdown 两种投影）。〔2026-08-16：切栈（ADR-0004）漏改补正，原文「落盘于 runs/<ts>/」是 Python 期目录制。〕
-- E1b 批量能力：批量 runner（`pnpm run batch -- --ids 1-125｜3,54,61`，`--dry-run` 零执行）可按题号列表跑多题，题按升序派发进有界并发池（`--concurrency`，默认 3、上限 5，1 即串行；安全性论证与熔断语义见 `apps/server/src/batch/runner.ts` 的 `runBatch`，协议修订见 `docs/design/experiment-protocol.json`）（MVP 验证 ≥2 题抽样；全量 125 题为提交期动作，非 MVP 门槛，预算由用户拍板）。
+- E1b 批量能力：批量 runner（`pnpm run batch -- --ids 1-125｜3,54,61`，`--dry-run` 零执行）可按题号列表跑多题，题按升序派发进有界并发池（`--concurrency`，默认 3、上限 16，1 即串行；安全性论证与熔断语义见 `apps/server/src/batch/runner.ts` 的 `runBatch`，协议修订见 `docs/design/experiment-protocol.json`；协议修订 #3 原注册上界为 5，>5 的批次不作该口径正式臂读数）（MVP 验证 ≥2 题抽样；全量 125 题为提交期动作，非 MVP 门槛，预算由用户拍板）。
 - E2 `pnpm run ci` 全绿：TypeScript 7 / oxlint / oxfmt / build / Vitest 全局覆盖率门，外加 `pnpm run test:e2e`（口径以 AGENTS.md 验证节为准）。覆盖率地板由 `apps/server/vitest.config.ts` 启用覆盖率，并由 `test/coverage-gate.ts` 按全局 functions/lines ≥80% 判定。
 - E3 run trace（各 agent 输入输出、Reviewer 结论、verifier 结果、token 用量）落盘可查。
 
