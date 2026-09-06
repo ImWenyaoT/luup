@@ -88,3 +88,13 @@ v12 独立科学复核还发现：
 这些是实际设计错误，不是因为实验尚未执行而拒绝。Reviewer 的拒收方向合理，但其前提项 pass 仍漏检了硬错误。
 
 为修复新增路径合同的脆弱性，当前模型输出改为从 `researchPlanSchema.keyof()` 产生的顶层章节枚举选择 `plan_paths`；具体步骤与问题写入 reason。历史 canonical Review 仍可读取有效深层路径。五项必填、fail-closed 和实际存在校验保持不变。Reviewer 补充公式量纲、原文公式归属和正对照有效性的审查要求；不修改被冻结的 v12 方案。随后重评只用于验证章节定位和拒收，不算新计划成功。
+
+### 固定章节枚举版本的真实重评结果
+
+提交 `ef4f79e` 启动时源码干净。使用原 v12 Research、ResearchPlan 与 EvidenceReview 冻结输入（未注入上述人工审计意见）完成真实 Flash 重评，结果保存在 `outputs/diagnostics/q61-v12-sections-review/`。
+
+结果为有效 Review：`accepted:false`，premise / evidence_support / executability / citation_relevance 均 fail，falsifiability 为 pass。全部定位字段通过当前顶层枚举和实际存在校验，runTask 层 Artifact 纠错为 0；总计 5 次模型请求、6 次工具调用、2 条独立检索记录，不能称作一次模型调用即成功。此次抓住了缺乏可读来源的 Janka 函数基线，并指出非流体贡献与数据映射的执行缺口。仍不把评审全部意见当作科学真理：例如文献转述测量值并不自动使该测量无效，且独立人工复核的量纲错误仍应保留。
+
+重评输入 189,471、输出 9,815 tokens，估算 0.218916 元。此次修改以来的两次全流程诊断和两次独立重评合计已记录估算 1.628953 元；不是供应商扣款账单。原 v12 `failed` 终态、未通过的原稿和 campaign 日志均未改写，重评不计入正式批、不生成虚假的成功记录。
+
+最终代码检查为 610 项测试（server 459、web 151），server functions 93.38% / lines 87.87%，web 92.67% / 96.54%；Playwright 12/12。另确认 v12 全部 9 次实际角色提示词与 `a2bfd82` 一致、科学报告原始 JSON 与冻结 Artifact 完全相等、旧 v10 科学报告仍能经当前公开投影导出。当前结果支持“已修复可复现的数据与门禁缺陷，并能完整拒收这份已知坏稿”，不支持“科学方案可靠”或“125 题正式批可启动”。
