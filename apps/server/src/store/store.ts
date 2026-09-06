@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-import type { DomainArtifact, Role } from "../agent/contracts.ts";
+import { roleSchema, type DomainArtifact, type Role } from "../agent/contracts.ts";
 import type { EvidenceRecord } from "../agent/evidence.ts";
 import {
   BATCH_TERMINAL_STATUSES,
@@ -37,6 +37,24 @@ export type RunOutcome = {
   finalArtifactId: string | null;
   errorCode: string | null;
 };
+
+export type RunInstruction = {
+  id: string;
+  role: Role;
+  text: string;
+  status: "queued" | "applied" | "discarded";
+  attemptId?: string;
+};
+
+export class ControlSubmissionError extends Error {
+  readonly code: "invalid" | "conflict" | "not_found";
+
+  constructor(code: ControlSubmissionError["code"], message: string) {
+    super(message);
+    this.name = "ControlSubmissionError";
+    this.code = code;
+  }
+}
 
 export class FeedbackSubmissionError extends Error {
   readonly code: "invalid" | "conflict" | "not_found";
@@ -425,6 +443,54 @@ export class SqliteStore {
     return null;
   }
 
+  /** 只给尚未启动的角色追加一条指令；同 ID 重发读取既有事实，不重新排队。 */
+  queueInstruction(runId: string, input: { id: unknown; role: unknown; text: unknown }): RunInstruction {
+    const id = typeof input.id === "string" ? input.id.trim() : "";
+    const text = typeof input.text === "string" ? input.text.trim() : "";
+    const parsedRole = roleSchema.safeParse(input.role);
+    if (!id || id.length > 128 || !text || text.length > 2_000 || !parsedRole.success) {
+      throw new ControlSubmissionError("invalid", "instruction requires id (1-128), role, and text (1-2000)");
+    }
+    const role = parsedRole.data;
+    return this.#write((db) => {
+      const run = db.prepare("SELECT status, science125_id, memory_arm FROM runs WHERE id = ?").get(runId) as
+        | Row
+        | undefined;
+      if (!run) throw new ControlSubmissionError("not_found", `unknown run: ${runId}`);
+      const instructions = readInstructions(db, runId);
+      const existing = instructions.find((item) => item.id === id);
+      if (existing) {
+        if (existing.role !== role || existing.text !== text) {
+          throw new ControlSubmissionError("conflict", "instruction id already has a different payload");
+        }
+        return existing;
+      }
+      if (run.status !== "running") throw new ControlSubmissionError("conflict", "run is already terminal");
+      if (run.science125_id !== null || run.memory_arm !== null) {
+        throw new ControlSubmissionError("conflict", "benchmark runs cannot accept instructions");
+      }
+      if (db.prepare("SELECT 1 FROM events WHERE run_id = ? AND kind = 'harness.stop_requested' LIMIT 1").get(runId)) {
+        throw new ControlSubmissionError("conflict", "run stop has already been requested");
+      }
+      if (db.prepare("SELECT 1 FROM attempts WHERE run_id = ? AND role = ? LIMIT 1").get(runId, role)) {
+        throw new ControlSubmissionError("conflict", "target role has already started");
+      }
+      if (instructions.some((item) => item.role === role)) {
+        throw new ControlSubmissionError("conflict", "target role already has an instruction");
+      }
+      emitEvent(db, runId, "harness.instruction_queued", { instruction_id: id, role, text });
+      return { id, role, text, status: "queued" };
+    });
+  }
+
+  /** 只返回该 Attempt 启动时已消费的指令，后来的指令不改变冻结输入。 */
+  attemptInstruction(runId: string, attemptId: string): string | null {
+    return (
+      readInstructions(this.#db, runId).find((item) => item.status === "applied" && item.attemptId === attemptId)
+        ?.text ?? null
+    );
+  }
+
   startAttempt(runId: string, role: Role): string {
     return this.#write((db) => {
       const run = db.prepare("SELECT status FROM runs WHERE id = ?").get(runId) as Row | undefined;
@@ -459,6 +525,16 @@ export class SqliteStore {
           "error_type, started_at, finished_at) VALUES(?, ?, ?, ?, 'running', 0, NULL, NULL, ?, NULL)",
       ).run(attemptId, runId, role, ordinal, now);
       db.prepare("UPDATE runs SET current_role = ?, updated_at = ? WHERE id = ?").run(role, now, runId);
+      if (ordinal === 1) {
+        const instruction = readInstructions(db, runId).find((item) => item.role === role && item.status === "queued");
+        if (instruction) {
+          emitEvent(db, runId, "harness.instruction_applied", {
+            instruction_id: instruction.id,
+            role,
+            attempt_id: attemptId,
+          });
+        }
+      }
       emitEvent(db, runId, "attempt.started", { role, ordinal });
       emitEvent(db, runId, "subagent.started", {
         subagent_id: attemptId,
@@ -686,6 +762,7 @@ export class SqliteStore {
         "UPDATE runs SET status = ?, current_role = NULL, final_artifact_id = ?, error_code = ?, " +
           "updated_at = ? WHERE id = ? AND status = 'running'",
       ).run(status, options.finalArtifactId ?? null, options.errorCode ?? null, nowIso(), runId);
+      discardInstructions(db, runId);
       const eventKind =
         status === "completed" ? "run.completed" : status === "review_rejected" ? "run.review_rejected" : "run.failed";
       emitEvent(db, runId, eventKind, {
@@ -769,6 +846,47 @@ export class SqliteStore {
   }
 }
 
+/** 指令只复用事件账本；状态由排队、应用、丢弃事件按序派生。 */
+function readInstructions(db: DatabaseSync, runId: string): RunInstruction[] {
+  const rows = db
+    .prepare(
+      "SELECT kind, payload_json FROM events WHERE run_id = ? AND kind IN " +
+        "('harness.instruction_queued', 'harness.instruction_applied', 'harness.instruction_discarded') ORDER BY version",
+    )
+    .all(runId) as Row[];
+  const instructions = new Map<string, RunInstruction>();
+  for (const row of rows) {
+    const payload = JSON.parse(String(row.payload_json)) as {
+      instruction_id: string;
+      role: Role;
+      text: string;
+      attempt_id?: string;
+    };
+    if (row.kind === "harness.instruction_queued") {
+      instructions.set(payload.instruction_id, {
+        id: payload.instruction_id,
+        role: payload.role,
+        text: payload.text,
+        status: "queued",
+      });
+    } else {
+      const instruction = instructions.get(payload.instruction_id);
+      if (!instruction) continue;
+      instruction.status = row.kind === "harness.instruction_applied" ? "applied" : "discarded";
+      if (payload.attempt_id !== undefined) instruction.attemptId = payload.attempt_id;
+    }
+  }
+  return [...instructions.values()];
+}
+
+function discardInstructions(db: DatabaseSync, runId: string): void {
+  for (const instruction of readInstructions(db, runId)) {
+    if (instruction.status === "queued") {
+      emitEvent(db, runId, "harness.instruction_discarded", { instruction_id: instruction.id, role: instruction.role });
+    }
+  }
+}
+
 function parseSourceIdentity(value: unknown): SourceIdentity | null {
   if (typeof value !== "string") return null;
   try {
@@ -819,6 +937,7 @@ function failRunInPlace(db: DatabaseSync, runId: string, failureCode: string, er
       failure_code: failureCode,
     });
   }
+  discardInstructions(db, runId);
   emitEvent(db, runId, "run.failed", { failure_code: failureCode, final_artifact_id: null });
 }
 

@@ -4,7 +4,7 @@ import { createApiClient } from "./client";
 import { saveConfig, fetchConfig } from "./config";
 import { fetchArtifact } from "./artifacts";
 import { fetchScience125, fetchScience125Question } from "./science125";
-import { createRun, fetchRun, submitFeedback } from "./runs";
+import { cancelRun, createRun, fetchRun, submitFeedback, submitInstruction } from "./runs";
 import { ApiError } from "./client";
 
 function respond(status: number, body: string, ok = status < 400): Response {
@@ -145,4 +145,29 @@ describe("artifacts API", () => {
     await fetchArtifact(client, "art/1");
     expect((spy.mock.calls[0] as unknown as [string])[0]).toBe("/api/artifacts/art%2F1");
   });
+});
+
+test("运行控制POST保留身份、编码run ID并发送原始幂等ID", async () => {
+  const fetchImpl = vi.fn(async () => respond(202, JSON.stringify({ status: "queued" })));
+  const client = createApiClient({ fetchImpl, getToken: () => "secret" });
+  await cancelRun(client, "run/1");
+  const instruction = { instruction_id: "same-id", role: "research-plan" as const, instruction: "增加对照" };
+  await submitInstruction(client, "run/1", instruction);
+  await submitInstruction(client, "run/1", instruction);
+  const calls = fetchImpl.mock.calls as unknown as Array<[string, RequestInit]>;
+  expect(calls.map(([url]) => url)).toEqual([
+    "/api/runs/run%2F1/cancel",
+    "/api/runs/run%2F1/instructions",
+    "/api/runs/run%2F1/instructions",
+  ]);
+  expect(
+    calls.map(([, init]) => {
+      if (typeof init.body !== "string") throw new Error("Expected JSON request body");
+      return JSON.parse(init.body);
+    }),
+  ).toEqual([{}, instruction, instruction]);
+  for (const [, init] of calls) {
+    expect(init.method).toBe("POST");
+    expect(new Headers(init.headers).get("authorization")).toBe("Bearer secret");
+  }
 });

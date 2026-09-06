@@ -8,7 +8,8 @@ describe("RUN_EVENT_KINDS", () => {
   test("包含服务端公开 event kind 且不含 sdk.output_rejected", () => {
     expect(RUN_EVENT_KINDS).toContain("run.completed");
     expect(RUN_EVENT_KINDS).not.toContain("sdk.output_rejected");
-    expect(UI_SSE_EVENT_KINDS.length).toBe(13);
+    expect(UI_SSE_EVENT_KINDS).toContain("harness.stop_requested");
+    expect(UI_SSE_EVENT_KINDS).toContain("sdk.trace.tool_started");
     for (const kind of UI_SSE_EVENT_KINDS) {
       expect(RUN_EVENT_KINDS).toContain(kind);
     }
@@ -82,7 +83,7 @@ describe("parseSseMessage", () => {
   });
 });
 describe("subscribeRunEvents", () => {
-  test("注册 13 种 UI 事件并在终态 close", () => {
+  test("注册 UI 生命周期与进度事件并在终态 close", () => {
     const listeners = new Map<string, EventListener>();
     const source = {
       addEventListener(type: string, listener: EventListener) {
@@ -97,7 +98,7 @@ describe("subscribeRunEvents", () => {
 
     expect(subscription.runId).toBe("run-1");
     expect(subscription.afterVersion).toBe(3);
-    expect(listeners.size).toBe(15);
+    expect(listeners.size).toBe(UI_SSE_EVENT_KINDS.length + 2);
     expect(listeners.has("open")).toBe(true);
     expect(listeners.has("error")).toBe(true);
 

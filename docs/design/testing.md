@@ -77,3 +77,6 @@ Vitest 原生生成 `coverage-summary.json` 供逐文件分析，原生 `coverag
 [编排](https://openai.github.io/openai-agents-js/guides/multi-agent/)、
 [测试](https://openai.github.io/openai-agents-js/guides/testing/)、
 [Vitest 4 coverage](https://v4.vitest.dev/config/coverage)。
+
+运行中控制的接口、冻结与取消语义见 [Harness 运行控制](./harness-control.md)。
+E2E 的确定性服务器在角色返回前加入可取消延迟，给真实浏览器稳定的操作窗口；生产运行时不增加延迟。

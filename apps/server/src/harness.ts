@@ -1,5 +1,5 @@
 import { EvidenceLedger } from "./agent/evidence.ts";
-import { classifyFailure } from "./agent/failures.ts";
+import { classifyFailure, StageError } from "./agent/failures.ts";
 import type { RunTraceEvent } from "./agent/run-trace.ts";
 import type { EvidenceReview, Research, ResearchPlan, Review, Role } from "./agent/contracts.ts";
 import {
@@ -19,6 +19,10 @@ import { createReferenceVerifier, verificationFailureCode } from "./verify/verif
 
 type CampaignReadResult = ReturnType<CampaignMemoryPort["readPriorAttempts"]>;
 type CampaignWriteResult = ReturnType<CampaignMemoryPort["recordRun"]>;
+
+function interruptionCode(signal: AbortSignal): string {
+  return signal.reason instanceof StageError ? signal.reason.code : "interrupted";
+}
 
 function campaignErrorReason(error: unknown): string {
   if (typeof error === "object" && error !== null) {
@@ -99,7 +103,7 @@ export class Harness {
    * off 臂的 run 若这条事件的 count > 0，那一臂就不是对照臂，该配对必须剔除。
    * 没有记忆通道时它照样发，count 记 0：缺失与零在这里是两回事，不能靠「没有事件」来推断。
    */
-  async execute(runId: string): Promise<RunOutcome> {
+  async execute(runId: string, options: { signal?: AbortSignal } = {}): Promise<RunOutcome> {
     const settled = this.#store.readRunOutcome(runId);
     if (settled) return settled;
     const questionId = this.#store.science125Id(runId);
@@ -124,7 +128,7 @@ export class Harness {
         reason: memoryRead.reason,
       });
     }
-    const outcome = await this.#pipeline(runId, priorAttempts);
+    const outcome = await this.#pipeline(runId, priorAttempts, options.signal);
     const plan = this.#store.latestArtifact(runId, "research-plan")?.content as ResearchPlan | undefined;
     if (this.#memory) {
       let memoryWrite: CampaignWriteResult;
@@ -151,9 +155,10 @@ export class Harness {
     return outcome;
   }
 
-  async #pipeline(runId: string, priorAttempts: readonly string[]): Promise<RunOutcome> {
+  async #pipeline(runId: string, priorAttempts: readonly string[], signal?: AbortSignal): Promise<RunOutcome> {
     const question = this.#store.question(runId);
     try {
+      signal?.throwIfAborted();
       const research: StoredArtifact[] = [];
       const hypotheses: StoredArtifact[] = [];
       let evidenceReview!: StoredArtifact;
@@ -168,12 +173,13 @@ export class Harness {
             : `仅补充证据缺口：${(evidenceReview.content as EvidenceReview).gaps.join("；")}`;
         // 记忆只进 researcher：它是唯一决定「去查什么」的角色，也是唯一能从
         // 「上次这条路走死了」里得到便宜的角色。下游角色只看冻结 Artifact。
-        research.push(await this.#step(runId, question, "researcher", researchInputs, goal, priorAttempts));
+        research.push(await this.#step(signal, runId, question, "researcher", researchInputs, goal, priorAttempts));
 
         // 补证是累积，不是用第二轮替换第一轮：下游必须同时看到全部冻结 Research。
         const frozenResearch = research.map(toInput);
         hypotheses.push(
           await this.#step(
+            signal,
             runId,
             question,
             "hypothesis-generation",
@@ -183,6 +189,7 @@ export class Harness {
         );
 
         evidenceReview = await this.#step(
+          signal,
           runId,
           question,
           "evidence-review",
@@ -236,8 +243,18 @@ export class Harness {
       const planGoal = selectionOverridden
         ? `生成可验证研究计划；Harness 晋升候选 ${promotedCandidateId}（模型自选 ${selectedCandidateId} 未过证据闸，Propose≠Select）`
         : `生成可验证研究计划；晋升候选 ${promotedCandidateId}`;
-      const plan = await this.#step(runId, question, "research-plan", domainInputs, planGoal, [], promotedCandidateId);
+      const plan = await this.#step(
+        signal,
+        runId,
+        question,
+        "research-plan",
+        domainInputs,
+        planGoal,
+        [],
+        promotedCandidateId,
+      );
       const review = await this.#step(
+        signal,
         runId,
         question,
         "reviewer",
@@ -293,7 +310,9 @@ export class Harness {
         const verification = await this.#verifyReferences({
           plan: plan.content as ResearchPlan,
           research: research.map((item) => item.content as Research),
+          signal,
         });
+        signal?.throwIfAborted();
         this.#store.emit(runId, "verification.references", {
           ok: verification.ok,
           reference_count: verification.referenceCount,
@@ -363,13 +382,18 @@ export class Harness {
       });
       return this.#store.finishRun(runId, "review_rejected", { errorCode: "review_rejected" });
     } catch (error) {
-      const code = error instanceof AttemptFailed ? error.code : "runtime_error";
+      const code = signal?.aborted
+        ? interruptionCode(signal)
+        : error instanceof AttemptFailed
+          ? error.code
+          : "runtime_error";
       return this.#store.finishRun(runId, "failed", { errorCode: code });
     }
   }
 
   /** 跑一个角色，成功就发布，失败就记账并中断流程。 */
   async #step(
+    signal: AbortSignal | undefined,
     runId: string,
     question: string,
     role: Role,
@@ -378,6 +402,7 @@ export class Harness {
     priorAttempts: readonly string[] = [],
     promotedCandidateId?: string,
   ): Promise<StoredArtifact> {
+    signal?.throwIfAborted();
     const attemptId = this.#store.startAttempt(runId, role);
     const context: TaskContext = {
       runId,
@@ -388,15 +413,25 @@ export class Harness {
       inputArtifactIds: inputs.map((item) => item.id),
       inputArtifacts: inputs,
       priorAttempts,
+      userInstruction: this.#store.attemptInstruction(runId, attemptId) ?? undefined,
       ...(promotedCandidateId === undefined ? {} : { promotedCandidateId }),
     };
-    const ledger = this.#createLedger({ runId, attemptId });
     try {
+      const ledger = this.#createLedger({ runId, attemptId });
       const result = await runTask(context, {
         execute: this.#execute,
         ledger,
-        onTrace: (event) => this.#store.emit(runId, `sdk.trace.${event.kind}`, traceEventPayload(event)),
+        signal,
+        onTrace: (event) =>
+          this.#store.emit(runId, `sdk.trace.${event.kind}`, {
+            ...traceEventPayload(event),
+            attempt_id: attemptId,
+          }),
       });
+      if (signal?.aborted) {
+        const reason = signal.reason instanceof Error ? signal.reason : new Error("Run interrupted");
+        throw Object.assign(reason, { usage: result.usage, corrections: result.corrections });
+      }
       // 覆写救回了这个 Attempt，所以它必须留痕：产物发布之前先把「代码替掉了模型写的哪个
       // 字段」落成事实，否则 Artifact 看上去永远是对的，漂移发生过几次谁也说不出来。
       for (const item of result.drift) {
@@ -428,7 +463,9 @@ export class Harness {
         usageFacts(role, result.usage),
       );
     } catch (error) {
-      const failure = classifyFailure(error);
+      const failure = signal?.aborted
+        ? { code: interruptionCode(signal), reason: "Run interrupted" }
+        : classifyFailure(error);
       const errorType = error instanceof Error ? error.name : "Error";
       const corrections =
         typeof error === "object" &&

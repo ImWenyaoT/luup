@@ -48,9 +48,9 @@ export function RunHeader({ snapshot, sseConnected }: { snapshot: Snapshot; sseC
   return (
     <Header data-testid="run-header">
       <span data-testid="run-status-badge">
-        <RunStatusBadge status={snapshot.status} />
+        <RunStatusBadge status={snapshot.status} errorCode={snapshot.error_code} />
       </span>
-      {snapshot.error_code !== null && (
+      {snapshot.error_code !== null && snapshot.error_code !== "interrupted" && (
         <span style={{ fontFamily: mono, fontSize: 11, color: colors.danger }}>{snapshot.error_code}</span>
       )}
       <Question title={snapshot.question}>{snapshot.question}</Question>

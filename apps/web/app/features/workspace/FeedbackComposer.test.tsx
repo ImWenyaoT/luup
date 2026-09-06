@@ -164,6 +164,6 @@ describe("FeedbackComposer", () => {
     fireEvent.click(screen.getByText("提交人工反馈"));
 
     await waitFor(() => expect(onSubmitted).toHaveBeenCalled());
-    expect(screen.getByText("人工反馈已排队，将进入下一轮修订。")).toBeInTheDocument();
+    expect(screen.getByText("人工反馈已排队，评审收尾时将终止当前支线，不会自动修订。")).toBeInTheDocument();
   });
 });

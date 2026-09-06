@@ -35,9 +35,27 @@ describe("SubagentLineage", () => {
       recent_events: [],
     };
 
-    render(<SubagentLineage snapshot={snapshot} />);
+    const { rerender } = render(<SubagentLineage snapshot={snapshot} />);
     expect(screen.getByRole("heading", { name: "Subagents · 1" })).toBeInTheDocument();
     expect(screen.getByText("控制面")).toBeInTheDocument();
     expect(screen.getByTitle("sub-1")).toHaveTextContent("one-shot");
+    expect(screen.getByText("耗时 1 秒")).toBeInTheDocument();
+    expect(screen.getByText("工具调用次数未知")).toBeInTheDocument();
+    rerender(
+      <SubagentLineage
+        snapshot={{
+          ...snapshot,
+          subagents: [
+            {
+              ...snapshot.subagents[0],
+              tool_calls: 2,
+              recent_activity: [{ tool: "arxiv_search", status: "completed", created_at: "2025-01-01T00:00:01Z" }],
+            },
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByText("已观测 2 次工具调用")).toBeInTheDocument();
+    expect(screen.getByText(/arxiv_search · 完成/)).toBeInTheDocument();
   });
 });

@@ -41,6 +41,7 @@ export type RunStore = Pick<
   | "question"
   | "science125Id"
   | "startAttempt"
+  | "attemptInstruction"
   | "publishArtifact"
   | "failAttempt"
   | "finishRun"

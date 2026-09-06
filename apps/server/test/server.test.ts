@@ -118,7 +118,7 @@ test("separates liveness from deterministic readiness", async () => {
     assert.equal(readiness.status, 200);
     assert.deepEqual(await readiness.json(), {
       status: "ready",
-      checks: { database: "ok", model: "configured", auth: "configured" },
+      checks: { admission: "open", database: "ok", model: "configured", auth: "configured" },
     });
 
     const apiReadiness = await fetch(`${base}/api/readyz`);

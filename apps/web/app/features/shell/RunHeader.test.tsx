@@ -33,3 +33,9 @@ describe("RunHeader", () => {
     expect(screen.getByText("技术详情")).toBeInTheDocument();
   });
 });
+
+test("主动停止显示中性终态，而不是模型失败", () => {
+  renderWithProviders(<RunHeader snapshot={{ ...snapshot, status: "failed", error_code: "interrupted" }} />);
+  expect(screen.getByTestId("run-status-badge")).toHaveTextContent("已停止");
+  expect(screen.queryByText("interrupted")).not.toBeInTheDocument();
+});

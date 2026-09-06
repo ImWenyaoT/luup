@@ -1,4 +1,5 @@
 import styled from "@emotion/styled";
+import { useEffect, useState } from "react";
 import { ROLE_LABEL } from "../../lib/types/constants";
 import type { Snapshot } from "../../lib/types/wire";
 import { colors, mono, SectionTitle } from "../../styles";
@@ -52,10 +53,23 @@ const Meta = styled.span`
 `;
 const Result = styled.div<{ failed: boolean }>`
   text-align: right;
+  overflow-wrap: anywhere;
   color: ${({ failed }) => (failed ? colors.danger : colors.muted)};
 `;
 
+function duration(start: string, end: string | null, now: number): string {
+  const elapsed = (end ? Date.parse(end) : now) - Date.parse(start);
+  return Number.isFinite(elapsed) ? `${Math.max(0, Math.floor(elapsed / 1000))} 秒` : "未知";
+}
+
 export function SubagentLineage({ snapshot }: { snapshot: Snapshot }) {
+  const [now, setNow] = useState(() => Date.now());
+  const active = snapshot.subagents.some((item) => item.status === "running");
+  useEffect(() => {
+    if (!active) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [active]);
   return (
     <Section aria-labelledby="subagent-lineage-title" data-testid="subagent-lineage">
       <SectionTitle id="subagent-lineage-title">Subagents · {snapshot.subagents.length}</SectionTitle>
@@ -76,9 +90,21 @@ export function SubagentLineage({ snapshot }: { snapshot: Snapshot }) {
                   {subagent.id} · {subagent.mode}
                 </Id>
               </div>
-              <Result failed={subagent.status === "failed"}>
-                <div>{STATUS_LABEL[subagent.status]}</div>
-                {subagent.stop_reason !== null && <Meta>{subagent.stop_reason}</Meta>}
+              <Result failed={subagent.status === "failed" && subagent.stop_reason !== "interrupted"}>
+                <div>{subagent.stop_reason === "interrupted" ? "已停止" : STATUS_LABEL[subagent.status]}</div>
+                <div>耗时 {duration(subagent.started_at, subagent.finished_at, now)}</div>
+                <div>
+                  {subagent.tool_calls == null ? "工具调用次数未知" : `已观测 ${subagent.tool_calls} 次工具调用`}
+                </div>
+                {(subagent.recent_activity ?? []).map((activity, index) => (
+                  <div key={`${activity.created_at}:${index}`}>
+                    <time dateTime={activity.created_at}>{activity.created_at.slice(11, 19)}</time> · {activity.tool} ·{" "}
+                    {{ started: "开始", completed: "完成", unknown: "状态未知" }[activity.status]}
+                  </div>
+                ))}
+                {subagent.stop_reason !== null && subagent.stop_reason !== "interrupted" && (
+                  <Meta>{subagent.stop_reason}</Meta>
+                )}
               </Result>
             </Item>
           ))}

@@ -11,6 +11,7 @@ export default defineConfig({
       // 核心模块分别过门，不能被 API/导出代码的高覆盖率平均掉。
       // 用 Vitest 原生按文件阈值；全局与报告完整性继续由 coverage-gate 校验。
       thresholds: {
+        "src/run-scheduler.ts": { functions: 80, lines: 80 },
         "src/harness.ts": { functions: 80, lines: 80 },
         "src/roles.ts": { functions: 80, lines: 80 },
         "src/executor.ts": { functions: 80, lines: 80 },

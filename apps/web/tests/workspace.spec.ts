@@ -21,7 +21,8 @@ test("completes a deterministic research run through the server", async ({ page 
     .locator('[data-slot="badge"]')
     .filter({ hasText: /^已完成$/ })
     .first();
-  await expect(completedBadge).toBeVisible();
+  // 确定性角色各有可取消延迟；还需覆盖两并发名额下的排队时间。
+  await expect(completedBadge).toBeVisible({ timeout: 15_000 });
   await page.getByRole("button", { name: "查看执行轨迹" }).click();
   await expect(page.getByText("执行轨迹 · 2 次检索")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Subagents · 5" })).toBeVisible();
@@ -80,7 +81,7 @@ test("completes a deterministic research run through the server", async ({ page 
   await page.getByPlaceholder("提出一个可以设计实验去检验的研究问题").fill("问".repeat(4_001));
   await page.getByRole("button", { name: "开始研究" }).click();
   await expect(page.getByText("question 不能超过 4000 个字符。")).toBeVisible();
-  await expect(completedBadge).toBeVisible();
+  await expect(completedBadge).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId("run-workspace")).toBeVisible();
 
   // 旧 Artifact 先失败、新 Run 后成功时，旧错误不能挂到新 Run 下。
@@ -112,7 +113,7 @@ test("completes a deterministic research run through the server", async ({ page 
   await page.getByRole("button", { name: "开始研究" }).click();
   await expect(page.getByTestId("error-banner")).toContainText("旧 Artifact 失败");
   await expect(page.getByText("旧 Artifact 失败")).not.toBeVisible();
-  await expect(completedBadge).toBeVisible();
+  await expect(completedBadge).toBeVisible({ timeout: 15_000 });
 
   await page.getByRole("button", { name: "查看冻结产物" }).click();
   await page.getByRole("button", { name: "research-plan", exact: true }).click();
@@ -147,7 +148,7 @@ test("completes a deterministic research run through the server", async ({ page 
   await page.getByPlaceholder("提出一个可以设计实验去检验的研究问题").fill("从无效深链重新开始");
   await page.getByRole("button", { name: "开始研究" }).click();
   await expect(page.getByText("Run 不存在。")).not.toBeVisible();
-  await expect(completedBadge).toBeVisible();
+  await expect(completedBadge).toBeVisible({ timeout: 15_000 });
 });
 
 test("selects Science 125 benchmark preset question and triggers direct run", async ({ page }) => {
@@ -172,7 +173,7 @@ test("selects Science 125 benchmark preset question and triggers direct run", as
     .locator('[data-slot="badge"]')
     .filter({ hasText: /^已完成$/ })
     .first();
-  await expect(completedBadge).toBeVisible();
+  await expect(completedBadge).toBeVisible({ timeout: 15_000 });
   await page.getByRole("button", { name: "查看冻结产物" }).click();
   await expect(page.getByTestId("artifact-panel").getByRole("heading", { name: "冻结产物" })).toBeVisible();
 });
@@ -202,7 +203,7 @@ test("supports sidebar collapse/expand toggle and new research reset workflow", 
     .locator('[data-slot="badge"]')
     .filter({ hasText: /^已完成$/ })
     .first();
-  await expect(completedBadge).toBeVisible();
+  await expect(completedBadge).toBeVisible({ timeout: 15_000 });
   await expect(page).toHaveURL(/\?run=[a-z0-9]+$/);
 
   // 点击侧边栏「新建研究课题」，重置工作区并清空 URL 运行态

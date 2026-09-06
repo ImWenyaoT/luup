@@ -30,7 +30,7 @@ export function FeedbackComposer({ snapshot, onSubmitted }: { snapshot: Snapshot
     mutationFn: () => submitFeedback(client, snapshot.id, { feedback_id: crypto.randomUUID(), feedback }),
     onSuccess: () => {
       setFeedback("");
-      setStatus({ tone: "ok", text: "人工反馈已排队，将进入下一轮修订。" });
+      setStatus({ tone: "ok", text: "人工反馈已排队，评审收尾时将终止当前支线，不会自动修订。" });
       onSubmitted();
     },
     onError: (cause) => setStatus({ tone: "error", text: cause instanceof Error ? cause.message : String(cause) }),
@@ -40,7 +40,7 @@ export function FeedbackComposer({ snapshot, onSubmitted }: { snapshot: Snapshot
     return (
       <Section aria-labelledby="researcher-feedback-title" data-testid="feedback-composer-queued">
         <SectionTitle id="researcher-feedback-title">研究者反馈</SectionTitle>
-        <Note>人工反馈已排队，将进入下一轮修订。</Note>
+        <Note>人工反馈已排队，评审收尾时将终止当前支线，不会自动修订。</Note>
       </Section>
     );
   const submitting = mutation.isPending;

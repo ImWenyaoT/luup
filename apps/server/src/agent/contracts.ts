@@ -401,6 +401,8 @@ export type TaskContext = {
   priorAttempts?: readonly string[];
   /** Harness 证据闸实际晋升的候选；planner 不得用模型自选覆盖它。 */
   promotedCandidateId?: string;
+  /** 本 Attempt 启动前消费并冻结的用户指令。 */
+  userInstruction?: string;
 };
 
 /** 哪个 build 产出了这个 Run —— 模型无从知道也无从上报的事实。 */

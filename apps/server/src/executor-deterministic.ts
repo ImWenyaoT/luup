@@ -88,7 +88,8 @@ export function createDeterministicRuntime(store: SqliteStore): {
     return ledger;
   };
 
-  const execute: StageExecutor = async ({ role, agent, input }) => {
+  const execute: StageExecutor = async ({ role, agent, input, signal }) => {
+    signal?.throwIfAborted();
     const payload = JSON.parse(input);
     const inputs = (payload.input_artifacts ?? []) as Array<{ id: string; type: string; content: any }>;
     const ofType = (type: string) => inputs.filter((item) => item.type === type);

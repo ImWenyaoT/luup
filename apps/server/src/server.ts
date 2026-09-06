@@ -9,8 +9,15 @@ import { findQuestion, readScience125, science125Text } from "./domain/science12
 import { createDeterministicRuntime, createDeterministicVerifier } from "./executor-deterministic.ts";
 import { createQwenExecutor } from "./executor.ts";
 import { Harness } from "./harness.ts";
+import { RunScheduler } from "./run-scheduler.ts";
 import { modelConfigStatus, setModelOverride } from "./seams/index.ts";
-import { FeedbackSubmissionError, MAX_QUESTION_LENGTH, normalizeQuestion, SqliteStore } from "./store/store.ts";
+import {
+  ControlSubmissionError,
+  FeedbackSubmissionError,
+  MAX_QUESTION_LENGTH,
+  normalizeQuestion,
+  SqliteStore,
+} from "./store/store.ts";
 
 const TERMINAL = new Set(["completed", "review_rejected", "failed"]);
 const POLL_MS = 100;
@@ -83,18 +90,14 @@ export type LuupServer = {
 };
 
 /** 基于 Elysia 的应用工厂，负责路由声明与类型系统推导。 */
-function createElysiaApp(options: ServerOptions) {
+function createElysiaApp(options: ServerOptions, scheduler: RunScheduler) {
   const { store, harness } = options;
   const mode = options.runtime ?? runtimeMode();
   const reportError = options.reportError ?? ((message, error) => console.error(message, error));
-  const maxConcurrentRuns = 2;
   const apiToken = process.env.LUUP_API_TOKEN?.trim() || null;
   const configuredQueueLimit = Number(process.env.LUUP_MAX_QUEUED_RUNS ?? 8);
   const maxQueuedRuns =
     Number.isSafeInteger(configuredQueueLimit) && configuredQueueLimit > 0 ? configuredQueueLimit : 8;
-  const scheduled = new Set<string>();
-  const queue: string[] = [];
-  let activeRuns = 0;
 
   const unauthorized = (instance?: string, req?: Request): Response => {
     const accept = req?.headers.get("accept") ?? "";
@@ -116,36 +119,6 @@ function createElysiaApp(options: ServerOptions) {
     const authHeader = req.headers.get("authorization");
     if (!authHeader) return false;
     return timingSafeTokenCompare(authHeader, `Bearer ${apiToken}`);
-  };
-
-  const drain = (): void => {
-    while (activeRuns < maxConcurrentRuns && queue.length > 0) {
-      const runId = queue.shift()!;
-      activeRuns += 1;
-      void harness
-        .execute(runId)
-        .catch((error: unknown) => {
-          reportError("background run failed", error);
-          if (store.snapshot(runId)?.status !== "running") return;
-          try {
-            store.finishRun(runId, "failed", { errorCode: "runtime_error" });
-          } catch (settleError) {
-            reportError("failed to settle background run", settleError);
-          }
-        })
-        .finally(() => {
-          activeRuns -= 1;
-          scheduled.delete(runId);
-          drain();
-        });
-    }
-  };
-
-  const schedule = (runId: string): void => {
-    if (scheduled.has(runId)) return;
-    scheduled.add(runId);
-    queue.push(runId);
-    drain();
   };
 
   function streamEvents(req: Request, runId: string, from: number): Response {
@@ -394,10 +367,11 @@ function createElysiaApp(options: ServerOptions) {
       const databaseReady = store.isReady();
       const modelConfigured = mode === "deterministic" || modelConfigStatus().credential !== "absent";
       const authConfigured = mode === "deterministic" || apiToken !== null;
-      const ready = databaseReady && modelConfigured && authConfigured;
+      const ready = scheduler.accepting && databaseReady && modelConfigured && authConfigured;
       return json(ready ? 200 : 503, {
         status: ready ? "ready" : "not_ready",
         checks: {
+          admission: scheduler.accepting ? "open" : "closed",
           database: databaseReady ? "ok" : "unavailable",
           model: modelConfigured ? "configured" : "missing_credential",
           auth: authConfigured ? "configured" : "missing_api_token",
@@ -408,10 +382,11 @@ function createElysiaApp(options: ServerOptions) {
       const databaseReady = store.isReady();
       const modelConfigured = mode === "deterministic" || modelConfigStatus().credential !== "absent";
       const authConfigured = mode === "deterministic" || apiToken !== null;
-      const ready = databaseReady && modelConfigured && authConfigured;
+      const ready = scheduler.accepting && databaseReady && modelConfigured && authConfigured;
       return json(ready ? 200 : 503, {
         status: ready ? "ready" : "not_ready",
         checks: {
+          admission: scheduler.accepting ? "open" : "closed",
           database: databaseReady ? "ok" : "unavailable",
           model: modelConfigured ? "configured" : "missing_credential",
           auth: authConfigured ? "configured" : "missing_api_token",
@@ -419,6 +394,73 @@ function createElysiaApp(options: ServerOptions) {
       });
     })
     // 运行任务详细子路由（优先于 /:id 匹配）
+    .post("/api/runs/:id/cancel", ({ params, request }) => {
+      const instance = `/api/runs/${params.id}/cancel`;
+      if (!authorized(request)) return unauthorized(instance, request);
+      if (!store.snapshot(params.id)) {
+        return errorProblem(request, 404, {
+          code: "run_not_found",
+          title: "Not Found",
+          detail: "Run 不存在。",
+          instance,
+        });
+      }
+      try {
+        const status = scheduler.cancel(params.id);
+        return json(status === "stopping" ? 202 : 200, { status });
+      } catch (error) {
+        if (!(error instanceof ControlSubmissionError)) throw error;
+        return errorProblem(request, 409, {
+          code: "control_conflict",
+          title: "Conflict",
+          detail: error.message,
+          instance,
+        });
+      }
+    })
+    .post("/api/runs/:id/instructions", ({ params, body, request }) => {
+      const instance = `/api/runs/${params.id}/instructions`;
+      if (!authorized(request)) return unauthorized(instance, request);
+      if (request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
+        return errorProblem(request, 415, {
+          code: "unsupported_media_type",
+          title: "Unsupported Media Type",
+          detail: "Content-Type 必须是 application/json。",
+          instance,
+        });
+      }
+      if (typeof body !== "object" || body === null || Array.isArray(body)) {
+        return errorProblem(request, 400, {
+          code: "invalid_body",
+          title: "Bad Request",
+          detail: "请求体必须是 JSON 对象。",
+          instance,
+        });
+      }
+      const input = body as Record<string, unknown>;
+      try {
+        const result = store.queueInstruction(params.id, {
+          id: input.instruction_id,
+          role: input.role,
+          text: input.instruction,
+        });
+        return json(result.status === "queued" ? 202 : 200, {
+          status: result.status,
+          instruction_id: result.id,
+          role: result.role,
+          ...(result.attemptId === undefined ? {} : { attempt_id: result.attemptId }),
+        });
+      } catch (error) {
+        if (!(error instanceof ControlSubmissionError)) throw error;
+        const status = error.code === "not_found" ? 404 : error.code === "invalid" ? 422 : 409;
+        return errorProblem(request, status, {
+          code: `instruction_${error.code}`,
+          title: status === 404 ? "Not Found" : status === 409 ? "Conflict" : "Unprocessable Entity",
+          detail: error.message,
+          instance,
+        });
+      }
+    })
     .post("/api/runs/:id/feedback", async ({ body, params, request }) => {
       if (!authorized(request)) return unauthorized(`/api/runs/${params.id}/feedback`, request);
       const contentType = request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
@@ -492,6 +534,15 @@ function createElysiaApp(options: ServerOptions) {
     // 运行任务主入口
     .post("/api/runs", async ({ body, request }) => {
       if (!authorized(request)) return unauthorized("/api/runs", request);
+      if (!scheduler.accepting) {
+        return errorProblem(request, 503, {
+          code: "server_stopping",
+          title: "Service Unavailable",
+          detail: "运行服务正在关闭，请稍后重试。",
+          instance: "/api/runs",
+          extraHeaders: { "retry-after": "1" },
+        });
+      }
       if (mode === "live" && modelConfigStatus().credential === "absent") {
         return errorProblem(request, 503, {
           code: "missing_model_credentials",
@@ -502,7 +553,7 @@ function createElysiaApp(options: ServerOptions) {
           extraHeaders: { "retry-after": "1" },
         });
       }
-      if (activeRuns + queue.length >= maxQueuedRuns) {
+      if (scheduler.size >= maxQueuedRuns) {
         return errorProblem(request, 429, {
           code: "rate_limit_exceeded",
           title: "Too Many Requests",
@@ -561,10 +612,10 @@ function createElysiaApp(options: ServerOptions) {
         });
       }
       const runId = harness.createRun(question);
-      schedule(runId);
+      scheduler.schedule(runId);
       return json(202, projectRunSnapshot(store.snapshot(runId)!), {
         "ratelimit-policy": `${maxQueuedRuns};w=60`,
-        ratelimit: `limit=${maxQueuedRuns}, remaining=${Math.max(0, maxQueuedRuns - activeRuns - queue.length)}, reset=1`,
+        ratelimit: `limit=${maxQueuedRuns}, remaining=${Math.max(0, maxQueuedRuns - scheduler.size)}, reset=1`,
       });
     })
     .get("/api/runs/:id", ({ params, request }) => {
@@ -634,7 +685,8 @@ function createElysiaApp(options: ServerOptions) {
 
 export function createApp(options: ServerOptions): LuupServer {
   const reportError = options.reportError ?? ((message, error) => console.error(message, error));
-  const app = createElysiaApp(options);
+  const scheduler = new RunScheduler(options.store, options.harness, reportError);
+  const app = createElysiaApp(options, scheduler);
 
   const fetchHandler = async (req: Request): Promise<Response> => {
     try {
@@ -683,6 +735,7 @@ export function createApp(options: ServerOptions): LuupServer {
       return new URL(`http://${hostname === "0.0.0.0" ? "127.0.0.1" : hostname}:${actualPort}`);
     },
     stop: async (closeActiveConnections?: boolean) => {
+      await scheduler.close();
       return new Promise<void>((resolvePromise, rejectPromise) => {
         if (closeActiveConnections && typeof (nodeServer as any).closeAllConnections === "function") {
           (nodeServer as any).closeAllConnections();

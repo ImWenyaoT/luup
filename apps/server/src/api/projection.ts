@@ -20,6 +20,12 @@ type DisplayScalar = string | number | boolean | null;
 
 const EVENT_PAYLOAD_FIELDS: Record<string, readonly string[]> = {
   "run.created": [],
+  "harness.queued": [],
+  "harness.dispatched": [],
+  "harness.stop_requested": [],
+  "harness.instruction_queued": ["instruction_id", "role"],
+  "harness.instruction_applied": ["instruction_id", "role", "attempt_id"],
+  "harness.instruction_discarded": ["instruction_id", "role"],
   "tool.evidence_recorded": ["tool_name", "status", "result_count"],
   "tool.evidence_dropped": ["tool_name", "status", "reason"],
   "artifact.published": ["artifact_type"],
@@ -173,7 +179,8 @@ function projectPayload(kind: string, value: unknown): Record<string, DisplaySca
   if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
   const source = value as Record<string, unknown>;
   const payload: Record<string, DisplayScalar> = {};
-  for (const field of EVENT_PAYLOAD_FIELDS[kind] ?? []) {
+  const fields = EVENT_PAYLOAD_FIELDS[kind] ?? [];
+  for (const field of kind.startsWith("sdk.trace.") ? [...fields, "attempt_id"] : fields) {
     const item = source[field];
     // 类型闸独立于字段白名单：嵌套对象/数组即使字段名被允许也要丢掉，
     // 否则一个被允许的字段名就能把整棵内部结构带出去。
@@ -209,6 +216,14 @@ const publicSubagentSchema = z.object({
   role: roleSchema,
   ordinal: z.number(),
   mode: z.literal("one-shot"),
+  tool_calls: z.number().int().nonnegative().nullable(),
+  recent_activity: z.array(
+    z.object({
+      tool: z.string(),
+      status: z.enum(["started", "completed", "unknown"]),
+      created_at: z.string(),
+    }),
+  ),
   status: z.enum(ATTEMPT_STATUSES),
   stop_reason: z.string().nullable(),
   started_at: z.string(),
@@ -362,6 +377,42 @@ export function projectRunEvent(event: Record<string, unknown>): PublicRunEvent 
   });
 }
 
+/** 从脱敏 trace 汇总观测值；不按角色猜关联，旧记录没有 Attempt 关联时保持未知。 */
+function subagentActivity(attemptId: string, events: PublicRunEvent[]) {
+  const calls = new Map<string, number>();
+  const activity: { tool: string; status: "started" | "completed" | "unknown"; created_at: string }[] = [];
+  for (const event of events) {
+    const payload = event.payload;
+    if (payload.attempt_id !== attemptId || typeof payload.trace_id !== "string") continue;
+    const traceId = payload.trace_id;
+    if (event.kind === "sdk.trace.started") calls.set(traceId, calls.get(traceId) ?? 0);
+    if (event.kind === "sdk.trace.tool_started") calls.set(traceId, (calls.get(traceId) ?? 0) + 1);
+    // 完整汇总可补齐中途被 trace 条数上界截断的工具事件。
+    if (event.kind === "sdk.trace.ended" && typeof payload.usage_tool_calls === "number") {
+      calls.set(traceId, Math.max(calls.get(traceId) ?? 0, payload.usage_tool_calls));
+    }
+    if (
+      typeof payload.tool === "string" &&
+      (event.kind === "sdk.trace.tool_started" || event.kind === "sdk.trace.tool_ended")
+    ) {
+      activity.push({
+        tool: payload.tool,
+        status:
+          event.kind === "sdk.trace.tool_started"
+            ? "started"
+            : payload.status === "completed"
+              ? "completed"
+              : "unknown",
+        created_at: event.created_at,
+      });
+    }
+  }
+  return {
+    tool_calls: calls.size === 0 ? null : [...calls.values()].reduce((total, count) => total + count, 0),
+    recent_activity: activity.slice(-5),
+  };
+}
+
 /** 挑字段交给 publicRunSnapshotSchema，这里只做它表达不了的**按行**过滤。
  *
  * schema 能声明「哪些字段可以出去」，声明不了「哪些行不该出现」——
@@ -369,6 +420,9 @@ export function projectRunEvent(event: Record<string, unknown>): PublicRunEvent 
  */
 export function projectRunSnapshot(snapshot: Record<string, unknown>): PublicRunSnapshot {
   const runId = String(snapshot.id);
+  const events = (snapshot.recent_events as Record<string, unknown>[])
+    .filter((event) => !HIDDEN_EVENT_KINDS.has(String(event.kind)))
+    .map((event) => projectRunEvent(event));
   const attempts = snapshot.attempts as Record<string, unknown>[];
   const subagents = attempts.map((attempt) => ({
     id: attempt.id,
@@ -376,6 +430,7 @@ export function projectRunSnapshot(snapshot: Record<string, unknown>): PublicRun
     role: attempt.role,
     ordinal: attempt.ordinal,
     mode: "one-shot",
+    ...subagentActivity(String(attempt.id), events),
     status: attempt.status,
     stop_reason:
       attempt.status === "completed" ? "completed" : attempt.status === "failed" ? attempt.failure_code : null,
@@ -388,9 +443,6 @@ export function projectRunSnapshot(snapshot: Record<string, unknown>): PublicRun
   const omittedEvidenceTools = [...new Set(omittedEvidence.map((row) => String(row.tool_name)))];
   // 事件载荷按 kind 白名单，比字段声明更细：同一个 payload 字段在这个事件里
   // 能出去、在那个事件里不能。projectRunEvent 负责这一层。
-  const events = (snapshot.recent_events as Record<string, unknown>[])
-    .filter((event) => !HIDDEN_EVENT_KINDS.has(String(event.kind)))
-    .map((event) => projectRunEvent(event));
   return publicRunSnapshotSchema.parse({
     ...snapshot,
     subagents,

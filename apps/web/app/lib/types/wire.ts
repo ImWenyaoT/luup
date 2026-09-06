@@ -28,6 +28,8 @@ type Subagent = {
   mode: "one-shot";
   status: AttemptStatus;
   stop_reason: string | null;
+  tool_calls?: number | null;
+  recent_activity?: Array<{ tool: string; status: "started" | "completed" | "unknown"; created_at: string }>;
   started_at: string;
   finished_at: string | null;
 };

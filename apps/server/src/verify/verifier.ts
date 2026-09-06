@@ -26,10 +26,10 @@ import {
 } from "./references.ts";
 
 /** arXiv 反查的注入点。测试给替身，生产给 fetchArxivByIds —— 验收器本身不碰网络细节。 */
-export type ArxivLookup = (ids: readonly string[]) => Promise<ResolvedRecord[]>;
+export type ArxivLookup = (ids: readonly string[], signal?: AbortSignal) => Promise<ResolvedRecord[]>;
 
 /** Crossref DOI 精确反查注入点。返回缺失记录的 DOI 时直接省略，验收器会判 verifier_refs。 */
-export type DoiLookup = (dois: readonly string[]) => Promise<DoiResolvedRecord[]>;
+export type DoiLookup = (dois: readonly string[], signal?: AbortSignal) => Promise<DoiResolvedRecord[]>;
 
 /** 一次引用验收的完整结论与逐条证据。 */
 export type ReferenceVerification = {
@@ -52,6 +52,7 @@ export type ReferenceVerification = {
 export type ReferenceVerifier = (input: {
   plan: ResearchPlan;
   research: readonly Research[];
+  signal?: AbortSignal;
 }) => Promise<ReferenceVerification>;
 
 /** arXiv 通路整体失效时那一条检查的 ID。它是「结论未取得」，不是「引用不合格」。 */
@@ -65,7 +66,7 @@ const toResolved = (record: ArxivRecord): ResolvedRecord => ({
 });
 
 /** 生产反查通路：走 arXiv 官方 id_list，经模块级限速闸。 */
-const arxivLookup: ArxivLookup = async (ids) => (await fetchArxivByIds(ids)).map(toResolved);
+const arxivLookup: ArxivLookup = async (ids, signal) => (await fetchArxivByIds(ids, { signal })).map(toResolved);
 
 const toDoiResolved = (record: CrossrefRecord): DoiResolvedRecord => ({
   doi: normalizeDoi(record.doi)!,
@@ -84,8 +85,10 @@ class PartialDoiLookupError extends Error {
 }
 
 function doiLookupWith(resolve: typeof resolveCrossrefDoi): DoiLookup {
-  return async (dois) => {
-    const settled = await Promise.allSettled(dois.map((doi) => resolve(doi)));
+  return async (dois, signal) => {
+    signal?.throwIfAborted();
+    const settled = await Promise.allSettled(dois.map((doi) => resolve(doi, { signal })));
+    signal?.throwIfAborted();
     const records: DoiResolvedRecord[] = [];
     const failures: { doi: string; reason: string }[] = [];
     for (const [index, result] of settled.entries()) {
@@ -117,7 +120,8 @@ export function createReferenceVerifier(
   const resolveDoi =
     options.doiLookup ?? (options.resolveSingleDoi ? doiLookupWith(options.resolveSingleDoi) : doiLookup);
 
-  return async ({ plan, research }) => {
+  return async ({ plan, research, signal }) => {
+    signal?.throwIfAborted();
     const cards = collectFrozenCards(research.flatMap((artifact) => artifact.citations));
     const targets = resolveTargets(plan.references, cards);
     const checks: ReferenceCheck[] = [
@@ -133,11 +137,16 @@ export function createReferenceVerifier(
     let doiChecked = 0;
     if (resolvable.length > 0) {
       try {
-        const records = await lookup(resolvable.map((target) => target.rawArxivId!));
+        const records = await lookup(
+          resolvable.map((target) => target.rawArxivId!),
+          signal,
+        );
+        signal?.throwIfAborted();
         const resolved = new Map<string, ResolvedRecord>();
         for (const record of records) resolved.set(normalizeArxivId(record.arxivId), record);
         checks.push(...checkResolvedTitles(resolvable, resolved), ...checkResolvedMetadata(resolvable, resolved));
       } catch (error) {
+        signal?.throwIfAborted();
         // arXiv 不可达属于基础设施故障，不等于引用造假：只记一条「结论未取得」，
         // 不给每条引用扣一顶造假的帽子。
         infraError = true;
@@ -152,7 +161,11 @@ export function createReferenceVerifier(
 
     if (doiResolvable.length > 0) {
       try {
-        const records = await resolveDoi(doiResolvable.map((target) => target.doi!));
+        const records = await resolveDoi(
+          doiResolvable.map((target) => target.doi!),
+          signal,
+        );
+        signal?.throwIfAborted();
         const resolved = new Map<string, DoiResolvedRecord>();
         for (const record of records) {
           const normalized = normalizeDoi(record.doi);
@@ -164,6 +177,7 @@ export function createReferenceVerifier(
         );
         doiChecked = doiResolvable.length;
       } catch (error) {
+        signal?.throwIfAborted();
         infraError = true;
         if (error instanceof PartialDoiLookupError) {
           const resolved = new Map(error.records.map((record) => [normalizeDoi(record.doi)!, record]));

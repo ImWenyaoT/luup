@@ -30,7 +30,7 @@ apps/server/src/server.ts ── apps/server/src/harness.ts ── researcher
 
 ### Harness
 
-外部 interface 只有「给定 run id，推进到终态」。`apps/server/src/harness.ts` 拥有：
+外部 interface 是「给定 run id 与可选取消信号，推进到终态」。`apps/server/src/harness.ts` 拥有：
 
 - 五阶段顺序与补证上界：补证 ≤2 轮（`for` 一眼可读）；research-plan → reviewer **单次射击**（无同支线改稿环，ADR-0012）；
 - 候选晋升硬闸：选中候选须 evidence-review `supports` 才进 plan；
@@ -45,6 +45,8 @@ store 只记账，不参与决定顺序。
 
 角色的合同与提示词在 `apps/server/src/agent/roles/`（每个角色一对 `.ts` + `.md`），
 结构化输出的形状在 `roles/structured-output.ts`。harness 是运行时角色，不是子目录。
+
+交互运行由 `apps/server/src/run-scheduler.ts` 持有并发名额和取消信号；HTTP 与批跑都通过 Harness 传递取消。角色追加指令在 Attempt 启动时冻结，详细契约见 [Harness 运行控制](./harness-control.md)。
 
 ### seam
 

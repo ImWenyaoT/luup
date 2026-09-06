@@ -4,6 +4,7 @@
   "scripts": {
     "dev": "turbo run dev --parallel",
     "dev:api": "pnpm --filter @luup/server dev",
+    "dev:api:e2e": "tsx apps/server/test/e2e-server.ts",
     "dev:api:live": "pnpm --filter @luup/server dev:live",
     "dev:web": "pnpm --filter @luup/frontend dev",
     "dev:webmcp": "NEXT_PUBLIC_LUUP_WEBMCP=1 pnpm run dev:web",

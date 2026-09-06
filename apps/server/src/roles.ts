@@ -45,6 +45,7 @@ export type StageExecutor = (request: {
   agent: Agent<any, any>;
   input: string;
   timeoutMs: number;
+  signal?: AbortSignal;
   /** 这次调用**已经发生**的用量。成功路径经由它交还，失败路径挂在抛出的异常上
    *  （`error.usage`）—— 两条路都汇进 `runTask` 的同一个累加器。
    *  离线替身不花钱，不实现它就是「不知道」，不会被写成零。 */
@@ -60,6 +61,7 @@ function buildStageInput(spec: {
   question: string;
   goal: string;
   inputs: StoredInput[];
+  userInstruction?: string;
   priorAttempts?: readonly string[];
   promotedCandidateId?: string;
   correction?: { issue: string; candidate: unknown; frozenSearches?: EvidenceRecord[] };
@@ -69,6 +71,7 @@ function buildStageInput(spec: {
     goal: spec.goal,
     input_artifacts: spec.inputs,
   };
+  if (spec.userInstruction?.trim()) payload.user_instruction = spec.userInstruction;
   // 空记忆不添加字段，保持消融臂与自由输入的形状；非空记忆放在纠错材料之前。
   if (spec.priorAttempts && spec.priorAttempts.length > 0) {
     payload.prior_attempts = spec.priorAttempts;
@@ -417,8 +420,15 @@ export type TaskRunResult = {
  */
 export async function runTask(
   context: TaskContext,
-  options: { execute: StageExecutor; ledger?: EvidenceLedger; onTrace?: (event: RunTraceEvent) => void },
+  options: {
+    execute: StageExecutor;
+    ledger?: EvidenceLedger;
+    onTrace?: (event: RunTraceEvent) => void;
+    signal?: AbortSignal;
+  },
 ): Promise<TaskRunResult> {
+  options.signal?.throwIfAborted();
+  const userInstruction = context.userInstruction;
   const ledger = options.ledger ?? new EvidenceLedger();
   const { agents, captures } = createRoles(ledger);
   const agent = agents[context.role];
@@ -460,6 +470,7 @@ export async function runTask(
       if (remaining <= 0) {
         throw new StageError("deadline_exceeded", `${context.role} exceeded the Attempt deadline`);
       }
+      options.signal?.throwIfAborted();
       callStarted = true;
       await options.execute({
         runId: context.runId,
@@ -468,10 +479,12 @@ export async function runTask(
         task: context.goal,
         agent,
         timeoutMs: remaining,
+        signal: options.signal,
         input: buildStageInput({
           question: context.question,
           goal: context.goal,
           inputs: context.inputArtifacts,
+          userInstruction,
           priorAttempts: context.priorAttempts,
           promotedCandidateId: context.promotedCandidateId,
           correction,
@@ -484,10 +497,12 @@ export async function runTask(
         },
         onTrace: options.onTrace,
       });
+      options.signal?.throwIfAborted();
       if (!callHasUsage) hasUnknownUsage = true;
       if (spent && hasUnknownUsage) spent = { ...spent, incomplete: true };
       // 最终文本只是收尾回执；只有经过本地 schema 校验的工具上报才是产物。
       candidate = capturedArtifact(outputCapture, context.role);
+      options.signal?.throwIfAborted();
       return {
         artifact: accept(candidate),
         corrections,
@@ -500,6 +515,14 @@ export async function runTask(
       spent = addUsage(spent, failedUsage);
       if (callStarted && !callHasUsage && !failedUsage) hasUnknownUsage = true;
       if (spent && hasUnknownUsage) spent = { ...spent, incomplete: true };
+      if (options.signal?.aborted) {
+        const reason: unknown = options.signal.reason;
+        if (reason instanceof Error) {
+          (reason as Error & { corrections?: number }).corrections = corrections;
+          if (spent) (reason as Error & { usage?: StageUsage }).usage = spent;
+        }
+        options.signal.throwIfAborted();
+      }
       if (round === 1 || !(failure instanceof ContractError || failure.name === "ZodError")) {
         // 把纠错次数挂到异常上：失败的 Attempt 也要记准它试过几次
         (failure as { corrections?: number }).corrections = corrections;

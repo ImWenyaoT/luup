@@ -25,7 +25,6 @@ import { BatchManifest, type BatchManifestSnapshot, type BatchTerminalStatus } f
 import { createQwenExecutor } from "../executor.ts";
 import { Harness } from "../harness.ts";
 import { findQuestion, science125Integrity, science125Text, type Science125Question } from "../domain/science125.ts";
-import type { StageExecutor } from "../roles.ts";
 import { modelConfigStatus } from "../seams/index.ts";
 import type { MemoryArm, SourceIdentity } from "../agent/contracts.ts";
 import { SqliteStore } from "../store/store.ts";
@@ -481,7 +480,7 @@ async function runOne(questionId: number, options: BatchQuestionOptions): Promis
   );
   const timeoutMs = options.timeoutMs ?? RUN_TIMEOUT_MS;
   if (!(await settleWithin(attempt.done, timeoutMs))) {
-    controller.abort();
+    controller.abort(new StageError("infra_timeout", "Batch question deadline exceeded"));
     // 取消本身也可能不落地，所以这段等待同样有上界；等不到就自己给 Run 补终态。
     const unwound = await settleWithin(attempt.done, options.graceMs ?? CANCEL_GRACE_MS);
     const detail =
@@ -696,16 +695,7 @@ export function createCampaignMemory(repoRoot: string, dbPath: string): Campaign
 export function createHarnessRunner(store: SqliteStore, memory: CampaignMemory | null = null): RunQuestion {
   // 用量由 harness 每个 Attempt 落一条 `sdk.usage`，这里不再挂第二个写库回调。
   const execute = createQwenExecutor();
-  return ({ runId, signal }) => {
-    const guarded: StageExecutor = (request) => {
-      // 批跑取消之后不再进下一个阶段。当前阶段自己的超时由 executor 管。
-      if (signal.aborted) {
-        return Promise.reject(new StageError("deadline_exceeded", `batch cancelled before ${request.role}`));
-      }
-      return execute(request);
-    };
-    return new Harness(store, guarded, { memory }).execute(runId);
-  };
+  return ({ runId, signal }) => new Harness(store, execute, { memory }).execute(runId, { signal });
 }
 
 export async function main(

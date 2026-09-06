@@ -485,6 +485,8 @@ test("Run 快照把每次角色执行投影成可核验的 one-shot subagent", (
       role: "researcher",
       ordinal: 1,
       mode: "one-shot",
+      tool_calls: null,
+      recent_activity: [],
       status: "running",
       stop_reason: null,
       started_at: "2026-08-06T00:00:00.000Z",

@@ -1,6 +1,16 @@
+const HARNESS_EVENT_KINDS = [
+  "harness.queued",
+  "harness.dispatched",
+  "harness.stop_requested",
+  "harness.instruction_queued",
+  "harness.instruction_applied",
+  "harness.instruction_discarded",
+] as const;
+
 /** 服务端 projection 公开的全部 SSE event kind（不含 sdk.output_rejected）。 */
 export const RUN_EVENT_KINDS = [
   "run.created",
+  ...HARNESS_EVENT_KINDS,
   "tool.evidence_recorded",
   "tool.evidence_dropped",
   "artifact.published",
@@ -31,9 +41,14 @@ export const RUN_EVENT_KINDS = [
   "sdk.trace.callback_error",
 ] as const;
 
-/** UI 订阅的 13 种核心 SSE event（与旧 api.ts subscribe 一致）。 */
+/** 生命周期、指令及工具进度变化均唤醒 UI 回源快照。 */
 export const UI_SSE_EVENT_KINDS = [
+  "sdk.trace.started",
+  "sdk.trace.tool_started",
+  "sdk.trace.tool_ended",
+  "sdk.trace.ended",
   "run.created",
+  ...HARNESS_EVENT_KINDS,
   "attempt.started",
   "subagent.started",
   "subagent.ended",

@@ -8,6 +8,7 @@ import { AuditTrace } from "./AuditTrace";
 import { FeedbackComposer } from "./FeedbackComposer";
 import { FeedbackHistory } from "./FeedbackHistory";
 import { SubagentLineage } from "./SubagentLineage";
+import { RunControls } from "./RunControls";
 import { Trajectory } from "./Trajectory";
 import { getReferenceVerification, referenceVerificationLabel } from "./audit-trace";
 
@@ -203,8 +204,11 @@ const STATUS_COPY: Record<Snapshot["status"], { eyebrow: string; description: st
   },
 };
 
-export function RunWorkspace({ snapshot, onInspectorChange }: RunWorkspaceProps) {
-  const statusCopy = STATUS_COPY[snapshot.status];
+export function RunWorkspace({ snapshot, onInspectorChange, onRefetch }: RunWorkspaceProps) {
+  const statusCopy =
+    snapshot.status === "failed" && snapshot.error_code === "interrupted"
+      ? { eyebrow: "已停止", description: "研究已停止，已冻结产物与执行记录仍可查看。" }
+      : STATUS_COPY[snapshot.status];
   const verification = getReferenceVerification(snapshot.recent_events);
   return (
     <Canvas data-testid="run-workspace">
@@ -219,6 +223,7 @@ export function RunWorkspace({ snapshot, onInspectorChange }: RunWorkspaceProps)
           );
         })}
       </Rail>
+      <RunControls key={snapshot.id} snapshot={snapshot} onRefetch={onRefetch} />
       <Hero>
         <Eyebrow>{statusCopy.eyebrow}</Eyebrow>
         <h2>{snapshot.question}</h2>

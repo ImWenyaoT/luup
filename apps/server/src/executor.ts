@@ -206,8 +206,10 @@ export function createQwenExecutor(
     }
     return cached.runner;
   };
-  return async ({ runId, taskId, role, task, agent, input, timeoutMs, onUsage, onTrace }) => {
-    const signal = AbortSignal.timeout(timeoutMs);
+  return async ({ runId, taskId, role, task, agent, input, timeoutMs, signal: externalSignal, onUsage, onTrace }) => {
+    externalSignal?.throwIfAborted();
+    const deadlineSignal = AbortSignal.timeout(timeoutMs);
+    const signal = externalSignal ? AbortSignal.any([externalSignal, deadlineSignal]) : deadlineSignal;
     const traceId = `${taskId ?? `${runId}:${role}`}:${++traceSequence}`;
     let traceWriteError: unknown = null;
     const trace = new TraceCollector(
@@ -244,6 +246,7 @@ export function createQwenExecutor(
     traces.set(traceId, trace);
     let runner: Runner;
     try {
+      externalSignal?.throwIfAborted();
       runner = runnerFor();
       if (traceWriteError) {
         throw new StageError("runtime_error", "run trace persistence failed", { cause: traceWriteError });
@@ -282,11 +285,12 @@ export function createQwenExecutor(
           },
         }),
       );
+      signal.throwIfAborted();
     } catch (error) {
       // 先记账再分类：下面每条分支都会抛，记账写进分支就会漏掉其中几条。
       // 记账本身失败绝不拖垮 Attempt —— 少一条用量事件，远好过因为记账把 Run 打死。
       const rejectedUsage =
-        error instanceof QwenResponseStatusError
+        (error instanceof QwenResponseStatusError || signal.aborted) && providerResponses.length > 0
           ? stageUsageOf({
               usage: {
                 requests: providerResponses.length,
@@ -298,14 +302,22 @@ export function createQwenExecutor(
             })
           : null;
       if (rejectedUsage) rejectedUsage.toolCalls = trace.toolCalls;
-      const spent = rejectedUsage ?? usageOf(error) ?? observed.usage;
+      const finishedUsage = result
+        ? stageUsageOf({
+            usage: result.runContext.usage,
+            _generatedItems: result.newItems,
+            _modelResponses: result.rawResponses,
+          })
+        : null;
+      const spent = finishedUsage ?? rejectedUsage ?? usageOf(error) ?? observed.usage;
+      if (spent && signal.aborted && !result) spent.incomplete = true;
       trace.ended(
         "failed",
         error instanceof Error ? error.name : "unknown_error",
         traceUsageOf(spent, trace.toolCalls),
       );
       traces.delete(traceId);
-      if (traceWriteError) {
+      if (traceWriteError && !externalSignal?.aborted) {
         throw new StageError("runtime_error", "run trace persistence failed", { cause: traceWriteError });
       }
       if (spent) {
@@ -322,7 +334,12 @@ export function createQwenExecutor(
         throw classified;
       };
       // 执行层失败不给纠错机会：换个提示词重发一次也不会让超时或 provider 报错消失。
-      if (signal.aborted) {
+      if (externalSignal?.aborted) {
+        const reason: unknown = externalSignal.reason;
+        if (reason instanceof Error && spent) (reason as Error & { usage?: StageUsage }).usage = spent;
+        externalSignal.throwIfAborted();
+      }
+      if (deadlineSignal.aborted) {
         fail(new StageError("deadline_exceeded", `${role} exceeded the Attempt deadline`, { cause: error }));
       }
       // SDK 把「模型没按约定输出」和「provider 坏了」分成了不同的错误类，这里必须跟着分：

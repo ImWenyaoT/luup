@@ -498,3 +498,63 @@ test("does not touch the network when there is nothing to look up", async () => 
   assert.deepEqual(records, []);
   assert.equal(called, false);
 });
+
+test("pre-aborted verification never begins independent lookup", async () => {
+  const reason = new Error("cancel verification");
+  let calls = 0;
+  const verify = createReferenceVerifier({
+    lookup: async () => {
+      calls += 1;
+      return [];
+    },
+  });
+  await assert.rejects(
+    verify({ plan: plan([card.url!]), research: research([card]), signal: AbortSignal.abort(reason) }),
+    (error) => error === reason,
+  );
+  assert.equal(calls, 0);
+});
+
+for (const fails of [false, true]) {
+  test(`cancellation wins over a late arXiv lookup (fails=${fails})`, async () => {
+    const controller = new AbortController();
+    const reason = new Error("cancel verification");
+    let doiCalls = 0;
+    const verify = createReferenceVerifier({
+      lookup: async (_, signal) => {
+        assert.equal(signal, controller.signal);
+        controller.abort(reason);
+        if (fails) throw new Error("lookup failure");
+        return [remote];
+      },
+      doiLookup: async () => {
+        doiCalls += 1;
+        return [];
+      },
+    });
+    await assert.rejects(
+      verify({ plan: plan([card.url!, doiCard.url!]), research: research([card, doiCard]), signal: controller.signal }),
+      (error) => error === reason,
+    );
+    assert.equal(doiCalls, 0);
+  });
+}
+
+test("DOI cancellation reaches each resolver and is never converted into partial infrastructure failure", async () => {
+  const controller = new AbortController();
+  const reason = new Error("cancel DOI verification");
+  const signals: Array<AbortSignal | undefined> = [];
+  const verify = createReferenceVerifier({
+    resolveSingleDoi: async (_, options) => {
+      signals.push(options?.signal);
+      controller.abort(reason);
+      throw new Error("fetch interrupted");
+    },
+  });
+  await assert.rejects(
+    verify({ plan: doiPlan(), research: research(doiCards), signal: controller.signal }),
+    (error) => error === reason,
+  );
+  assert.equal(signals.length, 5);
+  assert.ok(signals.every((signal) => signal === controller.signal));
+});

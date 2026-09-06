@@ -18,7 +18,7 @@ export default defineConfig({
   webServer: [
     {
       command:
-        "cd ../.. && LUUP_RUNTIME=deterministic LUUP_DATABASE=outputs/e2e/typescript-runs.db PORT=8010 pnpm exec tsx apps/server/src/main.ts",
+        "cd ../.. && LUUP_RUNTIME=deterministic LUUP_DATABASE=outputs/e2e/typescript-runs.db PORT=8010 pnpm run dev:api:e2e",
       url: "http://127.0.0.1:8010/api/health",
       reuseExistingServer: false,
       timeout: 120_000,
