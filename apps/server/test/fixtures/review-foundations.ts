@@ -5,7 +5,7 @@ export function passingReviewFoundations() {
     falsifiability: {
       verdict: "pass" as const,
       reason: "预测列明可否定条件。",
-      plan_paths: ["execution_plan.predictions"],
+      plan_paths: ["execution_plan"],
     },
     evidence_support: {
       verdict: "pass" as const,
@@ -15,7 +15,7 @@ export function passingReviewFoundations() {
     executability: {
       verdict: "pass" as const,
       reason: "执行步骤有明确操作和输出。",
-      plan_paths: ["execution_plan.steps"],
+      plan_paths: ["execution_plan"],
     },
     citation_relevance: {
       verdict: "pass" as const,

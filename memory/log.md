@@ -521,3 +521,9 @@
 
 ## [2026-09-06] run | q61 | SUCCESS
 - outputs/runtime/flash-q61-20260906-v10.db#0228174fcc4945aca14db6b4c4ed0a4d｜脉冲星形成通道的运动学判别：在同一不对称性度量下对照电子俘获超新星与铁核坍缩的出生 kick｜引用 2966.2005, https://doi.org/10.3847/1538-4357/aa618e, https://doi.org/10.3847/1538-4357/aadbae, https://doi.org/10.3847/2041-8213/ab5642, https://doi.org/10.1007/978-94-009-7876-8_10, https://doi.org/10.1088/0004-637x/806/2/153, https://doi.org/10.1143/ptp.103.713, 1806.04175v1, https://doi.org/10.1093/mnras/stt2188, astro-ph/9704268v1, 1008.2130v2, https://doi.org/10.3847/1538-4357/ac0a74
+
+## [2026-09-06] run | q61 | FAILED
+- outputs/runtime/flash-q61-20260906-v11.db#1dad9cb354ee462ba57a35e458c7c979｜携带状态方程条件的中子星质量低质量超额作为脉冲星形成通道判别量：双星脉冲星计时样本的预注册有界比较设计｜引用 https://doi.org/10.1051/0004-6361/202661228, 2966.2012, https://doi.org/10.1088/0004-637x/719/1/722, https://doi.org/10.1086/167451, https://doi.org/10.3847/1538-4357/aadbae, https://doi.org/10.3847/2041-8213/ab5642, https://doi.org/10.1093/mnras/274.2.461, https://doi.org/10.1086/318893, https://doi.org/10.1016/j.newar.2010.09.005｜cls=invalid_output
+
+## [2026-09-06] run | q61 | FAILED
+- outputs/runtime/flash-q61-20260906-v12.db#4965026341b540649b28dab61ba81093｜电子俘获超新星的中子星流体学 kick 上限：在多个二维火焰传播前导星与三维对照上的同口径复算｜引用 https://doi.org/10.3847/1538-4357/aadbae, 1802.05274v2, https://doi.org/10.3847/1538-4357/aa618e, 2112.15257v2, https://doi.org/10.3847/1538-4357/aae648, 1806.04175v1, 1605.09529v1, https://doi.org/10.3847/1538-4365/ad12c1, astro-ph/0309588v2, 2010.09005v1｜cls=invalid_output

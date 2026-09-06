@@ -464,6 +464,20 @@
       },
       "unchanged": "不增工具或检索/纠错次数，不改模型、费用授权、B1–B4、supports-only、Reviewer 单次与正式批启动门；不自动补摘要、不冒充全文，不改旧 Artifact。",
       "effect_on_numbers": "来源可读内容增加可能改变推断、拒收率、输入 tokens 与时长；后续须固定版本重跑，既有诊断不能计为盲测或稳定性验证。"
+    },
+    {
+      "date": "2026-09-06",
+      "before_phase_a": false,
+      "before_definitive_phase_a": true,
+      "before_any_reading": false,
+      "recorded_when": "Q61 v11、固定摘要版 v12 均产出研究计划且模型拒收，但 Reviewer 的深层 JSON 路径纠错后仍错误，终态 invalid_output；旧结果保留。v12 人工审查另确认 kick 积分量纲与来源公式不符。",
+      "summary": "当前 Reviewer 上报只从计划顶层章节枚举选择定位字段，具体问题留 reason，降低自行猜嵌套层级导致的格式失败。",
+      "changes": {
+        "output_contract": "reviewOutputSchema 供当前 structured_output 使用，plan_paths 枚举直接取 researchPlanSchema.keyof()；canonical reviewSchema 与公开历史投影仍接受旧的有效深层路径。五项必填、实际存在校验、任一 fail 不得接受不变。",
+        "premise_checks": "Reviewer 明确检查核心公式量纲与作者归属；没有实际可读公式内容不能把记忆中的函数当已核实引用；正对照不得把未经证明的特定物理输出当必过条件。"
+      },
+      "unchanged": "不改 planner 或旧方案正文，不增加模型、工具、检索、纠错、deadline，不改费用与正式批启动门；拒收方向不等于 Reviewer 已完整识别全部科学错误。",
+      "effect_on_numbers": "定位字段变简单可能降低格式失败；同一冻结 v12 方案重评仅检验本项修复与拒收行为，不作为新计划成功、独立科学验证或盲测。"
     }
   ],
   "interpretation": "这是对已记录架构取舍的证据，不是普适优越性主张。结论的形状只能是「在这一条 harness commit、这一个题库、这一条串行顺序下，跨 run 记忆让交付率朝某个方向动了多少」，不能读成「记忆机制优于无记忆」或反过来。Do not claim superiority from one successful trace, one direction, or an unpriced token count.",

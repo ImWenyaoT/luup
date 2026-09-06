@@ -2,7 +2,7 @@ import { Agent } from "@openai/agents";
 
 import { modelForRole, sharedModelSettings } from "../../seams/index.ts";
 import type { EvidenceLedger } from "../evidence.ts";
-import { reviewSchema } from "../contracts.ts";
+import { reviewOutputSchema } from "../contracts.ts";
 import { instructionsFrom } from "../instructions.ts";
 import { createArxivSearchTool } from "../tools/arxiv-search.ts";
 import { createCrossrefSearchTool } from "../tools/crossref-search.ts";
@@ -21,7 +21,7 @@ export default function defineFinalReviewer(ledger: EvidenceLedger): {
   agent: Agent<any, any>;
   capture: StructuredOutput;
 } {
-  const capture = createStructuredOutput(reviewSchema);
+  const capture = createStructuredOutput(reviewOutputSchema);
   const permitSearch = createReviewerSearchPermit();
   const beforeSearch = () => {
     capture.assertOpen();

@@ -5,11 +5,11 @@ import { EvidenceLedger } from "../src/agent/evidence.ts";
 import { ContractError } from "../src/agent/failures.ts";
 import { reportStructuredOutput } from "../src/agent/roles/structured-output.ts";
 import { runTask, type StageExecutor } from "../src/roles.ts";
-import type { TaskContext } from "../src/agent/contracts.ts";
+import { reviewOutputSchema, reviewSchema, type TaskContext } from "../src/agent/contracts.ts";
 import { SqliteStore } from "../src/store/store.ts";
 
 const reviewerInputs = [
-  { id: "plan", type: "research-plan", content: { question: "问题" } },
+  { id: "plan", type: "research-plan", content: { problem_statement: "问题" } },
   { id: "evidence-review", type: "evidence-review", content: {} },
 ];
 
@@ -19,7 +19,7 @@ const foundationChecks = Object.fromEntries(
     {
       verdict: "pass",
       reason: "对应前提与检验条件成立",
-      plan_paths: ["question"],
+      plan_paths: ["problem_statement"],
     },
   ]),
 );
@@ -212,7 +212,7 @@ test("a blocking finding overrides model acceptance without a correction", async
           executability: {
             verdict: "fail",
             reason: "嵌套模型的似然增益未校准，不能区分发现与过拟合",
-            plan_paths: ["question"],
+            plan_paths: ["problem_statement"],
           },
         },
       });
@@ -222,4 +222,21 @@ test("a blocking finding overrides model acceptance without a correction", async
   assert.equal(result.corrections, 0);
   assert.equal((result.artifact as { accepted: boolean }).accepted, false);
   assert.ok(result.drift.some((item) => item.field === "accepted" && item.before === "true" && item.after === "false"));
+});
+
+test("current reviewer selects top-level sections while historical deep paths remain readable", () => {
+  assert.ok(reviewOutputSchema.safeParse(review).success);
+  const historical = {
+    ...review,
+    foundation_checks: {
+      ...foundationChecks,
+      premise: {
+        verdict: "pass",
+        reason: "旧审查保留具体路径",
+        plan_paths: ["execution_plan.predictions[0].prediction"],
+      },
+    },
+  };
+  assert.ok(reviewSchema.safeParse(historical).success);
+  assert.equal(reviewOutputSchema.safeParse(historical).success, false);
 });

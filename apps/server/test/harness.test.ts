@@ -471,7 +471,7 @@ function fake(
               executability: {
                 verdict: "fail",
                 reason: "统计判据无法区分成功与失败",
-                plan_paths: ["experiments.design"],
+                plan_paths: ["experiments"],
               },
             }
           : {}),

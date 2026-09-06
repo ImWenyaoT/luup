@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { reviewFoundationChecksSchema } from "./review-foundations.ts";
+import { reviewFoundationCheckSchema, reviewFoundationChecksSchema } from "./review-foundations.ts";
 
 export const roleSchema = z.enum([
   "researcher",
@@ -389,6 +389,21 @@ export const reviewSchema = z.object({
   feedback: z.array(z.string()),
   suggested_successor_roles: z.array(roleSchema),
   accepted: z.boolean(),
+});
+
+/** 当前模型只需定位到确定存在的章节；细项写在 reason，避免猜 JSON 嵌套层级。
+ * canonical reviewSchema 保持兼容历史已保存的更深路径。 */
+const reviewOutputCheckSchema = reviewFoundationCheckSchema.extend({
+  plan_paths: z.array(researchPlanSchema.keyof()).min(1),
+});
+export const reviewOutputSchema = reviewSchema.extend({
+  foundation_checks: z.strictObject({
+    premise: reviewOutputCheckSchema,
+    falsifiability: reviewOutputCheckSchema,
+    evidence_support: reviewOutputCheckSchema,
+    executability: reviewOutputCheckSchema,
+    citation_relevance: reviewOutputCheckSchema,
+  }),
 });
 
 export type Research = z.infer<typeof researchSchema>;
