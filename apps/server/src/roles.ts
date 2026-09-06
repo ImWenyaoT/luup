@@ -64,16 +64,29 @@ type CitationCorrection = {
   matching_evidence_ids: string[];
 };
 
-class CitationContractError extends ContractError {
-  constructor(readonly citationErrors: CitationCorrection[]) {
+type ClaimCorrection = {
+  claim_index: number;
+  evidence_index: number;
+  reported_evidence_id: string;
+  matching_evidence_ids: string[];
+};
+
+class ResearchContractError extends ContractError {
+  constructor(
+    readonly citationErrors: CitationCorrection[],
+    readonly claimErrors: ClaimCorrection[],
+  ) {
     super(
-      citationErrors
-        .map((item) =>
+      [
+        ...citationErrors.map((item) =>
           item.reason === "unknown_search"
             ? `citation cites a search this attempt never ran: ${item.reported_evidence_id}`
             : `citation "${item.locator}" was not returned by search ${item.reported_evidence_id}`,
-        )
-        .join("；"),
+        ),
+        ...claimErrors.map(
+          (item) => `claims cite evidence from neither this attempt nor its inputs: ${item.reported_evidence_id}`,
+        ),
+      ].join("；"),
     );
   }
 }
@@ -83,6 +96,7 @@ type ArtifactCorrection = {
   candidate: unknown;
   frozenSearches?: EvidenceRecord[];
   citationErrors?: CitationCorrection[];
+  claimErrors?: ClaimCorrection[];
 };
 
 /** 角色只接收显式冻结输入，不共享对话。稳定字段在前，纠错材料追加在后以复用公共前缀。 */
@@ -116,6 +130,9 @@ function buildStageInput(spec: {
     payload.rejected_candidate = spec.correction.candidate;
     if (spec.correction.citationErrors) {
       payload.citation_errors = spec.correction.citationErrors;
+    }
+    if (spec.correction.claimErrors) {
+      payload.claim_errors = spec.correction.claimErrors;
     }
     if (spec.correction.frozenSearches) {
       payload.frozen_searches = spec.correction.frozenSearches;
@@ -173,10 +190,30 @@ function canonicalizeResearch(
     }
     return [{ evidence_id: record.evidenceId, ...registered }];
   });
-  if (citationErrors.length > 0) throw new CitationContractError(citationErrors);
-
   // 失败/空检索也要留在 queries 里供审计，但没有返回 canonical citation 就不能支撑 claim。
   const citable = new Set([...citations.map((item) => item.evidence_id), ...inherited]);
+  const claimErrors: ClaimCorrection[] = [];
+  proposed.claims.forEach((claim, claimIndex) => {
+    claim.evidence_ids.forEach((id, evidenceIndex) => {
+      if (citable.has(id)) return;
+      // 常见转录错误是把论文 locator 填进 evidence_ids。只提示本稿已选择且本轮确实
+      // 检索到的同一 locator，不为未知主张另找论文，也不代替模型选择或改写引用。
+      const selectedSources = new Set(
+        proposed.citations.filter((item) => item.locator === id).map((item) => item.source_type),
+      );
+      claimErrors.push({
+        claim_index: claimIndex,
+        evidence_index: evidenceIndex,
+        reported_evidence_id: id,
+        matching_evidence_ids: scoped
+          .filter((record) =>
+            record.citations.some((item) => item.locator === id && selectedSources.has(item.source_type)),
+          )
+          .map((record) => record.evidenceId),
+      });
+    });
+  });
+  if (citationErrors.length > 0 || claimErrors.length > 0) throw new ResearchContractError(citationErrors, claimErrors);
   return researchSchema.parse({
     ...proposed,
     queries: scoped.map((record) => ({
@@ -187,15 +224,6 @@ function canonicalizeResearch(
       result_summary: record.resultSummary,
     })),
     citations,
-    claims: proposed.claims.map((claim) => ({
-      ...claim,
-      evidence_ids: claim.evidence_ids.map((id) => {
-        if (!citable.has(id)) {
-          throw new ContractError(`claims cite evidence from neither this attempt nor its inputs: ${id}`);
-        }
-        return id;
-      }),
-    })),
   });
 }
 
@@ -580,7 +608,8 @@ export async function runTask(
       correction = {
         issue: failure.message,
         candidate,
-        citationErrors: failure instanceof CitationContractError ? failure.citationErrors : undefined,
+        citationErrors: failure instanceof ResearchContractError ? failure.citationErrors : undefined,
+        claimErrors: failure instanceof ResearchContractError ? failure.claimErrors : undefined,
         // 独立的第二次 Runner 调用看不到首轮 tool conversation，必须显式交还已冻结检索。
         frozenSearches:
           context.role === "researcher" || context.role === "reviewer" ? ledger.scopedRecords() : undefined,

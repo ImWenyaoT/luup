@@ -95,7 +95,12 @@ export const researchSchema = z.object({
     .array(
       z.object({
         statement: z.string().min(1),
-        evidence_ids: z.array(z.string().min(1)).min(1),
+        evidence_ids: z
+          .array(z.string().min(1))
+          .min(1)
+          .describe(
+            "Copy frozen search evidence_id values (ev_...), never paper locators such as arxiv:... or doi:...",
+          ),
       }),
     )
     .min(1)

@@ -512,3 +512,6 @@
 
 ## [2026-09-06] run | q61 | FAILED
 - outputs/runtime/flash-q61-20260906-v7.db#70c4e4e8739e403ba2484d0b34ffd230｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q61 | FAILED
+- outputs/runtime/flash-q61-20260906-v8.db#f00c3e0f2e774c368534376bc3489890｜未产出 research-plan｜cls=invalid_output

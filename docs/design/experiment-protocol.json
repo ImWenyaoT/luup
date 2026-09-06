@@ -407,6 +407,19 @@
       },
       "unchanged": "保持 supports-only 晋升、禁止 uncertain/contradicts 晋升、无合格候选 fail-closed、Reviewer 单次拒收、B1–B4、冻结 Artifact、KB 注入门、所有字段 schema、6次检索额度、一次纠错与 deadline；不改变题集、模型、统计设计、正式批启动门与费用授权。",
       "effect_on_numbers": "引用反馈可能降低转录失败；候选收束和判定对象澄清可能改变 supports、补证、交付率与 token，方向幅度未知。改动在看过诊断之后，后续试跑仍是开发证据，不能与旧批混读或把试到一次成功当成可靠性验收。"
+    },
+    {
+      "date": "2026-09-06",
+      "before_phase_a": false,
+      "before_definitive_phase_a": true,
+      "before_any_reading": false,
+      "recorded_when": "已读取修复后 Q61 v8：Researcher 纠错修复了 citation 的检索归属，但 claims 将 arxiv:/doi: locator 填入 evidence_ids 的错误因先检查 citations 而在纠错后才暴露。原始两次上报、纠错输入和数据库均保留；正式 Phase A/B 未启动。",
+      "summary": "Research 引用与 claims 成员性错误一次聚合反馈，避免串行暴露不同字段错误耗尽唯一纠错机会。",
+      "changes": {
+        "whole_research_feedback": "在同一次 canonicalizeResearch 检查中收集 citation_errors 和 claim_errors，全部拒收后交给现有一次 correction。claim_errors 含主张/引用下标、原值及本稿已选择且本 Attempt 实际检索到的相同 locator 对应 evidence_id 提示；未知值无匹配，不自动映射、不新增来源。工具 schema 描述和提示词明确 evidence_ids 使用 ev_...，论文编号只写 locator。"
+      },
+      "unchanged": "没有新增纠错或检索回合，不改变候选晋升/拒收、引用成员性、B1–B4、字段必填/类型边界、模型与正式批启动门。无错误的科学原文不由代码代写；旧失败不覆盖。",
+      "effect_on_numbers": "预计减少同一产物跨字段错误的串行拒收；作用须由真实运行验证。离线重放修正仅是回归测试，不得计作模型成功、正式研究报告或可靠性证据。"
     }
   ],
   "interpretation": "这是对已记录架构取舍的证据，不是普适优越性主张。结论的形状只能是「在这一条 harness commit、这一个题库、这一条串行顺序下，跨 run 记忆让交付率朝某个方向动了多少」，不能读成「记忆机制优于无记忆」或反过来。Do not claim superiority from one successful trace, one direction, or an unpriced token count.",

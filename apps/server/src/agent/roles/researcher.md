@@ -33,8 +33,10 @@ limitations 通常 1–3 项（硬上限 5）。research_framing 的各项只保
 
 citations 只写**本次调用**实际检索到的内容；claims 可以引用输入 Artifact 里
 已冻结的 evidence_id。这两处是你的选择，会被逐条核验：引一条没跑过的检索，这一轮作废。
-纠错输入若含 `citation_errors`，逐项检查 citation_index、locator 和 matching_evidence_ids，
-一次修完全部引用及关联 claims。匹配列表只是本 Attempt 的检索提示，不是自动验收：
+`claims[].evidence_ids` 必须填检索返回的 `ev_...` 标识，不能填 `arxiv:...`、`doi:...` 或 URL；
+论文编号放在 citations[].locator，二者不是同一个字段。
+纠错输入若含 `citation_errors` 或 `claim_errors`，逐项检查索引与 matching_evidence_ids，
+一次修完全部引用及关联 claims，不能只修错误列表的第一类。匹配列表只是本 Attempt 的检索提示，不是自动验收：
 没有匹配就不能保留该引用；有多个匹配须核对实际查询与来源，不能凭空选一个标识。
 
 `queries` 不一样 —— 它由 harness 按检索台账的实录填充，你写什么最终都会被整条覆写。

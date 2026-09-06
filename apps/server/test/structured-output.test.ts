@@ -462,7 +462,15 @@ test.each([true, false])(
                     ? correction.citation_errors[index].matching_evidence_ids[0]
                     : `ev_wrong_${index}_web`,
               })),
-              claims: [{ statement: "冻结资料提供待检验假设的依据。", evidence_ids: [record!.evidenceId] }],
+              claims: [
+                {
+                  statement: "冻结资料提供待检验假设的依据。",
+                  evidence_ids:
+                    modelCalls === 3 && repair
+                      ? correction.claim_errors.map((item: any) => item.matching_evidence_ids[0])
+                      : ["doi:10.1234/source1", "doi:10.1234/source2"],
+                },
+              ],
             };
         return {
           usage: new Usage(),
@@ -513,6 +521,16 @@ test.each([true, false])(
               );
               assert.equal(correction.rejected_candidate.citations.length, 2);
               assert.equal(correction.frozen_searches.length, 1);
+              assert.deepEqual(
+                correction.claim_errors,
+                [0, 1].map((index) => ({
+                  claim_index: 0,
+                  evidence_index: index,
+                  reported_evidence_id: `doi:10.1234/source${index + 1}`,
+                  matching_evidence_ids: [ledger.scopedRecords()[0]!.evidenceId],
+                })),
+                "claim and citation mistakes must be returned together within the one correction",
+              );
             }
             return execute(request);
           },
