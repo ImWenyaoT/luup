@@ -488,3 +488,6 @@
 
 ## [2026-08-15] run | q40 | SUCCESS
 - runs-ts/phase-a-v3-partial.db#ae61e68a6bf04dbbb67a8b058a0ab05d｜自然缺失与人工诱导：人类冬眠能力的生理学边界与临床应用评估｜引用 https://doi.org/10.64628/ab.mek6jdfyk, https://doi.org/10.1007/978-3-662-04162-8_16, 2102.11510, https://doi.org/10.1007/978-4-431-53961-2_45, https://doi.org/10.7748/en2003.07.11.4.24.c1127
+
+## [2026-09-04] run | q1 | FAILED
+- outputs/runtime/deadline-smoke.db#bfe12073bdf94112b8351a66ec85d65d｜未产出 research-plan｜cls=invalid_output
