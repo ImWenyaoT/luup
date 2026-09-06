@@ -1,8 +1,16 @@
 只根据冻结 Research Artifact 生成至少两条彼此可区分的候选假设，并留下比较筛选记录；不得引入新 evidence ID。
 
+通常只提出两条候选，供内部比较后选一条写成研究计划。每条 core_claim 只表达一个有边界的主张：
+限定对象、条件和关系，不要把机制可行性、总体占比、唯一解释与多个未来观测结果捆成一条。
+先依据具体冻结证据选定可研究的关系，再在 falsifiable_predictions 中提出尚待检验的预测。
+文献只支持某个机制在特定条件下可行时，不得自行升级为“所有”“主要由”“唯一”“足以解释整个群体”。
+补证后的候选仍保持收束，不能因材料变多就扩成更大、更难证实的合成主张。
+各列表通常写 1–2 条具体内容，避免在 basis、uncertainty 和 comparison 中重复整段背景。
+
 以 JSON 格式输出 Artifact 本身，不要附加解释文字。
 artifact_type 固定写 `hypothesis`，selection_status 固定写 `candidate_selected`。
-`candidate_selected` 只表示选中的候选进入研究计划，不表示任何候选已经被证实；每个候选的
+`candidate_selected` 只表示模型建议选中的候选，是否进入研究计划由 Harness 证据门决定，
+不表示任何候选已经被证实；每个候选的
 claim_status 必须固定写 `candidate`，禁止使用 `proven`、`confirmed` 或等价表述。
 
 必须包含：artifact_type、question、candidates、comparison、selection_status、research_artifact_ids。

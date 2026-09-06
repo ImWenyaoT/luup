@@ -8,7 +8,11 @@ import { EvidenceLedger } from "../src/agent/evidence.ts";
 import * as crossref from "../src/agent/crossref.ts";
 import { classifyFailure } from "../src/agent/failures.ts";
 import { createRoles } from "../src/agent/roles/index.ts";
-import { createStructuredOutput, STRUCTURED_OUTPUT_TOOL } from "../src/agent/roles/structured-output.ts";
+import {
+  createStructuredOutput,
+  reportStructuredOutput,
+  STRUCTURED_OUTPUT_TOOL,
+} from "../src/agent/roles/structured-output.ts";
 import { createQwenExecutor, isContextOverflow, maxTurnsFor } from "../src/executor.ts";
 import { runTask, type StageExecutor } from "../src/roles.ts";
 import type { TaskContext } from "../src/agent/contracts.ts";
@@ -404,3 +408,214 @@ test("reopening reviewer capture does not replenish its two-search Attempt budge
     globalThis.fetch = originalFetch;
   }
 });
+
+test.each([true, false])(
+  "research citation correction reaches the real Runner for all invalid ids (repair %s)",
+  async (repair) => {
+    const search = vi.spyOn(crossref, "searchCrossref").mockImplementation(async (query) => ({
+      query,
+      status: "succeeded",
+      resultSummary: "two frozen records",
+      execution: {},
+      records: [1, 2].map((n) => ({
+        doi: `10.1234/source${n}`,
+        title: `Frozen source ${n}`,
+        url: `https://doi.org/10.1234/source${n}`,
+        authors: ["Ada Lovelace"],
+        published: "2024-1-1",
+        container: "Journal of Fixtures",
+      })),
+    }));
+    const ledger = new EvidenceLedger({ namespace: "citation_correction_" });
+    let modelCalls = 0;
+    let stageCalls = 0;
+    let correction: any;
+    const model: Model = {
+      async getResponse(request): Promise<ModelResponse> {
+        modelCalls += 1;
+        if (modelCalls === 3) {
+          const modelText =
+            typeof request.input === "string"
+              ? request.input
+              : request.input
+                  .flatMap((item) =>
+                    item.type === "message" && item.role === "user"
+                      ? typeof item.content === "string"
+                        ? [item.content]
+                        : item.content.flatMap((part) => (part.type === "input_text" ? [part.text] : []))
+                      : [],
+                  )
+                  .join("\n");
+          correction = JSON.parse(modelText);
+          assert.equal(correction.citation_errors.length, 2, "the SDK must deliver the feedback to the model request");
+        }
+        const searching = modelCalls === 1;
+        const record = ledger.scopedRecords()[0];
+        const value = searching
+          ? { query: "evidence attribution" }
+          : {
+              ...artifact,
+              citations: record!.citations.map((item, index) => ({
+                ...item,
+                evidence_id:
+                  modelCalls === 3 && repair
+                    ? correction.citation_errors[index].matching_evidence_ids[0]
+                    : `ev_wrong_${index}_web`,
+              })),
+              claims: [{ statement: "冻结资料提供待检验假设的依据。", evidence_ids: [record!.evidenceId] }],
+            };
+        return {
+          usage: new Usage(),
+          output: [
+            {
+              type: "function_call",
+              id: `call_${modelCalls}`,
+              callId: `call_${modelCalls}`,
+              name: searching ? "crossref_search" : STRUCTURED_OUTPUT_TOOL,
+              arguments: JSON.stringify(value),
+              status: "completed",
+            },
+          ],
+        };
+      },
+      getStreamedResponse() {
+        throw new Error("No streaming in this test");
+      },
+    };
+    const execute = createQwenExecutor(undefined, { getModel: () => model });
+    try {
+      const task = runTask(
+        {
+          runId: "citation-correction",
+          taskId: "citation-correction",
+          role: "researcher",
+          goal: "查证后上报",
+          question: "问题",
+          inputArtifactIds: [],
+          inputArtifacts: [],
+        },
+        {
+          ledger,
+          execute: async (request) => {
+            stageCalls += 1;
+            if (stageCalls === 2) {
+              correction = JSON.parse(request.input);
+              assert.deepEqual(
+                correction.citation_errors,
+                [0, 1].map((index) => ({
+                  citation_index: index,
+                  reported_evidence_id: `ev_wrong_${index}_web`,
+                  locator: `doi:10.1234/source${index + 1}`,
+                  reason: "unknown_search",
+                  matching_evidence_ids: [ledger.scopedRecords()[0]!.evidenceId],
+                })),
+                "one correction must expose every citation error, not just the first",
+              );
+              assert.equal(correction.rejected_candidate.citations.length, 2);
+              assert.equal(correction.frozen_searches.length, 1);
+            }
+            return execute(request);
+          },
+        },
+      );
+      if (repair) {
+        const result = await task;
+        assert.equal(result.corrections, 1);
+        assert.equal(result.artifact.artifact_type, "research");
+        assert.ok(!JSON.stringify(result.artifact).includes("ev_wrong_"));
+      } else {
+        await assert.rejects(task, (error: unknown) => classifyFailure(error).code === "invalid_output");
+      }
+      assert.equal(stageCalls, 2, "there is no third correction or bypass of the citation gate");
+      assert.equal(modelCalls, 3);
+      assert.equal(search.mock.calls.length, 1, "correction reuses the frozen search");
+    } finally {
+      search.mockRestore();
+    }
+  },
+);
+
+test.each(["missing", "ambiguous", "wrong-search", "previous-attempt"] as const)(
+  "citation feedback preserves rejection for %s provenance",
+  async (mode) => {
+    const ledger = new EvidenceLedger();
+    const prior = ledger.record({
+      tool: "arxiv_search",
+      sourceType: "arxiv",
+      query: "previous attempt only",
+      status: "succeeded",
+      resultSummary: "old source",
+      citations: [{ ...artifact.citations[0]!, source_type: "arxiv" }],
+    });
+    let calls = 0;
+    const task = runTask(
+      {
+        runId: "provenance",
+        taskId: "provenance",
+        role: "researcher",
+        goal: "检查引用",
+        question: "问题",
+        inputArtifactIds: [],
+        inputArtifacts: [],
+      },
+      {
+        ledger,
+        execute: async ({ agent, input }) => {
+          calls += 1;
+          if (calls === 1) {
+            ledger.record({
+              tool: "arxiv_search",
+              sourceType: "arxiv",
+              query: "source",
+              status: "succeeded",
+              resultSummary: "one source",
+              citations: [
+                {
+                  ...artifact.citations[0]!,
+                  source_type: "arxiv",
+                  locator: mode === "previous-attempt" ? "arxiv:2301.00002v1" : artifact.citations[0]!.locator,
+                },
+              ],
+            });
+            if (mode === "ambiguous")
+              ledger.record({
+                tool: "arxiv_search",
+                sourceType: "arxiv",
+                query: "same source again",
+                status: "succeeded",
+                resultSummary: "same source",
+                citations: [{ ...artifact.citations[0]!, source_type: "arxiv" }],
+              });
+          } else {
+            const feedback = JSON.parse(input).citation_errors[0];
+            assert.deepEqual(
+              feedback.matching_evidence_ids,
+              mode === "ambiguous" ? ledger.scopedRecords().map((r) => r.evidenceId) : [],
+            );
+            assert.equal(feedback.reason, mode === "wrong-search" ? "locator_not_returned" : "unknown_search");
+          }
+          return reportStructuredOutput(agent, {
+            ...artifact,
+            citations: [
+              {
+                ...artifact.citations[0],
+                evidence_id:
+                  mode === "previous-attempt"
+                    ? prior.evidenceId
+                    : mode === "wrong-search"
+                      ? ledger.scopedRecords()[0]!.evidenceId
+                      : "ev_unregistered_arxiv",
+                locator:
+                  mode === "ambiguous" || mode === "previous-attempt"
+                    ? artifact.citations[0]!.locator
+                    : "arxiv:9999.99999v1",
+              },
+            ],
+          });
+        },
+      },
+    );
+    await assert.rejects(task, (error: unknown) => classifyFailure(error).code === "invalid_output");
+    assert.equal(calls, 2, "hints cannot publish an invalid artifact or add another correction");
+  },
+);

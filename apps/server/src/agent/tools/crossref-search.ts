@@ -20,7 +20,7 @@ export function createCrossrefSearchTool(
     name: "crossref_search",
     description: [
       "Search Crossref for DOI-backed publication metadata.",
-      "Complements arxiv_search, which only covers preprints.",
+      "Complements arxiv_search, which returns openly archived paper versions.",
       "Cite only the evidence_id and citations this tool returns; do not alter them.",
     ].join(" "),
     parameters: z.object({

@@ -56,6 +56,35 @@ export type StageExecutor = (request: {
 
 const normalize = (text: string) => text.split(/\s+/).filter(Boolean).join(" ");
 
+type CitationCorrection = {
+  citation_index: number;
+  reported_evidence_id: string;
+  locator: string;
+  reason: "unknown_search" | "locator_not_returned";
+  matching_evidence_ids: string[];
+};
+
+class CitationContractError extends ContractError {
+  constructor(readonly citationErrors: CitationCorrection[]) {
+    super(
+      citationErrors
+        .map((item) =>
+          item.reason === "unknown_search"
+            ? `citation cites a search this attempt never ran: ${item.reported_evidence_id}`
+            : `citation "${item.locator}" was not returned by search ${item.reported_evidence_id}`,
+        )
+        .join("；"),
+    );
+  }
+}
+
+type ArtifactCorrection = {
+  issue: string;
+  candidate: unknown;
+  frozenSearches?: EvidenceRecord[];
+  citationErrors?: CitationCorrection[];
+};
+
 /** 角色只接收显式冻结输入，不共享对话。稳定字段在前，纠错材料追加在后以复用公共前缀。 */
 function buildStageInput(spec: {
   question: string;
@@ -64,7 +93,7 @@ function buildStageInput(spec: {
   userInstruction?: string;
   priorAttempts?: readonly string[];
   promotedCandidateId?: string;
-  correction?: { issue: string; candidate: unknown; frozenSearches?: EvidenceRecord[] };
+  correction?: ArtifactCorrection;
 }): string {
   const payload: Record<string, unknown> = {
     question: spec.question,
@@ -85,6 +114,9 @@ function buildStageInput(spec: {
       "保留合格字段，只修正违规字段，并重新输出完整 Artifact。",
     ].join("");
     payload.rejected_candidate = spec.correction.candidate;
+    if (spec.correction.citationErrors) {
+      payload.citation_errors = spec.correction.citationErrors;
+    }
     if (spec.correction.frozenSearches) {
       payload.frozen_searches = spec.correction.frozenSearches;
       payload.correction_search_policy = "reuse frozen_searches; do not run retrieval tools again";
@@ -117,17 +149,31 @@ function canonicalizeResearch(
     });
   }
 
-  const citations = proposed.citations.map((citation) => {
+  const citationErrors: CitationCorrection[] = [];
+  const citations = proposed.citations.flatMap((citation, index) => {
     const record = byId.get(citation.evidence_id);
-    if (!record) {
-      throw new ContractError(`citation cites a search this attempt never ran: ${citation.evidence_id}`);
+    const registered = record?.citations.find((item) => item.locator === citation.locator);
+    if (!record || !registered) {
+      // 一次列全错误，让既有的一次纠错能修完整份产物；提示来自本 Attempt 的精确匹配，
+      // 不自动重绑 ID，也不把未检索或有歧义的引用当成已验收。
+      citationErrors.push({
+        citation_index: index,
+        reported_evidence_id: citation.evidence_id,
+        locator: citation.locator,
+        reason: record ? "locator_not_returned" : "unknown_search",
+        matching_evidence_ids: scoped
+          .filter((entry) =>
+            entry.citations.some(
+              (item) => item.locator === citation.locator && item.source_type === citation.source_type,
+            ),
+          )
+          .map((entry) => entry.evidenceId),
+      });
+      return [];
     }
-    const registered = record.citations.find((item) => item.locator === citation.locator);
-    if (!registered) {
-      throw new ContractError(`citation "${citation.locator}" was not returned by search ${record.evidenceId}`);
-    }
-    return { evidence_id: record.evidenceId, ...registered };
+    return [{ evidence_id: record.evidenceId, ...registered }];
   });
+  if (citationErrors.length > 0) throw new CitationContractError(citationErrors);
 
   // 失败/空检索也要留在 queries 里供审计，但没有返回 canonical citation 就不能支撑 claim。
   const citable = new Set([...citations.map((item) => item.evidence_id), ...inherited]);
@@ -445,7 +491,7 @@ export async function runTask(
   const accept = acceptFor(context, ledger, (item) => drift.push(item));
 
   let candidate: unknown;
-  let correction: { issue: string; candidate: unknown; frozenSearches?: EvidenceRecord[] } | undefined;
+  let correction: ArtifactCorrection | undefined;
   let corrections = 0;
   // 一个 Attempt 最多两次模型调用；成功与失败往上带的都是这个 Attempt 的**合计**已发生用量，
   // 只带最后一次会把纠错轮之前烧掉的 token 从账上抹掉。
@@ -534,6 +580,7 @@ export async function runTask(
       correction = {
         issue: failure.message,
         candidate,
+        citationErrors: failure instanceof CitationContractError ? failure.citationErrors : undefined,
         // 独立的第二次 Runner 调用看不到首轮 tool conversation，必须显式交还已冻结检索。
         frozenSearches:
           context.role === "researcher" || context.role === "reviewer" ? ledger.scopedRecords() : undefined,

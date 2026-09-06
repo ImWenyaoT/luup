@@ -390,6 +390,23 @@
       },
       "unchanged": "检索 6 次额度、纠错不重置额度、字段 schema、候选晋升、Reviewer 拒收、B1–B4、模型、题集、统计设计及正式启动门保持不变。",
       "effect_on_numbers": "避免由动态工具移除引入的特定协议失败；对真实写作完成率及 token 的作用尚待验证。旧失败全部保留，不归入正式读数。"
+    },
+    {
+      "date": "2026-09-06",
+      "before_phase_a": false,
+      "before_definitive_phase_a": true,
+      "before_any_reading": false,
+      "registered_commit_amended": "54a0ec5",
+      "recorded_when": "已读取 Q61 v6 的未知 citation evidence_id 拒收，以及 v7 两轮研究/假设/审查完成后所有候选 uncertain 的诊断；另一个仅补证阶段的隔离复现成功。全部不是正式 Phase A/B，旧数据库不重写。本条在修复后 v8 实跑之前追加。",
+      "summary": "一次纠错提供完整引用错误与精确台账提示；收束候选主张，并明确证据审查评估研究依据而非要求未来预测已被证实。",
+      "changes": {
+        "citation_correction_feedback": "canonicalizeResearch 一次收集全部引用成员性错误，给现有一次 correction 添加 citation_errors：索引、原 evidence_id、locator、错误类型、本 Attempt 中 source_type 与 locator 精确匹配的 evidence_id 列表。仅提示模型重交，不自动重绑；不存在、多义、跨 Attempt 及重复错误仍须过原成员性门，不新增纠错次数。",
+        "bounded_hypotheses": "通常只生成两个内部候选，每个 core_claim 聚焦有条件与范围的一条关系；未来预言留在 predictions。不得将机制可行性、总体占比、唯一解释与多个预测捆成一个主张。现有 2–6 候选 schema 不变。",
+        "evidence_review_object": "supports 明确为冻结证据给边界内核心假设提供具体正向依据，不要求未来预测先被观测到；尚未反驳不是正向证据。uncertain 表示缺少提出该边界内假设的具体正向依据，越界与无依据推广不能放行；同前提实质反证优先 contradicts。gaps 只列阻塞具体实验设计步骤的前置缺失，待测结果未知不自动构成 gap。此为判定语义的澄清，会影响后续晋升率，不声称仅格式变化。",
+        "research_evidence_limits": "中文研究笔记；区分观测、模型假定和推导，不把单篇模型条件写成普遍事实；只有出版元数据不能推断具体结果，不凭 arXiv 平台归属推定同行评议状态。"
+      },
+      "unchanged": "保持 supports-only 晋升、禁止 uncertain/contradicts 晋升、无合格候选 fail-closed、Reviewer 单次拒收、B1–B4、冻结 Artifact、KB 注入门、所有字段 schema、6次检索额度、一次纠错与 deadline；不改变题集、模型、统计设计、正式批启动门与费用授权。",
+      "effect_on_numbers": "引用反馈可能降低转录失败；候选收束和判定对象澄清可能改变 supports、补证、交付率与 token，方向幅度未知。改动在看过诊断之后，后续试跑仍是开发证据，不能与旧批混读或把试到一次成功当成可靠性验收。"
     }
   ],
   "interpretation": "这是对已记录架构取舍的证据，不是普适优越性主张。结论的形状只能是「在这一条 harness commit、这一个题库、这一条串行顺序下，跨 run 记忆让交付率朝某个方向动了多少」，不能读成「记忆机制优于无记忆」或反过来。Do not claim superiority from one successful trace, one direction, or an unpriced token count.",
