@@ -1,3 +1,4 @@
+import { passingReviewFoundations } from "./fixtures/review-foundations.ts";
 import assert from "node:assert/strict";
 import { test } from "vitest";
 
@@ -185,14 +186,27 @@ test("failAttempt invents no usage event when there is no usage fact", () => {
   store.close();
 });
 
-/** 一个成功的 reviewer Attempt 需要的两条冻结输入；accept 只读它们的 id。 */
+/** reviewer 的冻结输入保留基础审查引用的真实计划字段。 */
 const reviewerInputs = [
-  { id: "plan", type: "research-plan", content: {} },
+  {
+    id: "plan",
+    type: "research-plan",
+    content: {
+      problem_statement: "比较冻结证据门对错误引用的影响。",
+      execution_plan: {
+        predictions: [{ prediction: "错误引用减少。", falsification_criterion: "错误引用未减少。" }],
+        steps: [{ order: 1, action: "比较固定样本的引用。", expected_output: "逐项记录。" }],
+      },
+      verification_evidence_ids: ["ev_reviewer"],
+      references: ["https://arxiv.org/abs/2303.08774"],
+    },
+  },
   { id: "review", type: "evidence-review", content: {} },
 ];
 
 const review = {
   artifact_type: "review",
+  foundation_checks: passingReviewFoundations(),
   research_plan_artifact_id: "will be overwritten",
   evidence_review_artifact_id: "will be overwritten",
   independent_evidence_ids: ["ev_reviewer"],

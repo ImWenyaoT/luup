@@ -1,3 +1,4 @@
+import { passingReviewFoundations } from "./fixtures/review-foundations.ts";
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -69,6 +70,7 @@ const fixtureLookup: ArxivLookup = async (ids) => {
 function fake(
   options: {
     gapOnce?: boolean;
+    blockingFoundation?: boolean;
     /** 选中候选（evidence-gate）在最终 evidence-review 上的 verdict；默认 supports。 */
     selectedVerdict?: "supports" | "contradicts" | "uncertain";
     /** 非自选候选（prompt-only）的 verdict；用于 Propose≠Select 晋升旁路。 */
@@ -460,6 +462,18 @@ function fake(
     const rejected = reviews <= (options.rejectReviews ?? 0);
     return await reportStructuredOutput(agent, {
       artifact_type: "review",
+      foundation_checks: {
+        ...passingReviewFoundations(),
+        ...(options.blockingFoundation
+          ? {
+              executability: {
+                verdict: "fail",
+                reason: "统计判据无法区分成功与失败",
+                plan_paths: ["experiments.design"],
+              },
+            }
+          : {}),
+      },
       research_plan_artifact_id: ofType("research-plan").at(-1)!.id,
       evidence_review_artifact_id: ofType("evidence-review").at(-1)!.id,
       independent_evidence_ids: [independentEvidence.evidenceId],
@@ -1246,7 +1260,7 @@ test("records a single-shot evaluation round without inventing human feedback", 
   assert.equal(first.target, "research-plan");
   assert.equal(first.sample, "one run / one research plan");
   assert.equal(first.sample_size, 1);
-  assert.equal(first.rubric_version, "review-v1");
+  assert.equal(first.rubric_version, "review-v2");
   assert.match(first.scientific_rationale, /科学/);
   assert.equal(first.feedback_source, "auto");
   assert.equal(first.raw_plan_artifact_id, first.plan_artifact_id);
@@ -1602,4 +1616,22 @@ test("executing a completed run returns durable facts without duplicating campai
   assert.equal(readFileSync(join(directory, "log.md"), "utf8"), log);
   assert.equal(readFileSync(join(directory, "questions/q1.md"), "utf8"), page);
   assert.equal(memory.readPriorAttempts(1).entries.length, 1);
+});
+
+test("a model accept with a failed foundation terminates before verification or replanning", async () => {
+  const h = harness({ blockingFoundation: true });
+  const runId = h.harness.createRun("q");
+  await h.harness.execute(runId);
+  const snapshot = h.store.snapshot(runId)!;
+  assert.equal(snapshot.status, "review_rejected");
+  assert.equal(snapshot.final_artifact_id, null);
+  assert.equal(h.calls.filter((call) => call.role === "research-plan").length, 1);
+  assert.equal(h.calls.filter((call) => call.role === "reviewer").length, 1);
+  const reviewerInput = h.calls.find((call) => call.role === "reviewer")!;
+  assert.ok(reviewerInput.input.input_artifacts.some((item: { type: string }) => item.type === "research"));
+  assert.equal(
+    snapshot.recent_events.some((event: { kind: string }) => event.kind.startsWith("verification.")),
+    false,
+  );
+  h.store.close();
 });

@@ -1,5 +1,8 @@
 # 环境与平台
 .env*
+# 仅放行无密钥的示例模板；真实 .env / .env.local 仍忽略。
+!.env.example
+!.env.*.example
 .DS_Store
 
 # 会话工具状态：私有配置不入库。
@@ -37,8 +40,10 @@ apps/server/outputs/
 *.db-journal
 *.writer-lock.db
 
-# 原子写的孤儿：`apps/server/src/campaign/campaign.ts` 先写 `<记忆页>.<pid>.tmp` 再 rename，进程被杀即残留。
-*.tmp
+# 原子写的孤儿：campaign.ts 先写 `<记忆页>.<pid>.tmp` 再 rename。
+# 只覆盖默认记忆目录的瞬态，不遮盖源码或正式证据中的 .tmp 文件。
+/memory/log.md.[0-9]*.tmp
+/memory/questions/q*.md.[0-9]*.tmp
 
 # 无人值守批跑的控制台副本。正本是显式重定向进 `runs-ts/*.log` 的那份（入库、是证据），
 # 所以这里只忽略 nohup 的兜底文件，不忽略 `*.log`。

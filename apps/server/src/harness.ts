@@ -1,3 +1,4 @@
+import { reviewCanAccept } from "./agent/review-foundations.ts";
 import { EvidenceLedger } from "./agent/evidence.ts";
 import { classifyFailure, StageError } from "./agent/failures.ts";
 import type { RunTraceEvent } from "./agent/run-trace.ts";
@@ -258,7 +259,7 @@ export class Harness {
         runId,
         question,
         "reviewer",
-        [toInput(plan), toInput(evidenceReview)],
+        [...research.map(toInput), toInput(plan), toInput(evidenceReview)],
         "独立评审研究计划",
       );
 
@@ -270,7 +271,7 @@ export class Harness {
       const limitationsAfter = reviewVerdict.weaknesses.length;
       const round = 1 as const;
 
-      if (reviewVerdict.accepted && researcherFeedback === null) {
+      if (reviewCanAccept(reviewVerdict) && researcherFeedback === null) {
         this.#store.emit(
           runId,
           "evaluation.round",

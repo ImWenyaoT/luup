@@ -1,3 +1,4 @@
+import { passingReviewFoundations } from "./fixtures/review-foundations.ts";
 import assert from "node:assert/strict";
 import { test, vi } from "vitest";
 
@@ -316,6 +317,7 @@ test.each(["researcher", "reviewer"] as const)(
         ? artifact
         : {
             artifact_type: "review",
+            foundation_checks: passingReviewFoundations(),
             research_plan_artifact_id: "plan",
             evidence_review_artifact_id: "evidence-review",
             independent_evidence_ids: ["frozen-search"],

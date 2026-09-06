@@ -1,5 +1,7 @@
 import type { Agent } from "@openai/agents";
 
+import { reviewCanAccept, reviewFoundationPathIssues } from "./agent/review-foundations.ts";
+
 import { EvidenceLedger, type EvidenceRecord } from "./agent/evidence.ts";
 import { ContractError, StageError } from "./agent/failures.ts";
 import { createRoles } from "./agent/roles/index.ts";
@@ -430,6 +432,17 @@ function acceptFor(
         const evidenceReview = inputsOfType(context, "evidence-review").at(-1);
         if (!plan || !evidenceReview) throw new Error("reviewer task is missing its inputs");
         const proposed = reviewSchema.parse(raw);
+        const pathIssues = reviewFoundationPathIssues(proposed.foundation_checks, plan.content);
+        if (pathIssues.length > 0) throw new ContractError(pathIssues.join("；"));
+        const accepted = reviewCanAccept(proposed);
+        if (accepted !== proposed.accepted) {
+          onDrift({
+            artifactType: "review",
+            field: "accepted",
+            before: String(proposed.accepted),
+            after: String(accepted),
+          });
+        }
         const usable = new Map(
           ledger
             .scopedRecords()
@@ -446,6 +459,7 @@ function acceptFor(
         }
         return reviewSchema.parse({
           ...proposed,
+          accepted,
           research_plan_artifact_id: plan.id,
           evidence_review_artifact_id: evidenceReview.id,
         });

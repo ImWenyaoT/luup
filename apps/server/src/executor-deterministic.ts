@@ -339,6 +339,17 @@ export function createDeterministicRuntime(store: SqliteStore): {
 
     return await reportStructuredOutput(agent, {
       artifact_type: "review",
+      foundation_checks: {
+        premise: { verdict: "pass", reason: "问题陈述明确限定研究前提。", plan_paths: ["problem_statement"] },
+        falsifiability: { verdict: "pass", reason: "预测列明可否定条件。", plan_paths: ["execution_plan.predictions"] },
+        evidence_support: {
+          verdict: "pass",
+          reason: "核心依据绑定冻结证据。",
+          plan_paths: ["verification_evidence_ids"],
+        },
+        executability: { verdict: "pass", reason: "执行步骤有明确操作和输出。", plan_paths: ["execution_plan.steps"] },
+        citation_relevance: { verdict: "pass", reason: "参考来源对应计划的方法和依据。", plan_paths: ["references"] },
+      },
       research_plan_artifact_id: ofType("research-plan").at(-1)!.id,
       evidence_review_artifact_id: ofType("evidence-review").at(-1)!.id,
       independent_evidence_ids: independentEvidenceId ? [independentEvidenceId] : [],

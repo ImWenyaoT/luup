@@ -433,6 +433,22 @@
       },
       "unchanged": "仅提示既有必要条件，不改变研究 Artifact、引用门禁、B1–B4、Reviewer、候选晋升、纠错次数、模型与费用授权；作者存在不等于已通过独立反查。",
       "effect_on_numbers": "可能降低因已知作者缺失导致的终局拒收；后续仅作开发诊断，不与旧失败合并为正式结果，不从单次成功推断可靠性。"
+    },
+    {
+      "date": "2026-09-06",
+      "before_phase_a": false,
+      "before_definitive_phase_a": true,
+      "before_any_reading": false,
+      "recorded_when": "已读取 Q61 v10：B1–B4 通过且 Reviewer 接受，但人工审查发现嵌套似然判据、参数可识别性与 kick 机制范围问题。正式批未启动；旧运行保持原状。",
+      "summary": "review-v2 将五项基础审查显式结构化并加入确定性接受门，收紧基础缺项与普通建议的区分。",
+      "changes": {
+        "foundation_checks": "当前 Review 必填 premise、falsifiability、evidence_support、executability、citation_relevance，每项 pass/fail、具体理由与实际计划 JSON 路径。任一 fail 或缺失不得批准；模型 accepted=true 且存在 fail 时原地规范为 false 并记录 artifact.field_overwritten，不触发改口纠错。路径不存在按原有格式纠错处理。",
+        "frozen_inputs": "Reviewer 同时读取原 Research 证据卡、ResearchPlan、EvidenceReview，仍独立最多两次检索。提示词要求区分观测与模型假设、机制分量与总量、嵌套似然改善与检测、同参数切片与全范围可识别性。",
+        "planner_clarification": "ResearchPlanner 明确不做显著性主张不等于禁止零假设校准；禁止用结构恒真条件作检测，要求机制范围、允许参数空间和支持/反驳规则一致。未执行的校准不伪装为实验结果。",
+      "historical_read": "公开投影允许旧 Review 缺 foundation_checks；历史 review-v1 事件保持可读。当前生产与 Harness 接受门要求全部五项 pass，三项质量分数不作为替代。"
+      },
+      "unchanged": "不改既有注册内容、模型、费用授权、正式批启动门、一次评审和无同支线改稿、B1–B4、候选 supports-only 与 KB 注入门；不声称结构门能独立验证科学真理。",
+      "effect_on_numbers": "此改动基于已见失败样例，可能显著提高拒收率；旧方案重评属于开发诊断，不是盲测或稳定性证明，不与旧版本统计混合。"
     }
   ],
   "interpretation": "这是对已记录架构取舍的证据，不是普适优越性主张。结论的形状只能是「在这一条 harness commit、这一个题库、这一条串行顺序下，跨 run 记忆让交付率朝某个方向动了多少」，不能读成「记忆机制优于无记忆」或反过来。Do not claim superiority from one successful trace, one direction, or an unpriced token count.",

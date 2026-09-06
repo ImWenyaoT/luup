@@ -322,14 +322,17 @@ const publicArtifactContentSchema = z.discriminatedUnion("artifact_type", [
     results: true,
     references: true,
   }),
-  reviewSchema.pick({
-    artifact_type: true,
-    accepted: true,
-    independent_evidence_ids: true,
-    scores: true,
-    weaknesses: true,
-    feedback: true,
-  }),
+  reviewSchema
+    .pick({
+      artifact_type: true,
+      accepted: true,
+      foundation_checks: true,
+      independent_evidence_ids: true,
+      scores: true,
+      weaknesses: true,
+      feedback: true,
+    })
+    .partial({ foundation_checks: true }),
 ]);
 
 const publicArtifactSchema = z.object({

@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { reviewFoundationChecksSchema } from "./review-foundations.ts";
+
 export const roleSchema = z.enum([
   "researcher",
   "hypothesis-generation",
@@ -371,6 +373,7 @@ export const researchPlanSchema = z.object({
 });
 
 export const reviewSchema = z.object({
+  foundation_checks: reviewFoundationChecksSchema,
   artifact_type: z.literal("review"),
   research_plan_artifact_id: z.string().min(1),
   evidence_review_artifact_id: z.string().min(1),

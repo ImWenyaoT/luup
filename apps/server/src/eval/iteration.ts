@@ -8,7 +8,7 @@ import type { Review } from "../agent/contracts.ts";
  * 三项 1–5 分分别覆盖科学价值、技术深度和应用潜力；它们描述“这个研究计划
  * 值不值得继续人工审查”，不把 Reviewer 分数当成科学发现或终态 gate。
  */
-export const REVIEW_RUBRIC_VERSION = "review-v1" as const;
+export const REVIEW_RUBRIC_VERSION = "review-v2" as const;
 export const REVIEW_RUBRIC_RATIONALE =
   "三项分数分别覆盖科学价值、技术深度和应用潜力，用于记录迭代诊断，不替代人工科学审查。";
 
@@ -21,7 +21,7 @@ export const evaluationRoundSchema = z.object({
   target: z.literal("research-plan"),
   sample: z.literal("one run / one research plan"),
   sample_size: z.literal(1),
-  rubric_version: z.literal(REVIEW_RUBRIC_VERSION),
+  rubric_version: z.enum(["review-v1", REVIEW_RUBRIC_VERSION]),
   scientific_rationale: z.literal(REVIEW_RUBRIC_RATIONALE),
   round: z.number().int().min(1).max(2),
   phase: z.enum(["raw", "revision"]),

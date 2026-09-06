@@ -6,6 +6,7 @@ artifact_type 固定写 `research-plan`。
 不得声称实验已经完成，results.status 固定为 pending_verification。
 预注册采用 bounded comparison，不做显著性主张；`results.expected_outcomes` 不得使用“显著”、
 “统计显著”或 significant，只能写方向、差值、区间及继续/停止条件。
+这不禁止预先定义零假设校准与误报控制程序：不能因不做显著性主张，就用嵌套模型同样本最大似然增益为正、受约束非负的混合份额为正等结构恒真条件充当检测。若无法给出有区分力的决策规则，应把结论限制为描述性比较，不宣称检出机制或群体。
 
 results.validation_basis 固定为 `formula_derivation`。results.feasibility_argument 必须是非空的简体中文有限公式或逻辑推导，
 说明关键假设、预期指标关系或范围，以及如何据此判定实验设计可行；论证至少写清这些关系，不能只写“可行”或其他空洞短语。
@@ -19,6 +20,11 @@ results.validation_basis 固定为 `formula_derivation`。results.feasibility_ar
 - `steps` 至少两步，按 `order` 写动作及其 `expected_output`；`analysis` 写分析方法、输入和决策规则。
 - `result_interpretations` 至少两条，分别说明不同观测结果的含义；还必须写
   `stop_conditions`、`rollback_conditions` 和 `supplement_evidence_conditions`，分别说明何时停止、回退或补证。
+
+写定设计前核对三点：
+- 事实、模型假定与待测结果分开。公式中的单一机制贡献不等于观测总量；参数的适用条件须和引用来源一致，不把冻结研究笔记的转述自动升级为已证实事实。
+- 支持与反驳规则在 predictions、analysis、result_interpretations 与 expected_outcomes 一致且不重叠。若竞争解释可以在允许参数范围内产生同样数据，固定同一参数的切片差异不能证明通道可识别；须明确允许范围、控制或把结论降为条件性比较。
+- 数据条件和判断程序足够具体：如何选样、处理选择效应与不确定度、建立对照、执行零假设模拟或阈值校准。可以尚无实验输出，但不能用“偏高/低位”“稳定”替代未定义的决策规则，也不能仅凭样本数大于参数数声称可识别。
 
 experiments.baselines 与 experiments.metrics 各至少两项，去重后也要够两项。每一项都是
 `{name, evidence_id}`：name 用简体中文写清这一项是什么，evidence_id 必须取自

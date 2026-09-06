@@ -9,11 +9,23 @@ import type { TaskContext } from "../src/agent/contracts.ts";
 import { SqliteStore } from "../src/store/store.ts";
 
 const reviewerInputs = [
-  { id: "plan", type: "research-plan", content: {} },
+  { id: "plan", type: "research-plan", content: { question: "问题" } },
   { id: "evidence-review", type: "evidence-review", content: {} },
 ];
 
+const foundationChecks = Object.fromEntries(
+  ["premise", "falsifiability", "evidence_support", "executability", "citation_relevance"].map((key) => [
+    key,
+    {
+      verdict: "pass",
+      reason: "对应前提与检验条件成立",
+      plan_paths: ["question"],
+    },
+  ]),
+);
+
 const review = {
+  foundation_checks: foundationChecks,
   artifact_type: "review" as const,
   research_plan_artifact_id: "model-value",
   evidence_review_artifact_id: "model-value",
@@ -165,4 +177,49 @@ test("reviewer search evidence is persisted on its own Attempt scope", async () 
   assert.equal(evidence.filter((row: any) => row.attempt_id === researcherAttemptId).length, 1);
   assert.notEqual(evidence[0]!.id, evidence[1]!.id);
   store.close();
+});
+
+test("reviewer cannot accept without explicit foundation checks", async () => {
+  const { foundation_checks: _checks, ...legacyReview } = review;
+  const ledger = new EvidenceLedger();
+  const failure = await runTask(context("missing-foundations"), {
+    ledger,
+    execute: ({ agent }) => {
+      const record = successfulSearch(ledger);
+      return reportStructuredOutput(agent, { ...legacyReview, independent_evidence_ids: [record.evidenceId] });
+    },
+  }).then(
+    () => null,
+    (error: unknown) => error,
+  );
+  assert.ok(failure instanceof Error);
+  assert.match(failure.message, /structured output|structured_output|artifact/i);
+});
+
+test("a blocking finding overrides model acceptance without a correction", async () => {
+  const ledger = new EvidenceLedger();
+  let calls = 0;
+  const result = await runTask(context("blocking-foundation"), {
+    ledger,
+    execute: ({ agent }) => {
+      calls += 1;
+      const record = successfulSearch(ledger);
+      return reportStructuredOutput(agent, {
+        ...review,
+        independent_evidence_ids: [record.evidenceId],
+        foundation_checks: {
+          ...foundationChecks,
+          executability: {
+            verdict: "fail",
+            reason: "嵌套模型的似然增益未校准，不能区分发现与过拟合",
+            plan_paths: ["question"],
+          },
+        },
+      });
+    },
+  });
+  assert.equal(calls, 1);
+  assert.equal(result.corrections, 0);
+  assert.equal((result.artifact as { accepted: boolean }).accepted, false);
+  assert.ok(result.drift.some((item) => item.field === "accepted" && item.before === "true" && item.after === "false"));
 });
