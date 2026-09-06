@@ -449,6 +449,21 @@
       },
       "unchanged": "不改既有注册内容、模型、费用授权、正式批启动门、一次评审和无同支线改稿、B1–B4、候选 supports-only 与 KB 注入门；不声称结构门能独立验证科学真理。",
       "effect_on_numbers": "此改动基于已见失败样例，可能显著提高拒收率；旧方案重评属于开发诊断，不是盲测或稳定性证明，不与旧版本统计混合。"
+    },
+    {
+      "date": "2026-09-06",
+      "before_phase_a": false,
+      "before_definitive_phase_a": true,
+      "before_any_reading": false,
+      "recorded_when": "已读取 Q61 v11 首轮研究：arXiv 连接重置，Crossref 仅标题元数据却被转述为形成机制。检查发现客户端未请求 Crossref 摘要，arXiv 摘要也未保存给下游。正式批未启动。",
+      "summary": "保留检索来源实际返回的可选摘要，修复原始证据内容在冻结交接中丢失。",
+      "changes": {
+        "crossref": "在既有请求 select 中增加 abstract；解析可选来源摘要并去除 JATS 标记，不增加网络调用。",
+        "frozen_abstract": "EvidenceCitation 和 canonical Research citation 保留可选 abstract，由工具台账拥有并覆盖模型上报。缺摘要保持缺省；模型 proposal 不新增摘要字段。arXiv 同次响应的摘要也冻结进台账，纠错及下游共用同一事实。公开 API 仍只投影既有引用字段。",
+        "interpretation": "Researcher、EvidenceReviewer、Reviewer 明确核对具体论文摘要，不把同一检索组的不同标题拼成机制；没有摘要不能当作读过原文或由标题确认数值与因果，关键依据缺失则按已有 uncertain/fail 规则拒收。"
+      },
+      "unchanged": "不增工具或检索/纠错次数，不改模型、费用授权、B1–B4、supports-only、Reviewer 单次与正式批启动门；不自动补摘要、不冒充全文，不改旧 Artifact。",
+      "effect_on_numbers": "来源可读内容增加可能改变推断、拒收率、输入 tokens 与时长；后续须固定版本重跑，既有诊断不能计为盲测或稳定性验证。"
     }
   ],
   "interpretation": "这是对已记录架构取舍的证据，不是普适优越性主张。结论的形状只能是「在这一条 harness commit、这一个题库、这一条串行顺序下，跨 run 记忆让交付率朝某个方向动了多少」，不能读成「记忆机制优于无记忆」或反过来。Do not claim superiority from one successful trace, one direction, or an unpriced token count.",

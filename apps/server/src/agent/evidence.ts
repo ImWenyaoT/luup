@@ -5,6 +5,8 @@ export type EvidenceCitation = {
   title: string;
   locator: string;
   url: string | null;
+  /** 检索返回的原摘要文本；缺失不补写，由代码冻结供纠错与下游审查。 */
+  abstract?: string;
   /** 检索当时从 arXiv 拿到的作者与发表年，只有 arXiv 通路会登记。
    *
    * 这两个字段是 B4 元数据比对的「本 run 冻结事实」—— 没有它们，验收器手上只剩一条

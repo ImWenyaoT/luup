@@ -39,6 +39,7 @@ export function createArxivSearchTool(ledger: EvidenceLedger, beforeSearch?: () 
           title: item.title,
           locator: `arxiv:${item.arxivId}`,
           url: item.url,
+          ...(item.summary.trim() ? { abstract: item.summary.trim() } : {}),
           // 引用验收（B4）比对的就是这两个字段；模型看不到也改不动它们。
           authors: item.authors,
           year: publishedYear(item.published),
@@ -52,10 +53,9 @@ export function createArxivSearchTool(ledger: EvidenceLedger, beforeSearch?: () 
         status: record.status,
         result_summary: record.resultSummary,
         citations: record.citations,
-        abstracts: result.records.map((item) => ({
-          locator: `arxiv:${item.arxivId}`,
-          summary: item.summary,
-        })),
+        abstracts: record.citations
+          .filter((item) => item.abstract !== undefined)
+          .map((item) => ({ locator: item.locator, summary: item.abstract })),
       };
     },
   });

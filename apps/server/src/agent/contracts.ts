@@ -45,8 +45,8 @@ export type EvidenceStatus = z.infer<typeof evidenceStatusSchema>;
 
 /** 模型能写的引用字段。
  *
- * 与 `citationSchema` 的差别只有 arXiv 元数据：那两个字段由代码从台账覆写，
- * 模型既写不动也看不见，所以不能出现在发给模型的 JSON Schema 里
+ * 与 `citationSchema` 的差别是来源元数据和摘要：这些字段由代码从台账覆写，
+ * 模型不能改写，所以不能出现在发给模型的上报 JSON Schema 里
  * （见 `researchProposalSchema`）。
  */
 const proposedCitationSchema = z.object({
@@ -63,6 +63,8 @@ const citationSchema = proposedCitationSchema.extend({
   // zod 的 strip 丢掉 —— 值由 canonicalizeResearch 从台账整条覆写，模型写什么都不作数。
   authors: z.array(z.string()).optional(),
   year: z.number().int().nullable().optional(),
+  // 原来源摘要由检索工具冻结；模型不填写，缺失不推定为已读原文。
+  abstract: z.string().min(1).optional(),
 });
 
 /** 科学问题的结构化 framing。

@@ -1,3 +1,5 @@
+import { XMLParser } from "fast-xml-parser";
+
 import type { EvidenceStatus } from "./contracts.ts";
 import { createRateLimiter } from "./rate-limit.ts";
 
@@ -8,6 +10,7 @@ export type CrossrefRecord = {
   authors: string[];
   published: string;
   container: string;
+  abstract?: string;
 };
 
 export type CrossrefSearchResult = {
@@ -40,6 +43,25 @@ function textOf(value: unknown): string {
   return "";
 }
 
+// Crossref 的摘要可含 JATS 标签；只保留文本，用现有 XML 解析器解码实体。
+// 先去标签再转义尖括号，避免科学不等式被当成元素或供应商文本定义外部实体。
+const abstractParser = new XMLParser({ parseTagValue: false, htmlEntities: true });
+function abstractText(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const plain = value
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<\/?[a-zA-Z][^>]*>/g, " ")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  try {
+    const decoded = abstractParser.parse(`<abstract>${plain}</abstract>`) as { abstract?: unknown };
+    return textOf(decoded.abstract) || undefined;
+  } catch {
+    // 摘要不可解析仍保留可核验 DOI 元数据，不能把损坏文本当成已读证据。
+    return undefined;
+  }
+}
+
 function toRecord(item: unknown): CrossrefRecord | null {
   if (!item || typeof item !== "object") return null;
   const recordItem = item as Record<string, unknown>;
@@ -60,6 +82,7 @@ function toRecord(item: unknown): CrossrefRecord | null {
   const issued =
     recordItem.issued && typeof recordItem.issued === "object" ? (recordItem.issued as Record<string, unknown>) : null;
   const parts = Array.isArray(issued?.["date-parts"]) ? issued?.["date-parts"]?.[0] : null;
+  const abstract = abstractText(recordItem.abstract);
   return {
     doi,
     title,
@@ -67,6 +90,7 @@ function toRecord(item: unknown): CrossrefRecord | null {
     authors,
     published: Array.isArray(parts) ? parts.filter(Boolean).join("-") : "",
     container: textOf(recordItem["container-title"]),
+    ...(abstract ? { abstract } : {}),
   };
 }
 
@@ -97,7 +121,7 @@ export async function searchCrossref(
   const url = new URL(ENDPOINT);
   url.searchParams.set("query", query);
   url.searchParams.set("rows", String(rows));
-  url.searchParams.set("select", "DOI,title,author,URL,issued,container-title");
+  url.searchParams.set("select", "DOI,title,author,URL,issued,container-title,abstract");
 
   await acquire(options.minIntervalMs, options.signal);
   const startedAt = Date.now();

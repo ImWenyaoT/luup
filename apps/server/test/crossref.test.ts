@@ -35,7 +35,7 @@ test("maps a Crossref result to a DOI-backed citable record", async () => {
   assert.deepEqual(record.authors, ["Ada Lovelace"]);
 });
 
-test("Crossref tool freezes DOI authors and year in the canonical citation", async () => {
+test("Crossref tool freezes DOI authors, year and abstract in the canonical citation", async () => {
   const ledger = new EvidenceLedger();
   const search: typeof searchCrossref = async (query) => ({
     query,
@@ -50,6 +50,7 @@ test("Crossref tool freezes DOI authors and year in the canonical citation", asy
         authors: ["Ada Lovelace"],
         published: "2024-3-1",
         container: "Journal of Fixtures",
+        abstract: "A frozen summary with limited claims.",
       },
     ],
   });
@@ -64,6 +65,7 @@ test("Crossref tool freezes DOI authors and year in the canonical citation", asy
     url: "https://doi.org/10.1234/abcd",
     authors: ["Ada Lovelace"],
     year: 2024,
+    abstract: "A frozen summary with limited claims.",
   });
 });
 
@@ -196,4 +198,33 @@ test("Reviewer search budget is cumulative across both retrieval tools", () => {
   permit();
   permit();
   assert.throws(() => permit(), /search budget exhausted/);
+});
+
+test("requests Crossref abstracts once and decodes JATS text without inventing missing abstracts", async () => {
+  let calls = 0;
+  const result = await searchCrossref("source evidence", {
+    minIntervalMs: 0,
+    fetchImpl: (async (url: URL) => {
+      calls += 1;
+      assert.ok(new URL(url).searchParams.get("select")?.split(",").includes("abstract"));
+      return new Response(
+        JSON.stringify({
+          message: {
+            items: [
+              work("10.1234/abstract", "Has abstract", {
+                abstract:
+                  "<jats:p>A &amp; B <jats:italic>measure</jats:italic> &#945; &lt; 10.</jats:p><jats:p>Second&nbsp;paragraph.</jats:p>",
+              }),
+              work("10.1234/missing", "Metadata only"),
+              work("10.1234/empty", "Empty abstract", { abstract: "<jats:p>  </jats:p>" }),
+            ],
+          },
+        }),
+      );
+    }) as unknown as typeof fetch,
+  });
+  assert.equal(calls, 1);
+  assert.equal(result.records[0]?.abstract, "A & B measure α < 10. Second paragraph.");
+  assert.equal(Object.hasOwn(result.records[1]!, "abstract"), false);
+  assert.equal(Object.hasOwn(result.records[2]!, "abstract"), false);
 });

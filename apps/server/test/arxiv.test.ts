@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
-import { test } from "vitest";
+import { test, vi } from "vitest";
+import { RunContext } from "@openai/agents";
+import * as arxiv from "../src/agent/arxiv.ts";
+import { EvidenceLedger } from "../src/agent/evidence.ts";
+import { createArxivSearchTool } from "../src/agent/tools/arxiv-search.ts";
 
 import { searchArxiv } from "../src/agent/arxiv.ts";
 
@@ -130,3 +134,41 @@ test("serialises calls at least 3 seconds apart", async () => {
   // 唯一一条真实等待墙钟的用例：限流闸是模块级的，本文件前面的调用已占用一个
   // 3 秒窗口，这两次串行下来要 ~6 秒，超过默认的 5 秒超时。
 }, 20_000);
+
+test("arXiv tool freezes available abstracts before returning them and leaves absence explicit", async () => {
+  const search = vi.spyOn(arxiv, "searchArxiv").mockResolvedValue({
+    query: "frozen source",
+    status: "succeeded",
+    resultSummary: "two sources",
+    execution: {},
+    records: ["Frozen scientific summary.", ""].map((summary, index) => ({
+      arxivId: `2401.0000${index + 1}v1`,
+      title: `Source ${index}`,
+      url: `https://arxiv.org/abs/2401.0000${index + 1}v1`,
+      summary,
+      authors: ["Ada Lovelace"],
+      published: "2024-01-01",
+    })),
+  });
+  let persisted: unknown;
+  const ledger = new EvidenceLedger({
+    onRecord: (record) => {
+      persisted = structuredClone(record);
+    },
+  });
+  try {
+    const result = await createArxivSearchTool(ledger).invoke(
+      new RunContext(),
+      JSON.stringify({ query: "frozen source" }),
+    );
+    const output = typeof result === "string" ? JSON.parse(result) : result;
+    assert.equal(ledger.values()[0]!.citations[0]!.abstract, "Frozen scientific summary.");
+    assert.equal(Object.hasOwn(ledger.values()[0]!.citations[1]!, "abstract"), false);
+    assert.deepEqual(persisted, ledger.values()[0]);
+    assert.deepEqual(output.abstracts, [{ locator: "arxiv:2401.00001v1", summary: "Frozen scientific summary." }]);
+    assert.deepEqual(output.citations, ledger.values()[0]!.citations);
+    assert.equal(search.mock.calls.length, 1);
+  } finally {
+    search.mockRestore();
+  }
+});

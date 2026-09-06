@@ -35,6 +35,7 @@ const INVENTED_EVIDENCE_ID = "ev_never_happened_arxiv";
 const citation = {
   source_type: "arxiv" as const,
   title: "Fixture source",
+  abstract: "Frozen source abstract: a bounded comparison, not an established causal effect.",
   locator: "arxiv:2301.00001v1",
   url: "https://arxiv.org/abs/2301.00001v1",
   authors: ["Ada Lovelace", "Grace Hopper"],
@@ -228,6 +229,7 @@ function fake(
             evidence_id: searches[0]!.evidenceId,
             source_type: options.usesProviderSourceAlias ? "crossref" : "arxiv",
             title: index === 0 ? "模型转述的标题" : source.title,
+            abstract: "模型编写的摘要不能覆盖冻结来源",
             locator: source.locator,
             url: index === 0 ? "https://evil.example.com/other" : source.url,
           })),
@@ -670,6 +672,10 @@ test("overwrites model-authored search metadata with what actually happened", as
   // citation 的 title/url 也是代码拥有的，模型的转述与改写都不留
   assert.equal(research.citations[0].title, citation.title);
   assert.equal(research.citations[0].url, citation.url);
+  assert.equal(research.citations[0].abstract, citation.abstract);
+  const reviewerInput = h.calls.find((call) => call.role === "reviewer")!.input;
+  const frozenResearch = reviewerInput.input_artifacts.find((item: { type: string }) => item.type === "research");
+  assert.equal(frozenResearch.content.citations[0].abstract, citation.abstract);
   h.store.close();
 });
 

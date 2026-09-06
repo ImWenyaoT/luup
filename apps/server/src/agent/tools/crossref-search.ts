@@ -41,6 +41,7 @@ export function createCrossrefSearchTool(
           title: item.title,
           locator: `doi:${item.doi}`,
           url: item.url,
+          ...(item.abstract?.trim() ? { abstract: item.abstract.trim() } : {}),
           // DOI 的 B4 也必须使用检索当时冻结的元数据；只把它放在 details 里会让
           // canonical Research citation 永久缺作者，最终反查必然误拒。
           authors: item.authors,

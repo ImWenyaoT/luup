@@ -45,3 +45,30 @@ ECSN 低踢速度的主要依据应限定为特定 O–Ne–Mg 前身和爆炸�
 - 完整 `pnpm run ci` 通过（599 测试；server 448，web 151），覆盖率门通过。日志：`/private/tmp/luup-q61-author-selection-ci.log`。
 - 前一轮相同运行时代码的 Playwright E2E 12/12 通过，本次仅更新角色提示和协议说明。日志：`/private/tmp/luup-q61-whole-feedback-e2e.log`。
 - 试跑费用按实际落库 token 估算；部分早期失败记录用量不完整，因此不能把已记录 token 的合计当成完整账单。逐库明细为 `outputs/diagnostics/q61-development-runs.json`。用户授权总上限 50 元，未自动切换 Max，也未启动正式 125 题。
+
+## review-v2：五项基础审查与旧方案真实重评
+
+修复提交 `aa95b1b` 给当前 Review 加入五项必填判定：前提、可证伪性、证据支撑、可执行性、引用相关性。每项必须有理由及实际计划 JSON 路径；任一 fail 拦截接受。模型若上报 `accepted:true` 同时存在 fail，代码直接规范为 false 并记录覆盖事件，不触发一轮让模型改口的纠错。Reviewer 增加读取原始 Research Artifact；提示词和 Planner 同步区分结构恒真条件与有效检测、条件比较与全参数范围可识别性。旧库保持可读、旧运行不改写，协议仅追加 amendment。
+
+Git ignore 同时收窄：环境示例模板可跟踪，实际 `.env*` 仍忽略；移除全局 `*.tmp`，只屏蔽 campaign 原子写临时页。`memory/`、冻结题集和 `runs-ts/` 证据仍可跟踪。12 项路径边界检查通过，无已跟踪文件被 ignore 隐藏。
+
+验证：先用旧代码复现「无基础审查仍可接受」红测，再完成修复。全量 CI 607 项通过（server 456、web 151）；server functions 93.17% / lines 87.82%，web 92.67% / 96.54%；Playwright 12/12 通过。另有独立代码复核确认：既有协议内容逐字段未变、历史投影兼容、拒收不会重新规划。
+
+随后使用相同 Flash 对冻结 v10 Plan 执行一次**真实 Reviewer 重评**，没有把人工审计意见作为任务输入。结果保存在 `outputs/diagnostics/q61-v10-foundations-review/`：
+
+- `accepted:false`，`executability:fail`，其余四项 pass；0 次纠错，2 次独立检索。
+- 命中嵌套最大似然增益、正参数符号判据缺乏区分力，以及容差带缺少构造程序；因此旧稿被新门拒收。
+- 仍漏判部分物理前提和全参数范围矛盾；它把部分可识别性问题列为非阻塞弱点。因此只证明该旧稿被拦截，**不证明 Reviewer 全面或可靠地判定科学正确性**。此次已见样例重评不是盲测。
+- 用量输入 47,224、输出 3,641 tokens；按本系列既有口径约 0.058147 元，仅为估算。本诊断不写入原运行成功状态或 campaign 成功记忆。
+
+## 来源摘要丢失修复
+
+v11 首轮 Research 把同一 Crossref 检索组中的 AGB 中子俘获标题与电子俘获形成通道拼接成机制断言。检查确认：既有 Crossref 请求 `select` 不含 `abstract`，arXiv 工具虽向当轮模型返回摘要，却未将其写入 EvidenceLedger。不能据旧台账没有摘要就断言供应商不提供摘要。
+
+修复在既有 Crossref 请求增加可选摘要，清理 JATS 标记；arXiv/Crossref 都把实际摘要冻结进 EvidenceCitation，再通过 canonical Research 传给下游。摘要由台账拥有，模型自填不能覆盖；缺失保持缺省，公开投影字段不扩大。没有增加检索次数、工具或依赖。
+
+真实 Crossref 查询 `Hydrodynamical Neutron-star Kicks in Electron-capture Supernovae` 返回 HTTP 200，首条 DOI `10.3847/1538-4357/aadbae` 实际提供 1,725 字符摘要，其中明确给出 ECSN 流体踢速度最多几 km/s、远低于蟹状脉冲星约 160 km/s，并提出低质量铁核或非流体机制解释。五条检索结果中两条有摘要、三条缺失；未补写缺失内容。原始探针保存在 `/private/tmp/luup-live-abstract-probe.log`。
+
+最终验证：609 项测试通过（server 458、web 151），server functions 93.38% / lines 87.87%，web 92.67% / 96.54%；Playwright 12/12。集成回归先复现摘要被 canonical schema 丢弃，再确认检索台账→Research→Reviewer 保留原文，并确认公共投影不输出该内部字段。独立代码核查未发现阻塞问题。
+
+v11 与上述改动在同一开发工作树并行：角色提示词在每次执行时读取，启动的 commit 身份不足以保证全程使用同一提示词。因此 v11 仅作开发诊断，不作为摘要修复的固定版本验收；后续完整重跑须保持运行期间源码不变，并保存每次角色调用的实际提示词。

@@ -52,6 +52,7 @@ function internalSnapshot(): Record<string, unknown> {
               locator: "arxiv:2301.00001v1",
               url: "https://arxiv.org/abs/2301.00001v1",
               document_id: "doc_1",
+              abstract: "INTERNAL_FROZEN_ABSTRACT",
             },
           ],
         },
@@ -518,6 +519,7 @@ test("证据行携带 attempt_id，且指向公开的 attempt", () => {
 test("证据输出只放行摘要和引文白名单字段", () => {
   const [evidence] = projectRunSnapshot(internalSnapshot()).tool_evidence;
   assert.deepEqual(Object.keys(evidence!.output), ["result_summary", "citations"]);
+  assert.ok(!JSON.stringify(evidence).includes("INTERNAL_FROZEN_ABSTRACT"));
   assert.deepEqual(evidence!.output.citations, [
     {
       title: "Fixture",
