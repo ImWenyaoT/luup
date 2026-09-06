@@ -518,3 +518,6 @@
 
 ## [2026-09-06] run | q61 | FAILED
 - outputs/runtime/flash-q61-20260906-v9.db#7cc7ab6487444f2abe5e566c15b6f4cc｜毫秒脉冲星 + CO 白矮星伴星子群的前身通道判别：Case A 洛希瓣溢出相对共同包层旋进的观测体积加权产率检验｜引用 1103.4996v2, 2604.24970v1, 1806.04175v1, https://doi.org/10.22323/1.288.0043, https://doi.org/10.1086/344405, https://doi.org/10.1016/j.newar.2010.09.005, https://doi.org/10.1017/9781108861656.009, https://doi.org/10.1007/978-94-011-2704-2_17, https://doi.org/10.3847/1538-4357/aaad07, https://doi.org/10.22323/1.146.0208, 1302.1275v1｜cls=verifier_refs
+
+## [2026-09-06] run | q61 | SUCCESS
+- outputs/runtime/flash-q61-20260906-v10.db#0228174fcc4945aca14db6b4c4ed0a4d｜脉冲星形成通道的运动学判别：在同一不对称性度量下对照电子俘获超新星与铁核坍缩的出生 kick｜引用 2966.2005, https://doi.org/10.3847/1538-4357/aa618e, https://doi.org/10.3847/1538-4357/aadbae, https://doi.org/10.3847/2041-8213/ab5642, https://doi.org/10.1007/978-94-009-7876-8_10, https://doi.org/10.1088/0004-637x/806/2/153, https://doi.org/10.1143/ptp.103.713, 1806.04175v1, https://doi.org/10.1093/mnras/stt2188, astro-ph/9704268v1, 1008.2130v2, https://doi.org/10.3847/1538-4357/ac0a74
