@@ -364,6 +364,19 @@
       },
       "unchanged": "默认模型与 provider、Responses 接线、五角色顺序、SDK turn/deadline 上界、Reviewer 独立检索、候选晋升门、拒收语义、B1–B4、题库、arms、phase_b_subset 及 digest、统计设计、批次熔断和正式启动门均不变。Flash 仅通过环境变量用于本次诊断。",
       "effect_on_numbers": "检索次数下降可能减少 token 和未收敛失败，也可能使证据覆盖不足并增加拒收，方向和幅度未知。6 次是预算分配而非科学质量阈值。本次改动属于读过诊断后的调试，不能将后续成功视为独立无偏效果证据；旧记录不被覆盖或重写。"
+    },
+    {
+      "date": "2026-09-06",
+      "before_phase_a": false,
+      "before_definitive_phase_a": true,
+      "before_any_reading": false,
+      "recorded_when": "修复检索收敛后已读取 Q61 v3/v4 诊断：v3 补证纠错超时，v4 首轮 Research 上报曾因 claims>8、limitations>5 被 schema 拒收，后续 Hypothesis 遇到供应商 function.arguments 非 JSON 的 400。正式 Phase A/B 未启动，所有诊断继续排除正式读数。",
+      "summary": "Researcher 提示词明确既有数组上限并要求简明笔记，减少超出 schema 后重写整份综述的开销。",
+      "changes": {
+        "researcher_concise_notes": "summary 建议 150–250 字，claims 通常 3–5（既有上限 8），citations 通常 5–8（既有上限 15，不足如实记录），limitations 通常 1–3（既有上限 5）；不跨字段重复背景，补证仅写新增证据及影响。建议长度不作为新的硬验收阈值。"
+      },
+      "unchanged": "schema、字段必填要求、引用真实性门、候选晋升与拒收语义、检索 6 次上限、SDK turn/deadline、模型/provider、题集、统计设计、正式批次和费用授权边界均不变。临时字段诊断代码已移除，未采集凭据。",
+      "effect_on_numbers": "预计减少冗长输出及结构化纠错，但也可能遗漏有用背景；真实方向须由后续运行验证。已有诊断不覆盖、不重写，不将试到成功作为一次成功率。"
     }
   ],
   "interpretation": "这是对已记录架构取舍的证据，不是普适优越性主张。结论的形状只能是「在这一条 harness commit、这一个题库、这一条串行顺序下，跨 run 记忆让交付率朝某个方向动了多少」，不能读成「记忆机制优于无记忆」或反过来。Do not claim superiority from one successful trace, one direction, or an unpriced token count.",
