@@ -69,12 +69,16 @@ CI 是 `.github/workflows/ts.yml` 的 `check`（=`pnpm run ci`）与 `e2e` 两�
 ## Learned User Preferences
 
 - 优先把现有技术栈用全、用精，而不是为现代化引入新依赖或平行工具链
+- 工具链坚持 oxc 全家桶（oxlint / oxfmt）；不要再引入 ESLint、Prettier 等平行 lint/format 栈
 - 测试要扎实、覆盖率尽量拉高；认真对待 CI，避免弄乱 main
 - 多 agent / harness 协作按森林语义：默认真错、独立 critique、允许高拒收，仅 verified 有用才 merge 进共享知识面；拒绝公司式互相改稿
 - 大块工作倾向并行 subagents 提案、由父 agent 做核实与合并
 - 实质设计偏好自上而下：先 specs / 需求与架构接口，再往下分层；同类能力先想清模式再减少重复
+- 当前交付优先级：science125 批跑结果与赛题产物合规高于前端 UI 打磨（UI 可用即可）
+- 工程审查优先盯 harness / agent 编排是否符合第一性原理，其次才是外围优化
 
 ## Learned Workspace Facts
 
 - 前端现行栈是 Next.js App Router（`apps/web`），不再以 Vite/Remix 为当前方向
 - Harness 方向已定案为森林理论（ADR-0012）：propose → critique → hard gate → merge；角色产出默认不信任
+- 仓库 lint/format 已落地为 oxlint + oxfmt（见根 `package.json` 与 CI `check`）

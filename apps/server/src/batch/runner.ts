@@ -61,8 +61,12 @@ export const MAX_CONCURRENCY = 16;
  */
 export const DEFAULT_CONCURRENCY = 3;
 
-/** 批跑成立的前提是题与题互相独立；连续同类失败恰好证伪了这个前提。 */
-export const SAME_CLASS_STOP = 5;
+/** 批跑成立的前提是题与题互相独立；连续同类失败恰好证伪了这个前提。
+ *
+ * 提交截止覆盖批把阈值抬到 125：质量类连击不再停派发，优先把 1–125 全部落终态。
+ * 环境类熔断（OUTAGE_STOP）不动。这不是协议修订 #3 的读数臂行为。
+ */
+export const SAME_CLASS_STOP = 125;
 
 /** 连续两次环境故障就是凭据、网络或额度问题，剩下的 123 题会一模一样地失败。 */
 export const OUTAGE_STOP = 2;
