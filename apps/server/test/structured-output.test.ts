@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { test } from "vitest";
+import { test, vi } from "vitest";
 
 import { RunContext, Usage, type Model, type ModelResponse } from "@openai/agents";
 
 import { researchProposalSchema, roleSchema } from "../src/agent/contracts.ts";
 import { EvidenceLedger } from "../src/agent/evidence.ts";
+import * as crossref from "../src/agent/crossref.ts";
 import { classifyFailure } from "../src/agent/failures.ts";
 import { createRoles } from "../src/agent/roles/index.ts";
 import { createStructuredOutput, STRUCTURED_OUTPUT_TOOL } from "../src/agent/roles/structured-output.ts";
@@ -50,6 +51,62 @@ const artifact = {
   ],
   limitations: ["fixture"],
 };
+
+test.each([1, 8])("researcher reserves synthesis after six searches (provider batch size %s)", async (batchSize) => {
+  const search = vi.spyOn(crossref, "searchCrossref").mockImplementation(async (query) => ({
+    query,
+    status: "empty",
+    resultSummary: "No matching records",
+    records: [],
+    execution: {},
+  }));
+  const ledger = new EvidenceLedger();
+  ledger.beginScope("bounded-search");
+  const roles = createRoles(ledger);
+  const agent = roles.agents.researcher;
+  let turn = 0;
+  const model: Model = {
+    async getResponse(request): Promise<ModelResponse> {
+      turn += 1;
+      const searching = request.tools.some((tool) => tool.name === "crossref_search");
+      return {
+        usage: new Usage(),
+        output: Array.from({ length: searching ? batchSize : 1 }, (_, index) => ({
+          type: "function_call" as const,
+          id: `call_${turn}_${index}`,
+          callId: `call_${turn}_${index}`,
+          name: searching ? "crossref_search" : "structured_output",
+          arguments: JSON.stringify(searching ? { query: `query ${turn}/${index}` } : artifact),
+          status: "completed" as const,
+        })),
+      };
+    },
+    getStreamedResponse() {
+      throw new Error("No streaming in this test");
+    },
+  };
+  try {
+    const result = await createQwenExecutor(undefined, { getModel: () => model })({
+      runId: "bounded-search",
+      role: "researcher",
+      agent,
+      input: "{}",
+      timeoutMs: 5_000,
+    });
+    assert.equal(result, "structured output recorded");
+    assert.equal(search.mock.calls.length, 6, "failed/empty searches also spend the shared source budget");
+    assert.equal(ledger.scopedRecords().length, 6);
+    assert.deepEqual(roles.captures.researcher.captured()?.value, artifact);
+    roles.captures.researcher.beginRound();
+    assert.deepEqual(
+      (await agent.getAllTools(new RunContext())).map((tool) => tool.name),
+      ["structured_output"],
+    );
+    assert.ok(turn <= 7, "synthesis must happen before the 12-turn ceiling");
+  } finally {
+    search.mockRestore();
+  }
+});
 
 /** 直接调工具，绕过模型 —— 被测的是上报通道本身。
  *  成功返回 `{recorded:true}`，失败返回 SDK 回灌给模型的那段错误文本。 */

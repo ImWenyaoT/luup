@@ -349,6 +349,21 @@
       },
       "unchanged": "题集、arms、phase_b_subset 及 digest、Artifact 合同字段形状、五角色顺序、模型与 Responses 接线、B1–B4 引用判据与未校准阈值声明、统计设计 `bounded_comparison`、双分母、失败桶归属（修订 #2）、熔断阈值、release 绑定、Phase A/B 启动门与禁止显著性主张全部不变。历史修订与注册文本原样保留；本条不重写既有 amendments。",
       "effect_on_numbers": "对本条落盘时已存在的历史库与读数无影响（无一字节改写）。对将要产生的正式批：修订环拆除后即时 `review_rejected` 预期上升、同支线 rewrite 消失，`revisionRate` 基线不可与旧环并列；晋升闸与 KB 过滤会改变交付率、补证率、注入计数与失败分布，方向未知——机制写在这里，不留到见数后再解释。代码未落地前，任何仍跑旧环的 canary 不得当作森林语义的验证读数。"
+    },
+    {
+      "date": "2026-09-06",
+      "before_phase_a": false,
+      "before_definitive_phase_a": true,
+      "before_any_reading": false,
+      "registered_commit_amended": "f0d91c3e729d5681afcee87c18b70b9e1b0938ee",
+      "recorded_when": "正式 Phase A/B 尚未启动。已读取两次独立 Q61 Flash 诊断：420ad036691c418391759cfad168b809 在第二轮 researcher 耗尽 12 个模型回合；850b808f02b9429cbe9e2d94e7e49c2d 在首轮 researcher 同样失败。两次均排除正式读数，原始数据库和失败记录保留。本修订在任何修复后 live 读数之前追加。",
+      "summary": "Researcher 检索与写作分配明确上界：每个 Attempt 的两个检索来源合计最多 6 次实际执行，到限后关闭检索工具并保留结构化上报面。",
+      "changes": {
+        "researcher_search_synthesis_budget": "原提示词通常 2–3 次检索的建议保留；确定性上界为 6，留同等余量给换源与失败。成功、空结果和失败均计入，在 await 之前预留以处理同一响应并发工具调用；第 7 次不访问外部来源。SDK isEnabled 在后续模型回合隐藏两个检索工具，structured_output 继续可用。结构化纠错不重置额度，新业务 Attempt 使用新额度。到限不自动接受任何产物，证据不足须诚实保留 gaps/limitations。",
+        "evidence": "真实 SDK 回归模型只要看得见检索工具就继续检索：旧实现于 12 回合失败；新实现最迟第 7 回合进入结构化上报。另验证 provider 同时发 8 次调用时外部来源只执行 6 次。"
+      },
+      "unchanged": "默认模型与 provider、Responses 接线、五角色顺序、SDK turn/deadline 上界、Reviewer 独立检索、候选晋升门、拒收语义、B1–B4、题库、arms、phase_b_subset 及 digest、统计设计、批次熔断和正式启动门均不变。Flash 仅通过环境变量用于本次诊断。",
+      "effect_on_numbers": "检索次数下降可能减少 token 和未收敛失败，也可能使证据覆盖不足并增加拒收，方向和幅度未知。6 次是预算分配而非科学质量阈值。本次改动属于读过诊断后的调试，不能将后续成功视为独立无偏效果证据；旧记录不被覆盖或重写。"
     }
   ],
   "interpretation": "这是对已记录架构取舍的证据，不是普适优越性主张。结论的形状只能是「在这一条 harness commit、这一个题库、这一条串行顺序下，跨 run 记忆让交付率朝某个方向动了多少」，不能读成「记忆机制优于无记忆」或反过来。Do not claim superiority from one successful trace, one direction, or an unpriced token count.",
