@@ -491,3 +491,6 @@
 
 ## [2026-09-04] run | q1 | FAILED
 - outputs/runtime/deadline-smoke.db#bfe12073bdf94112b8351a66ec85d65d｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q61 | FAILED
+- outputs/runtime/flash-q61-20260906.db#420ad036691c418391759cfad168b809｜未产出 research-plan｜cls=invalid_output
