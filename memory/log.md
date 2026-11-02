@@ -527,3 +527,447 @@
 
 ## [2026-09-06] run | q61 | FAILED
 - outputs/runtime/flash-q61-20260906-v12.db#4965026341b540649b28dab61ba81093｜电子俘获超新星的中子星流体学 kick 上限：在多个二维火焰传播前导星与三维对照上的同口径复算｜引用 https://doi.org/10.3847/1538-4357/aadbae, 1802.05274v2, https://doi.org/10.3847/1538-4357/aa618e, 2112.15257v2, https://doi.org/10.3847/1538-4357/aae648, 1806.04175v1, 1605.09529v1, https://doi.org/10.3847/1538-4365/ad12c1, astro-ph/0309588v2, 2010.09005v1｜cls=invalid_output
+
+## [2026-09-06] run | q1 | FAILED
+- outputs/runtime/phase-a-science125-20260906-deadline.db#2e3a533c94384c5091453056fe20d763｜未产出 research-plan｜cls=provider_error
+
+## [2026-09-06] run | q15 | FAILED
+- outputs/runtime/phase-a-science125-20260906-deadline.db#4eb71af608a748618ce2e686fd506fc6｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q4 | FAILED
+- outputs/runtime/phase-a-science125-20260906-deadline.db#e78d572d9ad44fc8becb269e5a130a05｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q2 | FAILED
+- outputs/runtime/phase-a-science125-20260906-deadline.db#69d58af2f39f4fa2ad52e4885e9f77be｜未产出 research-plan｜cls=deadline_exceeded
+
+## [2026-09-06] run | q6 | FAILED
+- outputs/runtime/phase-a-science125-20260906-deadline.db#396ad7d9f8414b4a99089b176f19006a｜表面电荷驱动的 vSFG 探测深度漂移：固定光路下固/液界面水谱定量可比性的预注册检验｜引用 2607.20017v1, 1405.6533v1, 2508.13737v1, 0886.2020, https://doi.org/10.1016/b978-0-323-85669-0.00145-8, cond-mat/0209599v1, 1703.06184v3, 1704.01158v3, 1110.3334v1｜cls=invalid_output
+
+## [2026-09-06] run | q5 | FAILED
+- outputs/runtime/phase-a-science125-20260906-deadline.db#84f1523e51794968837b15c5e296ceec｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q14 | FAILED
+- outputs/runtime/phase-a-science125-20260906-deadline.db#484696649b2845a0b52ff3d1b58bd6a4｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q11 | FAILED
+- outputs/runtime/phase-a-science125-20260906-deadline.db#74492db53af1432ab9bd82ec81077c8e｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q7 | FAILED
+- outputs/runtime/phase-a-science125-20260906-deadline.db#9a4a49e3371c4098b296df84a221d669｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q8 | FAILED
+- outputs/runtime/phase-a-science125-20260906-deadline.db#0648357012c146939092a1b40a2183b6｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q17 | FAILED
+- outputs/runtime/phase-a-science125-20260906-deadline.db#316bac595f434628a64feb5836a9dd5f｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q10 | FAILED
+- outputs/runtime/phase-a-science125-20260906-deadline.db#fb5059b5b5b04840b3318a22178a755c｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q16 | FAILED
+- outputs/runtime/phase-a-science125-20260906-deadline.db#50acff621bfa42eba8364355814cbb83｜未产出 research-plan｜cls=deadline_exceeded
+
+## [2026-09-06] run | q12 | FAILED
+- outputs/runtime/phase-a-science125-20260906-deadline.db#cedf8c97cd044f8ea90110b53b4d2679｜最小自推进粒子体系中自复制涌现的密度阈值：尺度不变性、生长—衰亡平衡与密度/通量归因分离的可证伪计算方案｜引用 1512.04478v2, 1702.02141v5, 1702.04873v1, cond-mat/0303280v1, 1304.5519v2, 5646.2010, https://doi.org/10.2307/2410451, https://doi.org/10.1007/bf00328690, https://doi.org/10.1163/156853900502565, https://doi.org/10.1101/087155, https://doi.org/10.2307/2266021, https://doi.org/10.32942/x2p618, https://doi.org/10.7287/peerj.preprints.27919v1, https://doi.org/10.1007/978-1-4613-0883-6_5｜cls=review_rejected
+
+## [2026-09-06] run | q9 | FAILED
+- outputs/runtime/phase-a-science125-20260906-deadline.db#1426987d66c741ca978cec8c2fd43b53｜尚待验证的研究计划：聚烯烃热化学升级跨实验献语料上部分观测学习与报告规范化的消融对照｜引用 2608.02402v1, 2309.08354v1, 2507.14413v1, https://doi.org/10.26434/chemrxiv-2022-t6435-v2, 2501.13855v1, https://doi.org/10.1255/jnirs.849, 2023.10725, https://doi.org/10.5772/intechopen.108432｜cls=review_rejected
+
+## [2026-09-06] run | q13 | FAILED
+- outputs/runtime/phase-a-science125-20260906-deadline.db#94a0cd87f067422183a2c12407ddbe4a｜未产出 research-plan｜cls=deadline_exceeded
+
+## [2026-09-06] run | q23 | FAILED
+- outputs/runtime/phase-a-science125-20260906-deadline.db#6c076ad26a3b44f39e03a3ef0ad3128c｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q22 | FAILED
+- outputs/runtime/phase-a-science125-20260906-deadline.db#c624a910a0774eb086c8dfaa03241eee｜成人 IBD 队列中粪便短链脂肪酸对「肠道菌群—疾病活动度」关联的中介份额与方向不对称：一项预注册的有界比较研究计划｜引用 2402.08222v2, 2208.09338v1, https://doi.org/10.1093/ibd/izx029, https://doi.org/10.55920/ijcimr.2022.02.001078, https://doi.org/10.26226/morressier.59a6b34cd462b80290b5591b, https://doi.org/10.1002/9781118982907.ch19, https://doi.org/10.1201/9781003598336-13, https://doi.org/10.1201/9781003037521-9｜cls=invalid_output
+
+## [2026-09-06] run | q3 | FAILED
+- outputs/runtime/phase-a-science125-20260906-deadline.db#5245c045398642da80bae81485680aa9｜未产出 research-plan｜cls=deadline_exceeded
+
+## [2026-09-06] run | q24 | FAILED
+- outputs/runtime/phase-a-science125-20260906-deadline.db#945066c238be4d989f773bbb2d10c8c7｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q21 | FAILED
+- outputs/runtime/phase-a-science125-20260906-deadline.db#4926cda0a64c46768424015f510b36d5｜分离通路依赖与直接毒性：dequalinium chloride 诱导的临时妥布霉素协同致死在耐药铜绿假单胞菌中的机制归属与非遗传回退动力学｜引用 https://doi.org/10.1038/s41467-023-37357-4, https://doi.org/10.1101/241075, https://doi.org/10.1101/2020.07.10.198259, https://doi.org/10.7554/elife.65130.sa2, https://doi.org/10.1101/2023.06.14.544983, https://doi.org/10.1101/2023.07.11.548518, https://doi.org/10.1101/2025.01.23.633114, https://doi.org/10.5812/jjm-135911｜cls=invalid_output
+
+## [2026-09-06] run | q19 | FAILED
+- outputs/runtime/phase-a-science125-20260906-deadline.db#0cd8c83798d940e184369eb17f108845｜同一批 mRNA-LNP 盲样上 DLS 单维判定与 DLS+NTA+二维 AEX–IP-RPLC 正交判定的批次裁决一致性：一项待验证的描述性对照研究计划｜引用 https://doi.org/10.5920/bjpharm.1396, 2026.34521, https://doi.org/10.46610/jqaqc.2022.v04i01.002, 2410.1560, 2012.0493, https://doi.org/10.7774/cevr.2025.14.e40, https://doi.org/10.14293/s2199-1006.1.sor-.ppsvhlh.v1, https://doi.org/10.1201/9781003149835-17, https://doi.org/10.1016/b978-0-444-64046-8.00183-x, https://doi.org/10.4155/pbp.13.16, https://doi.org/10.1007/978-3-031-31380-6_12｜cls=review_rejected
+
+## [2026-09-06] run | q18 | FAILED
+- outputs/runtime/phase-a-science125-20260906-deadline.db#448fd4fb7e3c4664b62c99697c2896c2｜捻针诱导成纤维细胞细胞骨架重塑是否具有穴位归属特异性：基于胶原密度与组织硬度预匹配的小鼠结缔组织组织块等效性检验研究计划｜引用 https://doi.org/10.1002/jcp.20623, https://doi.org/10.1002/jcp.22442, https://doi.org/10.1002/jcp.24356, https://doi.org/10.1038/s41598-018-32048-3, https://doi.org/10.17504/protocols.io.mmpc45n, https://doi.org/10.1097/md.0000000000029878, https://doi.org/10.1155/2012/793841, https://doi.org/10.7759/cureus.115471｜cls=review_rejected
+
+## [2026-09-06] run | q8 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#c05e55f1c188489baecc5f32927c5a25｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q4 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#875d0d496a794933af305f5d973fef4a｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q15 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#e4cbda5896034ba3afe71cd045a928e9｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q12 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#fd0202246ebe4dbc99584bf993a52f9c｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q5 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#75b04eaac81841c7b2d2426fd6962ac8｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q9 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#dbd492412ea14d39a34dc56c4b118bcc｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q10 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#ab2b1f2eee0347f39fbab5328d3c3c9b｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q16 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#da253aba78d3468a8d0723cac4162d8b｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q6 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#ccac69d5ff5f46a5b5d8fc649eafe31d｜未产出 research-plan｜cls=deadline_exceeded
+
+## [2026-09-06] run | q18 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#ca002d7ae1344b6b827311ff9d1d317c｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q14 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#3925dc9e572349c2a0e4f63c473e81d3｜现代分子分型口径下人鼻病毒血清型交叉中和矩阵的抗原簇结构与多价覆盖率量化：一项预注册描述性研究计划｜引用 https://doi.org/10.4049/jimmunol.114.2_part_1.635, https://doi.org/10.1128/iai.37.2.642-647.1982, https://doi.org/10.1101/2024.06.28.601138, https://doi.org/10.1101/2023.05.11.540440, 2017.02412, https://doi.org/10.1016/j.vaccine.2019.04.018｜cls=invalid_output
+
+## [2026-09-06] run | q3 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#4c4baeba1c464a518db5094b4276d1c7｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q23 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#9ccdd619bd9243a7b5e15207e6229ebf｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q2 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#3945d30919bf43b2ac27631251c0dd80｜未产出 research-plan｜cls=deadline_exceeded
+
+## [2026-09-06] run | q1 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#532f6159793c4f439d85aae6e27354c1｜未产出 research-plan｜cls=deadline_exceeded
+
+## [2026-09-06] run | q11 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#4012d5054bca4eee8ad54eb9a3f9e200｜同一基质、两种底盘：细菌纤维素活体材料中分泌型功能构建体的跨底盘保持率与机制分解｜引用 https://doi.org/10.1101/2019.12.20.882472, https://doi.org/10.1038/s41467-021-25350-8, https://doi.org/10.1101/2020.05.11.088138, https://doi.org/10.3390/fib12030029, https://doi.org/10.1002/biot.202300529, https://doi.org/10.2139/ssrn.4079357, 2311.13342v1, https://doi.org/10.1002/adfm.202301875, https://doi.org/10.1021/acssynbio.8b00423｜cls=review_rejected
+
+## [2026-09-06] run | q20 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#c535417ee3024ce580cf50a1aa4fa501｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q19 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#39363fc79d2e42a485e2245d64611903｜saRNA 疫苗低剂量优势的天花板：一项分离 LNP 递送效率与固有免疫感知的头对头剂量—反应研究计划｜引用 https://doi.org/10.3390/pathogens12010138, https://doi.org/10.5772/intechopen.101467, https://doi.org/10.1042/bio_2021_142, https://doi.org/10.3390/vaccines10101678, https://doi.org/10.1101/2024.12.05.627087, https://doi.org/10.21203/rs.3.rs-7572829/v1, https://doi.org/10.21203/rs.3.rs-9834795/v1｜cls=review_rejected
+
+## [2026-09-06] run | q17 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#8c552f8b3fa540f6a4b6c343aa6c24bc｜RT-Treg 对 AIRE+ 胸腺上皮细胞丰度的剂量依赖抑制：以配对白喉毒素毒性对照与发育窗口分层进行的有界验证｜引用 https://doi.org/10.1093/intimm/dxq212, https://doi.org/10.1093/jimmun/vkag141.1055, https://doi.org/10.1038/ni1444, 2026.18063, https://doi.org/10.1038/s43587-024-00711-2, https://doi.org/10.1007/978-1-0716-2647-4_3, https://doi.org/10.1038/s41385-021-00413-7, https://doi.org/10.1038/ni0407-333, 8162.79356｜cls=invalid_output
+
+## [2026-09-06] run | q7 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#3c958f6d6ed2432ab5c59063bcea3b9a｜LiBH4 掺杂 argyrodite Li6PS5Cl 的临界电流密度增益：界面层动力学与体相离子电导的双向干预归因研究计划｜引用 1908.10144v1, 2604.17380v1, https://doi.org/10.1149/ma2026-013341mtgabs, https://doi.org/10.26434/chemrxiv-2022-szgx0, 2501.10567v1, 2412.00340v3, 2206.08135v1, https://doi.org/10.1063/10.0019616｜cls=review_rejected
+
+## [2026-09-06] run | q13 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#42e373b89281461d867662f8b9993be3｜IDOBE 暴发片段上逐片段广义增长参数 p 的可辨识性与分层预报误差梯度：一项预注册的有界比较研究计划｜引用 2604.18521v2, 2608.06671v1, 1512.01389v2, https://doi.org/10.1016/j.epidem.2016.01.002, https://doi.org/10.1101/2022.12.20.22283714, https://doi.org/10.1186/1742-4682-7-1, https://doi.org/10.1016/j.idm.2019.12.009, https://doi.org/10.1101/2021.07.14.21260514, 2006.16189v4, 2306.04338v1, 2005.04937v1, 1802.07562v2｜cls=review_rejected
+
+## [2026-09-06] run | q25 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#8a8e70a5c43440fab3fbc9c279bdf901｜未产出 research-plan｜cls=deadline_exceeded
+
+## [2026-09-06] run | q26 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#219a7b7eddc04347822eb9e8a096ce21｜解除可逆细胞周期停滞能否解锁硬性失败配对：巨噬细胞→胰腺 β 细胞直接重编程的 2×2 正交检验｜引用 2021.70711, https://doi.org/10.1101/2021.05.07.443145, https://doi.org/10.3390/cells13080707, https://doi.org/10.70675/c50451dcz5c35z4befzba7dze6365925fc5f, https://doi.org/10.1007/978-1-60761-691-7_14, https://doi.org/10.1097/mog.0000000000000172, https://doi.org/10.1007/978-1-61779-940-2_12, https://doi.org/10.1007/978-1-0716-2899-7_10, https://doi.org/10.1101/2020.10.01.322420, https://doi.org/10.1101/2023.09.25.559293, https://doi.org/10.1101/238279｜cls=review_rejected
+
+## [2026-09-06] run | q30 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#27f011d3e64448ee98b28efe9acf747c｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q29 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#6fc30d3c78fa4338b31a5fa68f60bf46｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q28 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#4cc03b066c3540e3a5cd5841d916da29｜未产出 research-plan｜cls=deadline_exceeded
+
+## [2026-09-06] run | q27 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#cdcdeb3919fa44df83dc3d12b28de512｜插入-删除平衡还是漂变屏障？跨类群真核基因组大小变异的有界比较研究计划｜引用 2002.1605, 8312.2003, https://doi.org/10.21203/rs.3.rs-725394/v1, https://doi.org/10.64898/2026.07.03.736272, https://doi.org/10.1093/gbe/evs027, https://doi.org/10.1127/pip/2019/0085｜cls=review_rejected
+
+## [2026-09-06] run | q22 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#22f4f970963649589955ffe0b0b59513｜克罗恩病中产 SCFA 菌属经粪便短链脂肪酸影响疾病状态的中介效应可辨识性：一项对照结构与协变量扰动下的预注册有界比较研究计划｜引用 https://doi.org/10.1101/2024.02.24.581863, https://doi.org/10.1097/md.0000000000038551, 2402.08222v2, https://doi.org/10.1159/000508984, https://doi.org/10.1016/j.cell.2016.05.041, https://doi.org/10.18060/22742, https://doi.org/10.1146/annurev-pathol-011811-132421, https://doi.org/10.1101/2024.12.01.626246, https://doi.org/10.1201/9781003598336-14, https://doi.org/10.1201/9781003598336-13, https://doi.org/10.1002/9781118982907.ch19｜cls=invalid_output
+
+## [2026-09-06] run | q34 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#f790fc9abd104089934ca846f7aa9ca2｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q33 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#54c5934b44a94de5b55de5611d7ca786｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q36 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#d4b97c40e07b412f8603caf69842e008｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q24 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#8febf822b0af4f4db7cf899e4cef510a｜面积之外的答案：统一面积预算下海洋保护区扩展的空间布局与法律治理等级组合的优先化模拟研究｜引用 https://doi.org/10.1101/2021.07.07.451416, oso/9780199, 2210.03890v1, https://doi.org/10.1111/gcb.15307, oso/9780199, 1602.05723v2, https://doi.org/10.1016/j.biocon.2009.09.019, https://doi.org/10.1016/j.gecco.2019.e00768｜cls=review_rejected
+
+## [2026-09-06] run | q21 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#448c69dd8aad41998e28dc3db5cb2f33｜一致 collateral sensitivity 配对与切换周期窗口：S. pneumoniae 中 CS 导向序贯疗法相对等总暴露单药的有界比较研究计划｜引用 https://doi.org/10.1101/2025.09.22.677096, https://doi.org/10.1101/241075, https://doi.org/10.1101/454983, https://doi.org/10.1101/641217, 2510.01808v4, 2409.07377v2, 2302.13897v1, 2007.01245v1, 2105.10429v1, 2503.07664v2｜cls=invalid_output
+
+## [2026-09-06] run | q43 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#c9908d44edae4009992b4a80f6f7e681｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q37 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#6b398aac117b42acaef354dcaa64e752｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q51 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#8aaca0899b90416eaa585006c3bb97d3｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q39 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#75beaec9d4ff4b81b91ad56bac3ad7e1｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q48 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#b9275b3cb87645d98fe78f9f72b268d8｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q31 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#78c69cdd72c04b2c87919464b3346a50｜蜥脚形类后骨骼气腔化是否先于最大体重的台阶式上升：基于统一肢骨—体重标度与采样校正的配对矩阵研究计划｜引用 2009.0139, https://doi.org/10.1186/1741-7007-10-60, https://doi.org/10.1016/j.cub.2023.02.067, https://doi.org/10.1371/journal.pone.0078573, https://doi.org/10.1016/j.resp.2006.04.014, 2010.0075, 8312.2002, https://doi.org/10.1002/9781119990475.ch2｜cls=review_rejected
+
+## [2026-09-06] run | q44 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#8dae9094dd27495795aef3dd40c98e25｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q35 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#5db236534db34e359eda273ce4019b32｜未产出 research-plan｜cls=deadline_exceeded
+
+## [2026-09-06] run | q49 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#4bb15e26d7a8464f8a24d2804659a84d｜Lyman-Werner 谱形能否决定原初气体云的结局：固定总通量条件下直接坍缩黑洞种子产出的受控模拟检验｜引用 oso/9780198, gr-qc/9805045v1, 1807.06967v1, 1609.03562v2, 1807.08499v1, astro-ph/0702340v1, 1807.06593v1, 1807.06337v2, https://doi.org/10.1142/9789814699662_0011, astro-ph/0606678v1｜cls=review_rejected
+
+## [2026-09-06] run | q38 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#03bd382e573644cf9f360f3e628cc7c5｜世界人口会无限增长吗？三种人口动量口径对全球达峰年份的一致性交叉检验｜引用 https://doi.org/10.1111/padr.12685, https://doi.org/10.25336/p6d615, https://doi.org/10.1080/0032472031000143606, https://doi.org/10.1080/0032472031000148296, https://doi.org/10.1016/j.tpb.2023.12.002, https://doi.org/10.4054/demres.2012.26.14, https://doi.org/10.2139/ssrn.6633479, 0399.0010｜cls=review_rejected
+
+## [2026-09-06] run | q32 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#29a3501ac46e4d38b8b1b448cb8d50e2｜未产出 research-plan｜cls=deadline_exceeded
+
+## [2026-09-06] run | q41 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#aab0aacd477c46328303c050d9aa5013｜多基因形态性状的预测缺口比：用公开汇总统计检验定向设计上限的尚待验证研究计划｜引用 https://doi.org/10.1101/274654, https://doi.org/10.1101/2024.08.15.608197, https://doi.org/10.1101/2022.11.10.22282137, 2205.05897v1, https://doi.org/10.1093/molbev/msg092, hesc/9780198, 1232.0009, https://doi.org/10.1038/nrg3727｜cls=invalid_output
+
+## [2026-09-06] run | q56 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#02e0558b4b1c4f809bbaddfc46de4990｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q52 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#b060cd0cea63425997c536d347294bed｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q46 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#6013036e54864d6daff783b5c8d9a8db｜亚毫米尺度引力反平方律排除上限的可追溯性与一致性核验：把「空间有效维数为 3」限定为有界结论｜引用 https://doi.org/10.1103/physrevlett.86.1418, https://doi.org/10.1103/physrevd.70.042004, https://doi.org/10.1103/physrevlett.49.1745, https://doi.org/10.1142/9789814307673_0003, hep-ex/0202008v1, hep-ph/0307284v1, https://doi.org/10.1051/epn:2002205, https://doi.org/10.1016/s0262-4079(26)00509-9｜cls=review_rejected
+
+## [2026-09-06] run | q45 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#590e4820c83f44eea39ea2ef7ba40856｜未产出 research-plan｜cls=deadline_exceeded
+
+## [2026-09-06] run | q54 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#b4edf823242840728e1f1cb34f6716b1｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q47 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#0f75e7938b77457f9412762d4adde3a6｜未产出 research-plan｜cls=deadline_exceeded
+
+## [2026-09-06] run | q53 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#0820ffe1c6a64533b985e63c923ecce7｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q42 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#1a0ba68150a84cc098b268481c3c253c｜K-Pg 之后浮游有孔虫形态复杂性是否领先于属级多样性回升：一项预注册的滞后结构再分析计划｜引用 https://doi.org/10.31233/osf.io/wn8g6, https://doi.org/10.5194/gmd-16-813-2023, https://doi.org/10.1666/0094-8373(2001)027<0327:eticot>2.0.co;2, https://doi.org/10.1017/s0094837300016778, https://doi.org/10.32614/cran.package.fossilbrush, https://doi.org/10.5194/cpd-10-3303-2014, https://doi.org/10.1144/gsl.sp.1996.101.01.18, https://doi.org/10.1002/9780470015902.a0022875, https://doi.org/10.2307/3514632, https://doi.org/10.1111/evo.13362, https://doi.org/10.1554/02-742, https://doi.org/10.1130/abs/2022am-379749, https://doi.org/10.2307/3514772, https://doi.org/10.64628/ab.mukjaf7vh｜cls=review_rejected
+
+## [2026-09-06] run | q57 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#15008bc2a3bd4705936890b0175e0d51｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q40 | SUCCESS
+- outputs/runtime/phase-a-science125-20260906-coverage.db#eb714f36f93b42f099d2bbf07fa9b1c2｜化学诱导小鼠可逆低代谢状态的蛰伏与被动低温判别：基于 T b–MR 迟滞判据与颅温钳制的预注册对照实验方案｜引用 0214.2014, 2017.0054, https://doi.org/10.1038/s41598-017-15002-7, https://doi.org/10.1096/fasebj.28.1_supplement.lb775, https://doi.org/10.1016/s0952-8180(97)00144-x, https://doi.org/10.1097/shk.0b013e31802e27a0, https://doi.org/10.1016/j.bpj.2024.11.3208, oso/9780199, https://doi.org/10.3748/wjg.v23.i3.406, https://doi.org/10.3233/jin-170063
+
+## [2026-09-06] run | q50 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#b581aed6faca434a908aa0200f61570f｜SPARC 型星系上运动学与强透镜通道的成对质量比较：对 cored 晕普适先验与延迟引力一致性条件的有界检验｜引用 https://doi.org/10.2139/ssrn.6936599, https://doi.org/10.1142/s0218271822420184, https://doi.org/10.23880/oaja-16000103, https://doi.org/10.1142/s0218271817501899, https://doi.org/10.1093/mnras/stx1573, 2022.10109, 2966.2009｜cls=review_rejected
+
+## [2026-09-06] run | q58 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#8c1598f1ad2d41ed9c1d361061ed0985｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q65 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#a88c67abca9d4dcdb2f95d7ac1ef3cdb｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q61 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#708960b843bb44fc9401ff82b31a4846｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q59 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#7002f1a3a0be48b2bffe1f9d329dd29b｜GWTC-3 强场广义相对论检验的逐参数上限审计：区分「与零一致」与「灵敏度不可区分」的有界比较研究计划｜引用 2204.00662v1, 2603.16026v1, 2405.05884v2, 2205.14910v2, 2401.08709v3, 2310.10447v2, 2201.05418v1, 1212.5575v2, 1203.2150v1, gr-qc/0411095v1, 1805.05863v3, https://doi.org/10.1103/physrevd.88.103008, oso/9780198, https://doi.org/10.1007/978-3-030-83715-0_29｜cls=invalid_output
+
+## [2026-09-06] run | q55 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#cb33ba89bd9340a79f5b14bc9eb6bc68｜核子能量-动量张量胶子反常项的禁闭势类比：基于引力形状因子的可推翻数值检验计划｜引用 https://doi.org/10.34133/research.1155, https://doi.org/10.1007/jhep11(2021)121, https://doi.org/10.1007/jhep01(2019)120, https://doi.org/10.1007/jhep12(2018)008, 2509.10786v2, https://doi.org/10.1103/physrevd.88.036007, https://doi.org/10.22323/1.500.0264, https://doi.org/10.22323/1.413.0060, https://doi.org/10.1103/physrevlett.78.610｜cls=review_rejected
+
+## [2026-09-06] run | q67 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#9664a6d80b4744c6bdc4f99bf67ef906｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q60 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#17be66b8a6a244a98990489aa24eb37d｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q71 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#ddcfd145001d4b529ec8701ac6ff75cf｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q63 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#f77a5209cb40490db9c66af8189d6c66｜大洋上壳玄武玻璃生物成因蚀变终止深度的地温梯度控制：基于公开岩心的跨站位配对检验研究计划｜引用 https://doi.org/10.1002/9780470015902.a0021894, 2025.0001, https://doi.org/10.1002/essoar.10510753.1, https://doi.org/10.1029/97jb02603, https://doi.org/10.2139/ssrn.4218703, https://doi.org/10.2973/odp.pr.102.1985, 2010.0604, https://doi.org/10.1029/2008gc002119, https://doi.org/10.5194/egusphere-egu23-4098, https://doi.org/10.5194/egusphere-egu24-16500, https://doi.org/10.5194/egusphere-egu25-7472, https://doi.org/10.2204/iodp.proc.320321.214.2013, https://doi.org/10.1016/b978-0-12-409548-9.09741-4, https://doi.org/10.1515/9783110300130.121, https://doi.org/10.1017/cbo9780511933875.030, https://doi.org/10.5026/jgeography.116.5_714｜cls=review_rejected
+
+## [2026-09-06] run | q62 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#295cf029412a4fe8976413b9d15ffb1b｜火星任务剖面下被动屏蔽的面密度—剂量—发射质量联合判定：载人深空辐射门槛的可计算检验｜引用 2211.04021v1, 2103.11213v1, 2012.09604v2, 2205.13786v3, 1804.02985v1, https://doi.org/10.2139/ssrn.7382521, https://doi.org/10.1097/hp.0000000000001572, https://doi.org/10.1101/2023.12.12.23299875, https://doi.org/10.12681/eadd/59007, https://doi.org/10.1016/j.lssr.2025.05.008｜cls=review_rejected
+
+## [2026-09-06] run | q64 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#e1fa90278692416b97120c1813a579ef｜撞击还是必走之路？用公开巡天星表独立重算 ≥100 Mt 级近地天体撞击的预警完备度与地点条件性风险｜引用 https://doi.org/10.1038/s41598-017-14199-x, https://doi.org/10.3847/psj/ad4d9e, https://doi.org/10.4271/2000-01-2339, https://doi.org/10.1515/opag-2017-0010, https://doi.org/10.1016/j.lssr.2024.03.008, https://doi.org/10.1002/gch2.201970011｜cls=review_rejected
+
+## [2026-09-06] run | q80 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#e2bf55f8a67f43c1811211f027d31ecd｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q69 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#5bc4183dfabd4a86a71729da2c2c1ec4｜未产出 research-plan｜cls=deadline_exceeded
+
+## [2026-09-06] run | q68 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#078c728ecb3e40019d54c18c63c0085b｜致密双星并合抛射物 r-过程丰度图案的条件性：tail-to-disk 质量比扫描与电子分数中介检验｜引用 https://doi.org/10.1088/1361-6382/aa7a77, https://doi.org/10.1093/mnras/stz3154, 0195.00055, actrade/9780198, https://doi.org/10.1016/s1387-6473(02)00184-7, https://doi.org/10.1007/978-981-19-6345-2_91, https://doi.org/10.1063/1.4763392｜cls=invalid_output
+
+## [2026-09-06] run | q70 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#3cf8d545e469471ebdc4e8a73c2c4959｜热输运下限的分层检验：Einstein 型最小热导率的零参数跨体系比对与准粒子—非相干描述的差分拟合优度｜引用 https://doi.org/10.1557/proc-234-27, https://doi.org/10.1103/physrevb.46.6131, https://doi.org/10.1063/1.3226884, https://doi.org/10.1063/1.1314301, https://doi.org/10.1557/mrs.2018.209, https://doi.org/10.1201/9781003210719-17, https://doi.org/10.1103/physrevb.35.4067, https://doi.org/10.1016/s0081-1947(08)60359-8, https://doi.org/10.1007/978-1-4684-4916-7_31｜cls=invalid_output
+
+## [2026-09-06] run | q72 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#97b956e1149c424dabae2ec3456791d4｜速度是否通过压制取向噪声增强集体秩序：实验室非致密鱼群梯度干预与噪声补偿的研究计划｜引用 https://doi.org/10.1101/400747, https://doi.org/10.5821/dissertation-2117-396562, https://doi.org/10.1039/c7sm01648d, https://doi.org/10.1101/2021.02.23.432454, https://doi.org/10.1073/pnas.1005766107, https://doi.org/10.1016/j.crhy.2019.05.008｜cls=review_rejected
+
+## [2026-09-06] run | q66 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#2b001c9ad0544f2587a105474b67d408｜辐射级联修正下软 X 射线与 GeV 指标对耀变体高能中微子产生期的相对示踪能力：一项基于历史多信使匹配回溯的预注册研究计划｜引用 https://doi.org/10.3847/1538-4357/aad59a, https://doi.org/10.3847/1538-4357/ab4b44, https://doi.org/10.3847/1538-4357/aadade, epjconf/2019207, epjconf/2019207, https://doi.org/10.1093/pasj/psz142, https://doi.org/10.22323/1.358.1017, https://doi.org/10.22323/1.358.1004｜cls=review_rejected
+
+## [2026-09-06] run | q73 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#9a9bdba9ad244011886f7cb859680354｜纠缠辅助能否压低线性 Shannon 熵不确定度下界：可分态饱和性质的受控数值判定｜引用 https://doi.org/10.22331/q-2018-03-30-59, 1801.04602v4, https://doi.org/10.1103/physrevlett.60.1103, 1509.00398v1, 1108.5349v2, https://doi.org/10.1007/s40509-022-00282-0, oso/9780198｜cls=invalid_output
+
+## [2026-09-06] run | q84 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#34b550f1abdc42f5950fef821c02f6b5｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q75 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#278e923bd68d4f5bbccc299fcfb0ac38｜夸克-轻子复合性能标下限的方案族重建：通道、系数方案与亮度对 Λ 排除边界的相对贡献｜引用 2006.12946v3, 1707.02424v2, 1607.03669v3, 1202.5535v2, 1102.2020v2, 1201.6510v2, https://doi.org/10.1103/physrevd.62.095003, https://doi.org/10.2172/402515, https://doi.org/10.1103/physrevlett.128.241804, https://doi.org/10.1016/0370-1573(86)90073-6｜cls=invalid_output
+
+## [2026-09-06] run | q74 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#95775a7210a64f31b50d6317821a6629｜未产出 research-plan｜cls=deadline_exceeded
+
+## [2026-09-06] run | q81 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#8b96458b5f064a0aaeaac32e2eff36d5｜未产出 research-plan｜cls=deadline_exceeded
+
+## [2026-09-06] run | q83 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#847ea5010f3945dc9cfdf3175a5ac92a｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q86 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#46515497f1e64966ada6db41875fae1c｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q88 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#c107d5bf1add47519f344323f1cf6a49｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q87 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#b245beb96ed74a79833668ead00b794e｜湍流的终极统计不变量：多重分形标度谱跨雷诺数普适性的有界检验｜引用 2006.10993v2, 2307.04846v2, 2607.26896v1, 2601.12528v1, https://doi.org/10.1063/1.870081, https://doi.org/10.1017/jfm.2012.5, https://doi.org/10.1016/b978-0-444-88889-1.50031-5, https://doi.org/10.70675/a422b221z1eb5z4232zaf37zdbc2f2507b20｜cls=invalid_output
+
+## [2026-09-06] run | q77 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#d799ed46e80344a7baf2c36073dcb090｜未产出 research-plan｜cls=deadline_exceeded
+
+## [2026-09-06] run | q78 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#1a6f363c00664f0dbe37be64b41b38e3｜早期超新星激波中质子最大能量对前身星风质量损失率的门槛性依赖：一项参数扫描与机制分解的预注册研究计划｜引用 astro-ph/0009444v1, astro-ph/0407311v1, https://doi.org/10.3847/1538-4357/ac21ce, https://doi.org/10.22323/1.358.0348, https://doi.org/10.22323/1.395.0146, 1999.79213, https://doi.org/10.1103/physrevaccelbeams.26.111002, https://doi.org/10.1142/9789811217135_0002, https://doi.org/10.1063/1.1291365, https://doi.org/10.1142/s0217751x16440140, https://doi.org/10.1103/physrevaccelbeams.20.011008｜cls=review_rejected
+
+## [2026-09-06] run | q76 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#e408ba3ec9cd44f1be9540e58d346a8c｜有限孤立系统中熵增方向的描述依赖性：按粗粒化类型分层的 observational entropy 对照研究（待验证）｜引用 1905.03841v2, 2008.04409v2, cond-mat/0602024v2, https://doi.org/10.1093/pnasnexus/pgag288, https://doi.org/10.3390/e20020138, https://doi.org/10.3390/foundations4040037, https://doi.org/10.3390/e17096329, https://doi.org/10.1142/9789811211720_0010｜cls=invalid_output
+
+## [2026-09-06] run | q79 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#d6b1ef84d85b44c38bee88f377e45862｜冷原子/BEC 绝对重力测量的采用广度：一份基于部署证据清单与 SWaP-C 对照表完备性的有界检验计划｜引用 https://doi.org/10.5194/egusphere-egu21-14072, https://doi.org/10.5194/egusphere-egu24-20659, https://doi.org/10.5194/egusphere-egu21-9119, 1302.1518v1, https://doi.org/10.1007/s00340-024-08243-8, https://doi.org/10.3390/s17030567, 1610.09986v1, 1311.7033v4｜cls=review_rejected
+
+## [2026-09-06] run | q90 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#d3e98dff4cd949d889c4cc81d2cd11fd｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q82 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#f57d29a4f2d94016bd4b466c93346efa｜同一 Z2 格点正则化下 edge mode 处理方案的并列对照：纠缠熵差的尺度分解与规范无关性检验｜引用 1312.1183v1, 0811.3824v1, 1705.10474v2, 1808.03973v1, 2401.07299v4, 2401.07292v4, https://doi.org/10.1093/ptep/ptag116, 1212.3507v3｜cls=invalid_output
+
+## [2026-09-06] run | q85 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#09ffe3a558a6427d9753527424c71d8b｜超 faint 矮星系恒星核作为低速度端自相互作用暗物质截面锚点的可判别性检验：核尺寸—恒星质量趋势、双相简并与反馈前提的联合核查｜引用 https://doi.org/10.1051/0004-6361/202557040, https://doi.org/10.3390/universe7080313, https://doi.org/10.1088/0004-637x/793/1/46, https://doi.org/10.1088/2041-8205/736/1/l2, 2966.2012, https://doi.org/10.1088/0004-637x/785/1/57, 2966.2006, https://doi.org/10.1007/978-3-030-15077-8_4, https://doi.org/10.1007/978-94-017-3311-3_95｜cls=review_rejected
+
+## [2026-09-06] run | q89 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#27aeb93758a7423b92a4d0fece1cc0b2｜热载流子电池效率上限的两侧分解：能量选择性接触与吸热器热化抑制的敏感度比较研究计划｜引用 2212.10357v1, 1509.06899v1, 2212.03618v3, https://doi.org/10.4324/9781315793245-44, https://doi.org/10.21741/9781644903018-6, 2604.24098v1, 2412.13694v1｜cls=invalid_output
+
+## [2026-09-06] run | q93 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#4e67d244d1c8451bb3f162e53d5c8496｜未产出 research-plan｜cls=deadline_exceeded
+
+## [2026-09-06] run | q101 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#084d7aa0bf564174b733481a6e0b0160｜未产出 research-plan｜cls=invalid_output
+
+## [2026-09-06] run | q92 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#716e4bcdad364a5b85bd396ff1ff095e｜同一冗余预算下的两种花法：DNA 归档存储中约束映射与纠错码的有效密度—保真度对照｜引用 2308.05952v2, 2112.09417v1, https://doi.org/10.1101/2024.08.15.608111, https://doi.org/10.1101/2024.11.05.622081, 1501.07133v2, 2604.13667v1, 2020.29679, https://doi.org/10.1007/978-981-95-9450-4_2, https://doi.org/10.1007/978-981-95-9450-4_9, 2727.77348｜cls=review_rejected
+
+## [2026-09-06] run | q108 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#784bd895dd2444c08e94692339ac4773｜未产出 research-plan｜cls=provider_error
+
+## [2026-09-06] run | q110 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#1685776aaa42425d850278c5a02e4adc｜未产出 research-plan｜cls=provider_error
+
+## [2026-09-06] run | q104 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#813969b4b6f64965aa09eb6b8c2eddff｜未产出 research-plan｜cls=provider_error
+
+## [2026-09-06] run | q111 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#858081b0607e4ce4b6fd2207469b9391｜未产出 research-plan｜cls=provider_error
+
+## [2026-09-06] run | q105 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#cabdb41ae2c3489c9ab513ff8d714f3a｜未产出 research-plan｜cls=provider_error
+
+## [2026-09-06] run | q107 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#ed68fecec6fb49a38525e1db9d0148a6｜未产出 research-plan｜cls=provider_error
+
+## [2026-09-06] run | q115 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#27767045afe4476182c55a3186fd2be0｜未产出 research-plan｜cls=provider_error
+
+## [2026-09-06] run | q116 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#debccc9e2bca48b8898446d01ba8ec77｜未产出 research-plan｜cls=provider_error
+
+## [2026-09-06] run | q117 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#1e157138eaaa48aab15f438a2875ed5a｜未产出 research-plan｜cls=provider_error
+
+## [2026-09-06] run | q118 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#a160e17c832d40619fedfc72c45b7edf｜未产出 research-plan｜cls=provider_error
+
+## [2026-09-06] run | q119 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#1c041d8c96204e2da2f88e530b79ad4a｜未产出 research-plan｜cls=provider_error
+
+## [2026-09-06] run | q120 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#ce1a1d03612c4d24b72c74686b0f2d7d｜未产出 research-plan｜cls=provider_error
+
+## [2026-09-06] run | q121 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#8b18a17a802f4955ba45f5027ec162b9｜未产出 research-plan｜cls=provider_error
+
+## [2026-09-06] run | q122 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#0388dee028884f7f8b9ff24eba4f372c｜未产出 research-plan｜cls=provider_error
+
+## [2026-09-06] run | q112 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#41863025768f4cc3a113a3a121bbf0da｜未产出 research-plan｜cls=provider_error
+
+## [2026-09-06] run | q124 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#04d8e7d52a4b45479a2a17af11f95f5f｜未产出 research-plan｜cls=provider_error
+
+## [2026-09-06] run | q95 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#566c5e60b8a144be932ab4857016abea｜未产出 research-plan｜cls=provider_error
+
+## [2026-09-06] run | q114 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#8e14596241584c01827ba12a853a9107｜未产出 research-plan｜cls=provider_error
+
+## [2026-09-06] run | q109 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#2495430038844c28adfbcca4ab926fc8｜未产出 research-plan｜cls=provider_error
+
+## [2026-09-06] run | q106 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#2cdd60bc3ba54769b6f034f7e6fc19ec｜未产出 research-plan｜cls=provider_error
+
+## [2026-09-06] run | q123 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#11dbd62b622c4d65aa0c9753a9236126｜未产出 research-plan｜cls=provider_error
+
+## [2026-09-06] run | q103 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#5cb37f1b0b614602ab2f9b40dcd310b3｜未产出 research-plan｜cls=provider_error
+
+## [2026-09-06] run | q99 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#36e52ce3288245c99b4ddc0c8a5b9cd9｜未产出 research-plan｜cls=provider_error
+
+## [2026-09-06] run | q91 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#95f30edfd57946c8a56759a9f030095b｜有限时间擦除功惩罚是否给出含擦除不可逆计算的处理速度上界：详细平衡域内与域外的单比特对照检验｜引用 2106.00580v2, 1411.6730v1, 1703.04872v1, https://doi.org/10.1103/physrevlett.117.200601, https://doi.org/10.1142/s2010194514603640, https://doi.org/10.1007/s10825-015-0754-5, 2015.72886, https://doi.org/10.1088/1742-5468/2015/06/p06015, https://doi.org/10.1080/00107510010018916, https://doi.org/10.1038/35023282, https://doi.org/10.1103/physrevlett.88.237901, https://doi.org/10.2172/2002037, https://doi.org/10.1007/978-3-319-93458-7_1｜cls=provider_error
+
+## [2026-09-06] run | q125 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#c463d76466224453bdfbdbdb7805f034｜未产出 research-plan｜cls=provider_error
+
+## [2026-09-06] run | q100 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#1154bcf48fd34b3ba1cc50c0618c58c5｜未产出 research-plan｜cls=provider_error
+
+## [2026-09-06] run | q97 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#a2dcc23cf03a45f0a11a84fa87b08fca｜未产出 research-plan｜cls=provider_error
+
+## [2026-09-06] run | q102 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#7b453a53f2134ef89243b48b029acb6b｜未产出 research-plan｜cls=provider_error
+
+## [2026-09-06] run | q113 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#6b646066303e4c9987699b4a3e9ec038｜未产出 research-plan｜cls=provider_error
+
+## [2026-09-06] run | q96 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#0957ede346f947438e181dc2d6716018｜未产出 research-plan｜cls=provider_error
+
+## [2026-09-06] run | q98 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#f676022de16745b0a0d6696d4d219ae2｜未产出 research-plan｜cls=provider_error
+
+## [2026-09-06] run | q94 | FAILED
+- outputs/runtime/phase-a-science125-20260906-coverage.db#8622706020074424a2362f74b81b3b48｜单一零偏压电导峰的非普适性：在 class D 纳米线平行参量切片上用局部势扰动、端间非局域关联与电流噪声谱判据检验拓扑断言的判别充分性｜引用 1705.02035v2, 1803.05423v3, 1910.11413v2, 1901.02655v2, 2004.08583v1, 1806.01292v2, https://doi.org/10.1088/1367-2630/ada97c, https://doi.org/10.3762/bjnano.9.127, https://doi.org/10.21203/rs.3.rs-1999030/v1, https://doi.org/10.1103/physrevb.91.041106｜cls=provider_error
