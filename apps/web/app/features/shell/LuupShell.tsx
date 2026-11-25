@@ -70,7 +70,7 @@ export function LuupShell({ children, active = "mill", paperTitles = [] }: LuupS
 
   const go = (id: string) => {
     if (id === "legacy") {
-      router.push("/");
+      router.push("/legacy");
       return;
     }
     if (id === "docs") {

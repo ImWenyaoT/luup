@@ -39,5 +39,6 @@ Science-125 题库与五角色批跑退出产品主轴；可删（本里程碑�
 
 - 确定性 runtime 下 Mill 能跑满 `targetPapers`（注入假 Engine）并暴露产量计数
 - 未达目标时 status ≠ `completed`
-- 不依赖 `data/science125.json` 启动 Mill
+- verified Paper 落盘 `outputs/papers/<id>.md`（可盘点）
+- 不依赖 `data/science125.json` 启动 Mill；产品入口 `/` → `/autoresearch`
 - `pnpm run ci` 相关门绿

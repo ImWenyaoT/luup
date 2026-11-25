@@ -1,6 +1,7 @@
 import { newId, nowIso } from "../domain.ts";
 import type { ResearchEngine, RunResearchResult } from "../runtime.ts";
 import { extractFollowUps, mintPaperDraft } from "./paper.ts";
+import type { PaperStore } from "./paper-store.ts";
 import type {
   AgendaItem,
   MillSnapshot,
@@ -21,6 +22,8 @@ export type ResearchMillOptions = {
   /** 两张 Ticket 之间的间隔（ms）；测试可 0。 */
   tickDelayMs?: number;
   onUpdate?: (snapshot: MillSnapshot) => void;
+  /** verified Paper 落盘；缺省不落盘（纯内存）。 */
+  paperStore?: PaperStore;
 };
 
 /**
@@ -32,6 +35,7 @@ export class ResearchMill {
   readonly #clock: () => Date;
   readonly #tickDelayMs: number;
   readonly #onUpdate?: (snapshot: MillSnapshot) => void;
+  readonly #paperStore?: PaperStore;
   #snapshot: MillSnapshot;
   #abort: AbortController | null = null;
   #loop: Promise<void> | null = null;
@@ -41,6 +45,7 @@ export class ResearchMill {
     this.#clock = options.clock ?? (() => new Date());
     this.#tickDelayMs = options.tickDelayMs ?? 0;
     this.#onUpdate = options.onUpdate;
+    this.#paperStore = options.paperStore;
     this.#snapshot = emptySnapshot(this.#clock);
   }
 
@@ -159,6 +164,7 @@ export class ResearchMill {
         let paper: PaperDraft | null = null;
         if (verified) {
           paper = mintPaperDraft(result.ticket, this.#clock);
+          this.#paperStore?.save(paper);
           this.#snapshot.papers.push(paper);
           this.#snapshot.quantity.papersProduced = this.#snapshot.papers.length;
           this.#snapshot.quantity.ok = this.#snapshot.quantity.papersProduced >= this.#snapshot.quantity.targetPapers;

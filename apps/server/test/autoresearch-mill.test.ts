@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { onTestFinished, test } from "vitest";
 
 import { ResearchMill } from "../src/autoresearch/mill/mill.ts";
+import { createMemoryPaperStore } from "../src/autoresearch/mill/paper-store.ts";
 import { MillRegistry } from "../src/autoresearch/mill/registry.ts";
 import type { RunResearchResult } from "../src/autoresearch/runtime.ts";
 import type { ResearchTicket } from "../src/autoresearch/domain.ts";
@@ -73,7 +74,9 @@ function rejectedResult(question: string, n: number): RunResearchResult {
 
 test("ResearchMill：产量门达标才 completed", async () => {
   let calls = 0;
+  const papers = createMemoryPaperStore();
   const mill = new ResearchMill({
+    paperStore: papers,
     engine: {
       async runResearch(question) {
         calls += 1;
@@ -95,6 +98,7 @@ test("ResearchMill：产量门达标才 completed", async () => {
   assert.equal(snap.quantity.papersProduced, 2);
   assert.equal(snap.quantity.ok, true);
   assert.ok(snap.papers.every((p) => p.bodyMarkdown.includes("#")));
+  assert.equal(papers.files.size, 2);
   assert.ok(calls >= 3);
 });
 

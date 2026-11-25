@@ -7,6 +7,7 @@ export { createResearchRuntime, ResearchEngine, type RunResearchResult } from ".
 export { ResearchMill } from "./mill/mill.ts";
 export { MillRegistry, type MillRegistryDeps } from "./mill/registry.ts";
 export { mintPaperDraft, extractFollowUps } from "./mill/paper.ts";
+export { createFsPaperStore, createMemoryPaperStore, type PaperStore } from "./mill/paper-store.ts";
 export type {
   AgendaItem,
   MillSnapshot,

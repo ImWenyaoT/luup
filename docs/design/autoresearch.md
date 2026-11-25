@@ -46,8 +46,9 @@ question
 | UI | `apps/web`：Astryx `LuupShell`（shell-nav 形制）+ Mill 面板 + `@ai-sdk/react` |
 | Design system | `@astryxdesign/core` + `theme-neutral`；模板参考 `apps/web/astryx-templates/` |
 | 连续战役 | `ResearchMill`（ADR-0016）：Agenda → Ticket 流水 → Paper → 产量门 |
+| Paper 落盘 | `outputs/papers/<id>.md`（`createFsPaperStore`） |
 | Desktop | `apps/desktop` Electron 壳（ADR-0014），默认开 `/autoresearch` |
-| Legacy Science-125 | 既有 `harness.ts` / `POST /api/runs`，默认不再作为产品入口 |
+| Legacy Science-125 | `/legacy` + `harness.ts` / `POST /api/runs`；`/` 重定向到 Autoresearch |
 | Legacy thin ToolLoopAgent 编排 | `orchestrator.ts`（deprecated；对照测试用） |
 
 ## Provider

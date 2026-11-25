@@ -2,11 +2,13 @@ import { createLanguageModel, providerConfigStatus } from "../../seams/providers
 import { createResearchRuntime } from "../runtime.ts";
 import type { BrowserRunner } from "../tools/browser.ts";
 import { ResearchMill } from "./mill.ts";
+import { createFsPaperStore, type PaperStore } from "./paper-store.ts";
 import type { MillSnapshot, StartMillInput } from "./types.ts";
 
 export type MillRegistryDeps = {
   createMill?: () => ResearchMill;
   browserRunner?: BrowserRunner;
+  paperStore?: PaperStore;
   /** live | deterministic；缺省看 LUUP_RUNTIME。 */
   runtime?: "live" | "deterministic";
 };
@@ -41,6 +43,7 @@ export class MillRegistry {
           browserRunner: this.#deps.browserRunner,
         }),
         tickDelayMs: Number(process.env.LUUP_MILL_TICK_MS ?? 0) || 0,
+        paperStore: this.#deps.paperStore ?? createFsPaperStore(),
       });
     this.#mill = mill;
     return mill.start(input);

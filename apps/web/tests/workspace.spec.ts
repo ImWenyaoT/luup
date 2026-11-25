@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 test("completes a deterministic research run through the server", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/legacy");
 
   await expect(page.getByRole("heading", { name: "Luup" })).toBeVisible();
 
@@ -138,7 +138,7 @@ test("completes a deterministic research run through the server", async ({ page 
   page.on("request", (request) => {
     if (request.url().endsWith("/api/runs/deadbeef")) missingRunRequests += 1;
   });
-  await page.goto("/?run=deadbeef");
+  await page.goto("/legacy?run=deadbeef");
   await expect(page.getByText("Run 不存在。")).toBeVisible();
   expect(missingRunRequests).toBe(1);
   await page.waitForTimeout(5_500);
@@ -151,7 +151,7 @@ test("completes a deterministic research run through the server", async ({ page 
 });
 
 test("selects Science 125 benchmark preset question and triggers direct run", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/legacy");
   await page.getByRole("button", { name: /Science 125 题库/ }).click();
 
   await expect(page.getByText("Science 125 题库选题")).toBeVisible();
@@ -178,7 +178,7 @@ test("selects Science 125 benchmark preset question and triggers direct run", as
 });
 
 test("supports sidebar collapse/expand toggle and new research reset workflow", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/legacy");
 
   // 验证侧边栏存在并能收起
   const collapseButton = page.getByTestId("toggle-sidebar");

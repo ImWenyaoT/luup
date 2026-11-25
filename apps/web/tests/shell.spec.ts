@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 test("shell layout shows sidebar and question input", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/legacy");
   await expect(page.getByTestId("app-shell")).toBeVisible();
   await expect(page.getByTestId("question-sidebar-panel")).toBeVisible();
   await expect(page.getByRole("list", { name: "Science 125 项目导航层级" })).toBeVisible();
@@ -14,12 +14,12 @@ test("shell layout shows sidebar and question input", async ({ page }) => {
 });
 
 test("home page shows Luup heading", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/legacy");
   await expect(page.getByRole("heading", { name: "Luup" })).toBeVisible();
 });
 
 test("create run navigates to ?run= query param", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/legacy");
   const question = "E2E deterministic smoke question";
   await page.getByTestId("welcome-question-input").fill(question);
   await page.getByTestId("start-research").click();
@@ -37,7 +37,7 @@ test("create run navigates to ?run= query param", async ({ page }) => {
 
 test("mobile uses a full-width question drawer and restores the primary task", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/");
+  await page.goto("/legacy");
   await expect(page.getByTestId("question-sidebar-panel")).not.toBeAttached();
   await page.getByTestId("toggle-sidebar").click();
   const drawer = page.getByTestId("question-sidebar-panel");
@@ -52,7 +52,7 @@ test("mobile uses a full-width question drawer and restores the primary task", a
 
 test("inspector uses overlay below 1200px and a fixed dock on wide desktop", async ({ page }) => {
   await page.setViewportSize({ width: 901, height: 844 });
-  await page.goto("/");
+  await page.goto("/legacy");
   await page.getByTestId("welcome-question-input").fill("Inspector geometry test");
   await page.getByTestId("start-research").click();
   await expect(page.getByTestId("run-workspace")).toBeVisible();
