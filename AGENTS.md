@@ -90,11 +90,14 @@ CI 是 `.github/workflows/ts.yml` 的 `check`（=`pnpm run ci`）与 `e2e` 两�
 - 多 agent / harness 协作按森林语义：默认真错、独立 critique、允许高拒收，仅 verified 有用才 merge 进共享知识面；拒绝公司式互相改稿
 - 大块工作倾向并行 subagents 提案、由父 agent 做核实与合并
 - 实质设计偏好自上而下：先 specs / 需求与架构接口，再往下分层；同类能力先想清模式再减少重复
+- **前端 UI 优先 Astryx**：新表面从 `pnpm exec astryx template`（如 `shell-nav`）起手；组件用 `@astryxdesign/core`，主题用 `theme-neutral`；少写自定义 CSS / emotion
 
 ## Learned Workspace Facts
 
 - 前端现行栈是 Next.js App Router（`apps/web`），不再以 Vite/Remix 为当前方向
+- Autoresearch UI 用 Astryx AppShell（`LuupShell`，形制学 shell-nav）；模板参考在 `apps/web/astryx-templates/`
 - Harness 方向已定案为森林理论（ADR-0012）：propose → critique → hard gate → merge；角色产出默认不信任
 - 赛题结束后产品主轴切到 Autoresearch（ADR-0013）：AI SDK 多 Provider + subagent，而非继续独占 Qwen
 - Autoresearch harness 形制学 dsh / dsh-superagent（ADR-0015）：Engine + Session log + Assessor；搬形制不搬体量
+- 连续产论文：ResearchMill（ADR-0016）；Science-125 退出产品主轴
 - 桌面形态走 Electron 壳监督本机 Web/API（ADR-0014），不把 Next 塞进 Electron 同上下文

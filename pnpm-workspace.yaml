@@ -8,3 +8,6 @@ allowBuilds:
   electron: true
   electron-winstaller: true
   "@electron/rebuild": true
+  # Astryx postinstall：写入 agent docs / 本地钩子
+  "@astryxdesign/core": true
+  "@astryxdesign/cli": true

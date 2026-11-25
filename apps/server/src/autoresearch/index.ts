@@ -4,6 +4,18 @@ export {
   type CreateAutoresearchAgentsOptions,
 } from "./orchestrator.ts";
 export { createResearchRuntime, ResearchEngine, type RunResearchResult } from "./runtime.ts";
+export { ResearchMill } from "./mill/mill.ts";
+export { MillRegistry, type MillRegistryDeps } from "./mill/registry.ts";
+export { mintPaperDraft, extractFollowUps } from "./mill/paper.ts";
+export type {
+  AgendaItem,
+  MillSnapshot,
+  MillStatus,
+  PaperDraft,
+  QuantityGate,
+  ResearchAgenda,
+  StartMillInput,
+} from "./mill/types.ts";
 export { createForestAssessor } from "./engine/assessor.ts";
 export { createMemoryRepos } from "./engine/memory-repos.ts";
 export { createWorkerExecutor } from "./executor/workers.ts";

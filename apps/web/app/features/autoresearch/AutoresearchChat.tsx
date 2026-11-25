@@ -1,89 +1,20 @@
 "use client";
 
-import styled from "@emotion/styled";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { useMemo, useState, type FormEvent } from "react";
+import { Layout, LayoutContent, LayoutHeader } from "@astryxdesign/core/Layout";
+import { Heading } from "@astryxdesign/core/Heading";
+import { Text } from "@astryxdesign/core/Text";
+import { Button } from "@astryxdesign/core/Button";
+import { TextInput } from "@astryxdesign/core/TextInput";
+import { Card } from "@astryxdesign/core/Card";
+import { VStack, HStack, StackItem } from "@astryxdesign/core/Stack";
+import { Banner } from "@astryxdesign/core/Banner";
 
 import { useApiClient } from "../../providers/api";
-import { Button, colors, Input } from "../../styles";
-
-const Shell = styled.main`
-  min-height: 100dvh;
-  display: grid;
-  grid-template-rows: auto 1fr auto;
-  background:
-    radial-gradient(1200px 600px at 10% -10%, #ececec 0%, transparent 55%),
-    radial-gradient(900px 500px at 100% 0%, #e8eee8 0%, transparent 50%), ${colors.canvas};
-`;
-
-const Header = styled.header`
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 20px 24px 12px;
-  border-bottom: 1px solid ${colors.border};
-  background: color-mix(in srgb, ${colors.surface} 88%, transparent);
-  backdrop-filter: blur(8px);
-  h1 {
-    margin: 0;
-    font-size: 22px;
-    letter-spacing: -0.04em;
-  }
-  p {
-    margin: 4px 0 0;
-    color: ${colors.muted};
-    font-size: 13px;
-  }
-  a {
-    color: ${colors.ink};
-    font-size: 13px;
-    font-weight: 600;
-  }
-`;
-
-const Transcript = styled.div`
-  overflow: auto;
-  padding: 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  max-width: 880px;
-  width: 100%;
-  margin: 0 auto;
-`;
-
-const Bubble = styled.article<{ role: string }>`
-  align-self: ${({ role }) => (role === "user" ? "flex-end" : "stretch")};
-  max-width: ${({ role }) => (role === "user" ? "80%" : "100%")};
-  padding: ${({ role }) => (role === "user" ? "10px 14px" : "0")};
-  border-radius: ${({ role }) => (role === "user" ? "14px" : "0")};
-  background: ${({ role }) => (role === "user" ? colors.accent : "transparent")};
-  color: ${({ role }) => (role === "user" ? "#fff" : colors.ink)};
-  font-size: 14px;
-  line-height: 1.65;
-  white-space: pre-wrap;
-`;
-
-const ToolNote = styled.div`
-  margin-top: 8px;
-  padding: 8px 10px;
-  border-left: 2px solid ${colors.border};
-  color: ${colors.muted};
-  font-size: 12px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-`;
-
-const Composer = styled.form`
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 10px;
-  padding: 16px 24px 24px;
-  max-width: 880px;
-  width: 100%;
-  margin: 0 auto;
-`;
+import { LuupShell } from "../shell/LuupShell";
+import { MillPanel } from "./MillPanel";
 
 function messageText(parts: Array<{ type: string; text?: string }>): string {
   return parts
@@ -94,6 +25,7 @@ function messageText(parts: Array<{ type: string; text?: string }>): string {
 
 export function AutoresearchChat() {
   const api = useApiClient();
+  const [paperTitles, setPaperTitles] = useState<string[]>([]);
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
@@ -118,52 +50,77 @@ export function AutoresearchChat() {
   }
 
   return (
-    <Shell>
-      <Header>
-        <div>
-          <h1>Luup Autoresearch</h1>
-          <p>多 agent 森林编排 · literature / web / critique · AI SDK</p>
-        </div>
-        <a href="/">Science-125 工作台（legacy）</a>
-      </Header>
+    <LuupShell active="mill" paperTitles={paperTitles}>
+      <Layout
+        height="fill"
+        header={
+          <LayoutHeader hasDivider padding={4}>
+            <VStack gap={1}>
+              <Heading level={2}>Luup Autoresearch</Heading>
+              <Text size="sm" color="secondary">
+                ResearchMill 永动机 · Engine 硬闸 · Astryx shell-nav
+              </Text>
+            </VStack>
+          </LayoutHeader>
+        }
+        content={
+          <LayoutContent padding={4}>
+            <VStack gap={4}>
+              <MillPanel onPapersChange={setPaperTitles} />
 
-      <Transcript>
-        {messages.length === 0 ? (
-          <Bubble role="assistant">
-            输入一个开放科研问题。Coordinator 会委派文献与网页子代理检索，再经独立 critique 硬闸后给出可引用报告。
-          </Bubble>
-        ) : null}
-        {messages.map((message) => (
-          <Bubble key={message.id} role={message.role}>
-            {messageText(message.parts as Array<{ type: string; text?: string }>)}
-            {message.parts
-              .filter((part) => part.type.startsWith("tool-"))
-              .map((part, index) => (
-                <ToolNote key={`${message.id}-tool-${index}`}>{part.type.replace(/^tool-/, "")}</ToolNote>
-              ))}
-          </Bubble>
-        ))}
-        {error ? <Bubble role="assistant">错误：{error.message}</Bubble> : null}
-      </Transcript>
+              <Card padding={4}>
+                <VStack gap={3}>
+                  <Heading level={3}>Single-question chat</Heading>
+                  <Text size="sm" color="secondary">
+                    上面启动连续战役；下面可单次提问。每次 Ticket 仍过森林 Assessor。
+                  </Text>
 
-      <Composer onSubmit={onSubmit}>
-        <Input
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          placeholder="例如：脉冲星形成机制的最新证据是什么？"
-          disabled={busy}
-          aria-label="研究问题"
-        />
-        {busy ? (
-          <Button type="button" tone="quiet" onClick={() => void stop()}>
-            停止
-          </Button>
-        ) : (
-          <Button type="submit" tone="primary" disabled={!draft.trim()}>
-            研究
-          </Button>
-        )}
-      </Composer>
-    </Shell>
+                  <VStack gap={2}>
+                    {messages.length === 0 ? (
+                      <Card variant="muted" padding={3}>
+                        <Text color="secondary">等待问题…</Text>
+                      </Card>
+                    ) : null}
+                    {messages.map((message) => (
+                      <Card key={message.id} variant={message.role === "user" ? "blue" : "muted"} padding={3}>
+                        <Text>{messageText(message.parts as Array<{ type: string; text?: string }>)}</Text>
+                        {message.parts
+                          .filter((part) => part.type.startsWith("tool-"))
+                          .map((part, index) => (
+                            <Text key={`${message.id}-tool-${index}`} size="sm" color="secondary">
+                              {part.type.replace(/^tool-/, "")}
+                            </Text>
+                          ))}
+                      </Card>
+                    ))}
+                    {error ? <Banner status="error" title={error.message} /> : null}
+                  </VStack>
+
+                  <form onSubmit={onSubmit}>
+                    <HStack gap={2} vAlign="end">
+                      <StackItem size="fill">
+                        <TextInput
+                          label="研究问题"
+                          isLabelHidden
+                          value={draft}
+                          onChange={(value) => setDraft(value)}
+                          isDisabled={busy}
+                          placeholder="例如：脉冲星形成机制的最新证据是什么？"
+                        />
+                      </StackItem>
+                      {busy ? (
+                        <Button label="停止" variant="secondary" onClick={() => void stop()} />
+                      ) : (
+                        <Button label="研究" variant="primary" type="submit" isDisabled={!draft.trim()} />
+                      )}
+                    </HStack>
+                  </form>
+                </VStack>
+              </Card>
+            </VStack>
+          </LayoutContent>
+        }
+      />
+    </LuupShell>
   );
 }

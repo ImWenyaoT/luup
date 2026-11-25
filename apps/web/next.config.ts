@@ -22,6 +22,10 @@ function resolveApiOrigin(phase: string): string {
 export default function nextConfig(phase: string): NextConfig {
   const apiOrigin = resolveApiOrigin(phase);
   return {
+    experimental: {
+      // Astryx：webpack 下避免 Server Component 从包根拉全量；Turbopack 也无害。
+      optimizePackageImports: ["@astryxdesign/core"],
+    },
     async rewrites() {
       return [
         { source: "/api/:path*", destination: `${apiOrigin}/api/:path*` },

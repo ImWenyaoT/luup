@@ -10,6 +10,8 @@ import { createDeterministicRuntime, createDeterministicVerifier } from "./execu
 import { createQwenExecutor } from "./executor.ts";
 import { Harness } from "./harness.ts";
 import { handleAutoresearchChat, type AutoresearchChatDeps } from "./autoresearch/chat.ts";
+import { MillRegistry, type MillRegistryDeps } from "./autoresearch/mill/registry.ts";
+import type { StartMillInput } from "./autoresearch/mill/types.ts";
 import {
   modelConfigStatus,
   providerConfigStatus,
@@ -79,6 +81,8 @@ export type ServerOptions = {
   port?: number;
   /** Autoresearch chat 注入点（测试用 mock model / browser）。 */
   autoresearch?: AutoresearchChatDeps;
+  /** ResearchMill 注册表注入（测试用假 Engine）。 */
+  mill?: MillRegistryDeps & { registry?: MillRegistry };
 };
 
 export type LuupServer = {
@@ -97,6 +101,13 @@ function createElysiaApp(options: ServerOptions) {
   const mode = options.runtime ?? runtimeMode();
   const reportError = options.reportError ?? ((message, error) => console.error(message, error));
   const autoresearchDeps: AutoresearchChatDeps = { runtime: mode, ...options.autoresearch };
+  const millRegistry =
+    options.mill?.registry ??
+    new MillRegistry({
+      runtime: mode,
+      browserRunner: options.autoresearch?.browserRunner,
+      createMill: options.mill?.createMill,
+    });
   const maxConcurrentRuns = 2;
   const apiToken = process.env.LUUP_API_TOKEN?.trim() || null;
   const configuredQueueLimit = Number(process.env.LUUP_MAX_QUEUED_RUNS ?? 8);
@@ -460,6 +471,57 @@ function createElysiaApp(options: ServerOptions) {
     .post("/api/autoresearch/chat", async ({ request, body }) => {
       if (!authorized(request)) return unauthorized("/api/autoresearch/chat", request);
       return handleAutoresearchChat(request, autoresearchDeps, body);
+    })
+    .get("/api/autoresearch/mill", ({ request }) => {
+      if (!authorized(request)) return unauthorized("/api/autoresearch/mill", request);
+      return json(200, millRegistry.status());
+    })
+    .post("/api/autoresearch/mill/start", async ({ request, body }) => {
+      if (!authorized(request)) return unauthorized("/api/autoresearch/mill/start", request);
+      const raw = (body ?? {}) as Partial<StartMillInput>;
+      const topic = typeof raw.topic === "string" ? raw.topic : "";
+      const seedQuestions = Array.isArray(raw.seedQuestions)
+        ? raw.seedQuestions.filter((q): q is string => typeof q === "string")
+        : [];
+      const targetPapers = typeof raw.targetPapers === "number" ? raw.targetPapers : Number(raw.targetPapers);
+      const maxTickets = typeof raw.maxTickets === "number" ? raw.maxTickets : Number(raw.maxTickets);
+      try {
+        const snapshot = millRegistry.start({
+          topic,
+          seedQuestions,
+          targetPapers: Number.isFinite(targetPapers) ? targetPapers : 1,
+          maxTickets: Number.isFinite(maxTickets) ? maxTickets : 8,
+        });
+        return json(202, snapshot);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message === "missing_model_credentials") {
+          return problemResponse(503, {
+            code: message,
+            title: "Model credentials missing",
+            detail: "Configure OPENAI_API_KEY / DEEPSEEK_API_KEY / LUUP_API_KEY or PUT /api/config.",
+            instance: "/api/autoresearch/mill/start",
+          });
+        }
+        if (message === "mill_already_running") {
+          return problemResponse(409, {
+            code: message,
+            title: "Mill already running",
+            detail: "Stop the current campaign before starting another.",
+            instance: "/api/autoresearch/mill/start",
+          });
+        }
+        return problemResponse(422, {
+          code: "invalid_mill_start",
+          title: "Invalid mill start",
+          detail: message,
+          instance: "/api/autoresearch/mill/start",
+        });
+      }
+    })
+    .post("/api/autoresearch/mill/stop", async ({ request }) => {
+      if (!authorized(request)) return unauthorized("/api/autoresearch/mill/stop", request);
+      return json(200, await millRegistry.stop());
     })
     // 探针端点
     .get("/api/health", () => json(200, { status: "ok" }))

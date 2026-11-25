@@ -11,24 +11,34 @@ vi.mock("@ai-sdk/react", () => ({
   }),
 }));
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn() }),
+}));
+
 vi.mock("../../providers/api", () => ({
   useApiClient: () => ({
     getToken: () => "test-token",
     baseUrl: "",
     snapshotTimeoutMs: 10_000,
-    get: vi.fn(),
+    get: vi.fn(async () => ({ status: "idle" })),
     post: vi.fn(),
     put: vi.fn(),
   }),
 }));
 
+import { AstryxProvider } from "../../providers/astryx";
 import { AutoresearchChat } from "./AutoresearchChat";
 
 describe("AutoresearchChat", () => {
-  it("渲染品牌与空态提示", () => {
-    render(<AutoresearchChat />);
+  it("渲染 Astryx shell 与 Mill / chat 入口", () => {
+    render(
+      <AstryxProvider>
+        <AutoresearchChat />
+      </AstryxProvider>,
+    );
     expect(screen.getByRole("heading", { name: "Luup Autoresearch" })).toBeInTheDocument();
-    expect(screen.getByText(/Coordinator 会委派/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Research Mill/i })).toBeInTheDocument();
+    expect(screen.getByText(/连续战役/)).toBeInTheDocument();
     expect(screen.getByLabelText("研究问题")).toBeInTheDocument();
   });
 });
