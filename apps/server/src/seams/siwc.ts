@@ -70,6 +70,8 @@ type LoginHandle = {
 let deps: SiwcDeps = {};
 let loginInFlight: LoginHandle | null = null;
 let refreshInFlight: Promise<string | null> | null = null;
+/** 登出 / reset 时递增；进行中的 refresh 落盘前对照，避免把已注销会话写回。 */
+let sessionEpoch = 0;
 
 class SiwcLoginCancelledError extends Error {
   constructor() {
@@ -89,6 +91,7 @@ export function resetSiwcRuntimeState(): void {
     loginInFlight = null;
   }
   refreshInFlight = null;
+  sessionEpoch += 1;
   deps = {};
 }
 
@@ -406,6 +409,8 @@ export function siwcStatus(): SiwcStatus {
 }
 
 export function logoutSiwc(): void {
+  sessionEpoch += 1;
+  refreshInFlight = null;
   try {
     unlinkSync(credentialPath());
   } catch (err) {
@@ -424,6 +429,7 @@ async function refreshSession(session: SiwcSession): Promise<string | null> {
     logoutSiwc();
     return null;
   }
+  const epochAtStart = sessionEpoch;
   try {
     const body = await postToken({
       grant_type: "refresh_token",
@@ -431,6 +437,10 @@ async function refreshSession(session: SiwcSession): Promise<string | null> {
       refresh_token: session.refreshToken,
       resource: SIWC_RESOURCE,
     });
+    if (epochAtStart !== sessionEpoch || !readSession()) {
+      // 等待 HTTP 期间已 logout：不落盘、不恢复 signed_in。
+      return null;
+    }
     const tokens = parseTokenResponse(body);
     const at = nowMs();
     const next: SiwcSession = {
@@ -445,10 +455,11 @@ async function refreshSession(session: SiwcSession): Promise<string | null> {
       subject: subjectFromIdToken(tokens.idToken) ?? session.subject,
       savedAt: new Date(at).toISOString(),
     };
+    if (epochAtStart !== sessionEpoch || !readSession()) return null;
     writeSession(next);
     return next.accessToken;
   } catch {
-    logoutSiwc();
+    if (epochAtStart === sessionEpoch) logoutSiwc();
     return null;
   }
 }

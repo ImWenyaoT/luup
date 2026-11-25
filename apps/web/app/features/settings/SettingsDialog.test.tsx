@@ -99,12 +99,11 @@ describe("SettingsDialog", () => {
       expect(typeof body).toBe("string");
       expect(JSON.parse(body as string)).toEqual({
         model_id: "qwen-new",
-        base_url: "https://api.example.com/v1",
         provider: "deepseek",
         api_surface: "responses",
       });
     });
-    expect(await screen.findByRole("status")).toHaveTextContent("已保存，下一次运行即生效。");
+    expect(await screen.findByText("已保存，下一次运行即生效。")).toBeInTheDocument();
     expect(screen.getByText(/DEEPSEEK_API_KEY/)).toBeInTheDocument();
   });
 
@@ -118,9 +117,33 @@ describe("SettingsDialog", () => {
     renderWithProviders(<SettingsDialog open onOpenChange={vi.fn()} />, { client });
 
     await waitFor(() => expect(screen.getByTestId("settings-model-id")).toHaveValue("qwen-test"));
+    fireEvent.change(screen.getByTestId("settings-model-id"), { target: { value: "changed-model" } });
     fireEvent.click(screen.getByTestId("save-settings"));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("API token 无效");
+  });
+
+  test("openai 环境配置用 provider_* 初始化，不写回 Qwen/DashScope", async () => {
+    const openaiConfig: ConfigStatus = {
+      runtime: "live",
+      credential: "environment",
+      model_id: "qwen3.8-max",
+      base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      provider: "openai",
+      api_surface: "responses",
+      provider_credential: "environment",
+      provider_model_id: "gpt-5.4",
+      provider_base_url: null,
+    };
+    const fetchImpl = mockFetch(openaiConfig);
+    const client = clientFrom(fetchImpl);
+    renderWithProviders(<SettingsDialog open onOpenChange={vi.fn()} />, { client });
+
+    await waitFor(() => expect(screen.getByTestId("settings-model-id")).toHaveValue("gpt-5.4"));
+    expect(screen.getByTestId("settings-base-url")).toHaveValue("");
+    expect(screen.getByTestId("settings-provider")).toHaveValue("openai");
+    fireEvent.click(screen.getByTestId("save-settings"));
+    expect(await screen.findByText("没有要保存的改动。")).toBeInTheDocument();
   });
 
   test("关闭时不渲染", () => {
@@ -153,7 +176,7 @@ describe("SettingsDialog", () => {
     await waitFor(() =>
       expect(openSpy).toHaveBeenCalledWith("https://auth.example/siwc", "_blank", "noopener,noreferrer"),
     );
-    expect(await screen.findByRole("status")).toHaveTextContent(/已打开 ChatGPT 登录窗口/);
+    expect(await screen.findByText(/已打开 ChatGPT 登录窗口/)).toBeInTheDocument();
   });
 
   test("已登录时展示状态并可退出", async () => {
@@ -166,9 +189,9 @@ describe("SettingsDialog", () => {
     renderWithProviders(<SettingsDialog open onOpenChange={vi.fn()} />, { client });
 
     expect(await screen.findByText(/已登录 · user@example.com/)).toBeInTheDocument();
-    expect(screen.getByTestId("siwc-sign-in")).toBeDisabled();
+    expect(screen.getByTestId("siwc-sign-in")).toHaveAttribute("aria-disabled", "true");
     fireEvent.click(screen.getByTestId("siwc-logout"));
-    expect(await screen.findByRole("status")).toHaveTextContent(/已退出 ChatGPT 登录/);
+    expect(await screen.findByText(/已退出 ChatGPT 登录/)).toBeInTheDocument();
   });
 
   test("SettingsTrigger 在有 config 时渲染", async () => {

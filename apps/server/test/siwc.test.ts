@@ -91,6 +91,43 @@ test("resolveSiwcAccessToken 未过期直接返回", async () => {
   assert.equal(await resolveSiwcAccessToken(), "live");
 });
 
+test("logout 打断进行中的 refresh 不写回会话", async () => {
+  writeSession({
+    accessToken: "stale",
+    refreshToken: "r1",
+    expiresAt: Date.now() - 1000,
+    clientId: "oaiapp_x",
+  });
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  configureSiwc({
+    credentialPath,
+    hostIdPath,
+    fetch: async () => {
+      await gate;
+      return new Response(
+        JSON.stringify({
+          access_token: "should-not-persist",
+          refresh_token: "r2",
+          expires_in: 3600,
+          scope: "chatgpt.tokens.use.direct",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    },
+  });
+  const pending = resolveSiwcAccessToken();
+  await new Promise((r) => setTimeout(r, 5));
+  logoutSiwc();
+  assert.equal(siwcStatus().signed_in, false);
+  release();
+  assert.equal(await pending, null);
+  assert.equal(siwcStatus().signed_in, false);
+  assert.throws(() => readFileSync(credentialPath), /ENOENT/);
+});
+
 test("resolveSiwcAccessToken 过期则 refresh（串行）", async () => {
   writeSession({
     accessToken: "stale",

@@ -1,5 +1,9 @@
 import styled from "@emotion/styled";
 import { useEffect, useRef, useState } from "react";
+import { Button as AstryxButton } from "@astryxdesign/core/Button";
+import { Card } from "@astryxdesign/core/Card";
+import { Text } from "@astryxdesign/core/Text";
+import { VStack, HStack } from "@astryxdesign/core/Stack";
 import { CloseIcon, GearIcon } from "../../Icons";
 import { Button, colors, IconButton, Input, Label, mono, Select } from "../../styles";
 import { useConfig } from "../../hooks/useConfig";
@@ -104,15 +108,6 @@ const RuntimeText = styled.span`
     display: none;
   }
 `;
-const SiwcBox = styled.div`
-  display: grid;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid ${colors.border};
-  border-radius: 10px;
-  background: ${colors.canvas};
-`;
-
 function apiKeyHint(provider: ProviderId): string {
   if (provider === "deepseek") {
     return "DeepSeek 使用 DEEPSEEK_API_KEY；留空则不更新，密钥只写入当前服务进程。";
@@ -167,10 +162,13 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   useEffect(() => {
     if (!config) return;
-    setModelId(config.model_id);
-    setBaseUrl(config.base_url);
+    // 用 provider_*：legacy model_id/base_url 仍是 Qwen/DashScope，勿回写成 openai/deepseek override。
+    setModelId(config.provider_model_id ?? config.model_id);
+    setBaseUrl(config.provider_base_url ?? "");
     setProvider(config.provider ?? "openai-compatible");
-    setApiSurface(config.api_surface ?? "chat");
+    setApiSurface(
+      config.api_surface ?? (config.provider === "openai" || config.provider === "deepseek" ? "responses" : "chat"),
+    );
     setSiwc((prev) => prev ?? config.siwc ?? null);
   }, [config]);
 
@@ -179,10 +177,14 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const handleSave = async () => {
     const next: ConfigSaveBody = {};
     if (apiKey.trim()) next.api_key = apiKey.trim();
-    if (modelId.trim()) next.model_id = modelId.trim();
-    if (baseUrl.trim()) next.base_url = baseUrl.trim();
-    if (provider) next.provider = provider;
-    if (apiSurface) next.api_surface = apiSurface;
+    const currentModel = config?.provider_model_id ?? config?.model_id ?? "";
+    const currentBase = config?.provider_base_url ?? "";
+    if (modelId.trim() && modelId.trim() !== currentModel) next.model_id = modelId.trim();
+    if (baseUrl.trim() && baseUrl.trim() !== currentBase) next.base_url = baseUrl.trim();
+    if (provider && provider !== config?.provider) next.provider = provider;
+    if (apiSurface && apiSurface !== config?.api_surface) next.api_surface = apiSurface;
+    // 仅改了 api key，或显式切换 provider 时也要带上当前 provider，避免只写密钥丢上下文。
+    if (next.api_key && !next.provider && provider) next.provider = provider;
     if (!Object.keys(next).length) {
       setFeedback({ tone: "error", text: "没有要保存的改动。" });
       return;
@@ -315,7 +317,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               模型 ID
               <Input
                 data-testid="settings-model-id"
-                placeholder={config ? `模型 id（当前 ${config.model_id}）` : "模型 id"}
+                placeholder={config ? `模型 id（当前 ${config.provider_model_id ?? config.model_id}）` : "模型 id"}
                 value={modelId}
                 onChange={(e) => setModelId(e.target.value)}
               />
@@ -324,41 +326,46 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               Base URL
               <Input
                 data-testid="settings-base-url"
-                placeholder={config ? `端点（当前 ${config.base_url}）` : "Base URL"}
+                placeholder={
+                  config?.provider_base_url ? `端点（当前 ${config.provider_base_url}）` : "留空 = 供应商默认端点"
+                }
                 value={baseUrl}
                 onChange={(e) => setBaseUrl(e.target.value)}
               />
             </Label>
           </Grid>
-          <SiwcBox data-testid="settings-siwc">
-            <strong style={{ fontSize: 12 }}>Sign in with ChatGPT</strong>
-            <p style={{ margin: 0, color: colors.muted, fontSize: 12 }}>
-              {siwcView?.signed_in
-                ? `已登录${siwcView.email ? ` · ${siwcView.email}` : ""}${
-                    siwcView.expires_at ? ` · 过期 ${siwcView.expires_at}` : ""
-                  }`
-                : "未登录。OpenAI provider 可用此入口代替 API Key。"}
-            </p>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <Button
-                data-testid="siwc-sign-in"
-                tone="primary"
-                compact
-                disabled={siwcBusy || siwcView?.signed_in === true}
-                onClick={() => void handleSiwcStart()}
-              >
+          <Card padding={3} variant="muted" data-testid="settings-siwc">
+            <VStack gap={2}>
+              <Text weight="semibold" size="sm">
                 Sign in with ChatGPT
-              </Button>
-              <Button
-                data-testid="siwc-logout"
-                compact
-                disabled={siwcBusy || !siwcView?.signed_in}
-                onClick={() => void handleSiwcLogout()}
-              >
-                退出登录
-              </Button>
-            </div>
-          </SiwcBox>
+              </Text>
+              <Text size="sm" color="secondary">
+                {siwcView?.signed_in
+                  ? `已登录${siwcView.email ? ` · ${siwcView.email}` : ""}${
+                      siwcView.expires_at ? ` · 过期 ${siwcView.expires_at}` : ""
+                    }`
+                  : "未登录。OpenAI provider 可用此入口代替 API Key。"}
+              </Text>
+              <HStack gap={2}>
+                <AstryxButton
+                  data-testid="siwc-sign-in"
+                  label="Sign in with ChatGPT"
+                  variant="primary"
+                  size="sm"
+                  isDisabled={siwcBusy || siwcView?.signed_in === true}
+                  onClick={() => void handleSiwcStart()}
+                />
+                <AstryxButton
+                  data-testid="siwc-logout"
+                  label="退出登录"
+                  variant="secondary"
+                  size="sm"
+                  isDisabled={siwcBusy || !siwcView?.signed_in}
+                  onClick={() => void handleSiwcLogout()}
+                />
+              </HStack>
+            </VStack>
+          </Card>
           {feedback && (
             <p
               role={feedback.tone === "error" ? "alert" : "status"}
