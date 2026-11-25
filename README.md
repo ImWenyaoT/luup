@@ -1,8 +1,9 @@
 # luup
 
-**Autoresearch（主轴，ADR-0013）**：Vercel AI SDK 多 agent / sub-agent 自动科研系统——
-Coordinator 委派 literature / web（agent-browser）/ critique，森林硬闸后产出可引用报告；
-支持 OpenAI / DeepSeek / openai-compatible 的 Responses（或 Chat）接线。
+**Autoresearch（主轴，ADR-0013 / ADR-0015）**：ResearchEngine + Session log + 工人
+Assessor（形制学 dsh / superagent）；AI SDK 只做执行器适配。Engine 派出 literature /
+web（agent-browser）/ critic Assignment，Assessor 硬闸后才交付可引用报告；支持
+OpenAI / DeepSeek / openai-compatible 的 Responses（或 Chat）接线。
 
 **Desktop（ADR-0014）**：`apps/desktop` Electron 壳，本机监督 API/Web，默认打开 `/autoresearch`。
 

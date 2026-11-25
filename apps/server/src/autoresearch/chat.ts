@@ -1,18 +1,38 @@
-import { convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, type UIMessage } from "ai";
+import { createUIMessageStream, createUIMessageStreamResponse, type LanguageModel, type UIMessage } from "ai";
 
 import { createLanguageModel, providerConfigStatus } from "../seams/providers.ts";
-import { formatGateDelivery } from "./gate.ts";
-import { createAutoresearchAgents, type BrowserRunner } from "./index.ts";
+import { createResearchRuntime, type RunResearchResult } from "./runtime.ts";
+import type { BrowserRunner } from "./tools/browser.ts";
 
 export type AutoresearchChatDeps = {
-  /** 测试注入：跳过 live provider。 */
-  createAgents?: typeof createAutoresearchAgents;
+  /** 测试注入：跳过 live provider / 控制 Engine。 */
+  createEngine?: (input: { model: LanguageModel; browserRunner?: BrowserRunner }) => {
+    runResearch: (question: string, options?: { abortSignal?: AbortSignal }) => Promise<RunResearchResult>;
+  };
   resolveModel?: typeof createLanguageModel;
   browserRunner?: BrowserRunner;
   runtime?: "live" | "deterministic";
 };
 
-/** 处理 AI SDK UI chat 请求 → coordinator 跑完后由宿主硬闸决定交付文本。 */
+function lastUserText(messages: UIMessage[]): string {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (!message || message.role !== "user") continue;
+    const parts = message.parts ?? [];
+    const text = parts
+      .filter(
+        (p): p is { type: "text"; text: string } =>
+          p.type === "text" && typeof (p as { text?: unknown }).text === "string",
+      )
+      .map((p) => p.text)
+      .join("\n")
+      .trim();
+    if (text) return text;
+  }
+  return "";
+}
+
+/** 处理 AI SDK UI chat：问题进 ResearchEngine；交付只认 Decision（ADR-0015）。 */
 export async function handleAutoresearchChat(
   request: Request,
   deps: AutoresearchChatDeps = {},
@@ -46,33 +66,48 @@ export async function handleAutoresearchChat(
     return Response.json({ error: "messages_required" }, { status: 422 });
   }
 
+  const question = lastUserText(messages as UIMessage[]);
+  if (!question) {
+    return Response.json({ error: "empty_question" }, { status: 422 });
+  }
+
   const resolveModel = deps.resolveModel ?? createLanguageModel;
-  const buildAgents = deps.createAgents ?? createAutoresearchAgents;
   const model = resolveModel();
-  const { coordinator, evaluateGate } = buildAgents({
-    model,
-    browserRunner: deps.browserRunner,
-  });
+  const buildEngine =
+    deps.createEngine ??
+    ((input: { model: LanguageModel; browserRunner?: BrowserRunner }) =>
+      createResearchRuntime({ model: input.model, browserRunner: input.browserRunner }));
+  const engine = buildEngine({ model, browserRunner: deps.browserRunner });
 
   const stream = createUIMessageStream({
     execute: async ({ writer }) => {
       writer.write({ type: "start" });
-
-      const result = await coordinator.generate({
-        messages: await convertToModelMessages(messages as UIMessage[], {
-          ignoreIncompleteToolCalls: true,
-        }),
-        abortSignal: request.signal,
-      });
-
-      // 宿主硬闸：gate 不过则不交付 coordinator draft（ADR-0012 / ADR-0013）。
-      const gate = evaluateGate();
-      const delivery = formatGateDelivery(gate, result.text);
-      const textId = "host-gated-delivery";
-      writer.write({ type: "text-start", id: textId });
-      writer.write({ type: "text-delta", id: textId, delta: delivery });
-      writer.write({ type: "text-end", id: textId });
-      writer.setOutcome({ status: gate.ok ? "completed" : "failed" });
+      try {
+        const { deliveryText, ticket } = await engine.runResearch(question, {
+          abortSignal: request.signal,
+        });
+        const textId = "engine-gated-delivery";
+        writer.write({ type: "text-start", id: textId });
+        writer.write({ type: "text-delta", id: textId, delta: deliveryText });
+        writer.write({ type: "text-end", id: textId });
+        writer.setOutcome({
+          status: ticket.status === "verified" ? "completed" : "failed",
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const textId = "engine-error";
+        const delivery = [
+          "[host-gate] FAIL-CLOSED",
+          `reason: engine_error`,
+          `detail: ${message.slice(0, 500)}`,
+          "",
+          "ResearchEngine aborted before Decision. Forest hard gate rejected merge.",
+        ].join("\n");
+        writer.write({ type: "text-start", id: textId });
+        writer.write({ type: "text-delta", id: textId, delta: delivery });
+        writer.write({ type: "text-end", id: textId });
+        writer.setOutcome({ status: "failed" });
+      }
     },
   });
 

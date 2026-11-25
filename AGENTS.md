@@ -1,9 +1,10 @@
 # luup Agent App
 
-Luup 是 TypeScript 全栈。**产品主轴（ADR-0013）是 Autoresearch**：Vercel AI SDK
-（`ToolLoopAgent` + `@ai-sdk/react`）多 agent / sub-agent，多 Provider Responses
-（OpenAI / DeepSeek / openai-compatible），浏览器工具走 `agent-browser`。
-森林语义（ADR-0012）仍由宿主 Harness 硬闸拥有。
+Luup 是 TypeScript 全栈。**产品主轴（ADR-0013 / ADR-0015）是 Autoresearch**：
+`ResearchEngine`（形制学 dsh / superagent）拥有 Ticket / Assignment / Decision；
+工人用 AI SDK `ToolLoopAgent` / `generateText` 做执行器适配；UI 用 `@ai-sdk/react`；
+多 Provider Responses（OpenAI / DeepSeek / openai-compatible）；浏览器工具走 `agent-browser`。
+森林语义（ADR-0012）由 Engine Assessor 硬闸拥有，不是模型自评。
 
 Science-125 五角色流水线（`@openai/agents` + 可选 Qwen/百炼）保留为 **legacy**。
 新功能以 `apps/server/src/autoresearch/` 与 `/autoresearch` UI 为准；改 AI SDK
@@ -35,13 +36,13 @@ cwd 相对路径 `data/`、`memory/`、`outputs/` 因此稳定）。
 历史批次证据（pilot/v2/v3 部分批与 Python 期 `runs/`）在 git tag
 `archive/phase-a-evidence-20260816`，不在工作树（协议修订 #6）；正式批入库时重建 `runs-ts/`。
 
-`apps/server/src/` 下的分区：`autoresearch/`（AI SDK 多 agent 编排，产品主轴）、
-`agent/`（legacy 五角色契约/工具）、`api/`（对外投影）、`batch/`（125 题批跑，legacy）、
-`campaign/`（战役记忆读写）、`domain/`（题库）、`eval/`（离线指标）、`seams/`（可替换接线；
-`providers.ts` 是多 Provider 唯一读取点，`model.ts` 仍服务 legacy Qwen）、
-`store/`（SQLite 事实存储，基于 Node 原生 `node:sqlite`）、`verify/`（B1–B4 确定性引用验收）。
-`harness.ts`/`server.ts`/`roles.ts` 是 legacy 编排本体；autoresearch 的 coordinator/subagent
-在 `autoresearch/orchestrator.ts`。
+`apps/server/src/` 下的分区：`autoresearch/`（产品主轴：`runtime` / `engine` / `session` /
+`executor`；`orchestrator.ts` 为 deprecated 薄对照）、`agent/`（legacy 五角色契约/工具）、
+`api/`（对外投影）、`batch/`（125 题批跑，legacy）、`campaign/`（战役记忆读写）、
+`domain/`（题库）、`eval/`（离线指标）、`seams/`（可替换接线；`providers.ts` 是多 Provider
+唯一读取点，`model.ts` 仍服务 legacy Qwen）、`store/`（SQLite 事实存储，基于 Node 原生
+`node:sqlite`）、`verify/`（B1–B4 确定性引用验收）。
+`harness.ts`/`server.ts`/`roles.ts` 是 legacy 编排本体。
 
 ## seam 纪律
 
@@ -72,7 +73,8 @@ CI 是 `.github/workflows/ts.yml` 的 `check`（=`pnpm run ci`）与 `e2e` 两�
 
 ## 锚点
 
-- Autoresearch 产品/架构：`docs/design/autoresearch.md`（ADR-0013）
+- Autoresearch 产品/架构：`docs/design/autoresearch.md`（ADR-0013 / ADR-0015）
+- Harness 形制台账：`docs/design/dsh-borrowings.md` · `docs/adr/0015-autoresearch-dsh-superagent-harness.md`
 - 桌面客户端：`docs/adr/0014-electron-desktop-client.md` · `apps/desktop/README.md`
 - Legacy 验收判据：`docs/design/criteria.md`
 - Legacy 架构：`docs/design/architecture.md`
@@ -94,4 +96,5 @@ CI 是 `.github/workflows/ts.yml` 的 `check`（=`pnpm run ci`）与 `e2e` 两�
 - 前端现行栈是 Next.js App Router（`apps/web`），不再以 Vite/Remix 为当前方向
 - Harness 方向已定案为森林理论（ADR-0012）：propose → critique → hard gate → merge；角色产出默认不信任
 - 赛题结束后产品主轴切到 Autoresearch（ADR-0013）：AI SDK 多 Provider + subagent，而非继续独占 Qwen
+- Autoresearch harness 形制学 dsh / dsh-superagent（ADR-0015）：Engine + Session log + Assessor；搬形制不搬体量
 - 桌面形态走 Electron 壳监督本机 Web/API（ADR-0014），不把 Next 塞进 Electron 同上下文

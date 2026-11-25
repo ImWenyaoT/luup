@@ -29,10 +29,12 @@ export type CreateAutoresearchAgentsOptions = {
   webSteps?: number;
 };
 
-/** 组装 parent + literature / web / critique subagents（ADR-0013）。
+/**
+ * @deprecated ADR-0015：产品路径改走 `createResearchRuntime` / `ResearchEngine`。
+ * 本工厂保留给对照测试与薄 ToolLoopAgent 实验；新代码不要依赖 Coordinator 自委派。
  *
- * Harness 语义：subagent 只经 tool 委派；共享面是 runtime.evidence / critiques，
- * 不是隐藏对话历史。critique 否决由 `evaluateGate` 硬闸，不交给模型「改到过」。
+ * Harness 语义（仍成立）：subagent 只经 tool 委派；共享面是 runtime.evidence / critiques；
+ * critique 否决由 `evaluateGate` 硬闸，不交给模型「改到过」。
  */
 export function createAutoresearchAgents(options: CreateAutoresearchAgentsOptions): AutoresearchAgents {
   const runtime: AutoresearchRuntime = {

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, onTestFinished, test } from "vitest";
 import { MockLanguageModelV4 } from "ai/test";
 
-import { createAutoresearchAgents } from "../src/autoresearch/orchestrator.ts";
+import { createResearchRuntime } from "../src/autoresearch/runtime.ts";
 import { Harness } from "../src/harness.ts";
 import { clearProviderOverride } from "../src/seams/providers.ts";
 import { createApp } from "../src/server.ts";
@@ -24,7 +24,7 @@ afterEach(() => {
   clearProviderOverride();
 });
 
-test("POST /api/autoresearch/chat 在 deterministic 下可流式响应", async () => {
+test("POST /api/autoresearch/chat 走 ResearchEngine；无证据 FAIL-CLOSED", async () => {
   const store = new SqliteStore(":memory:");
   const harness = new Harness(store, async () => {
     throw new Error("unused");
@@ -32,7 +32,28 @@ test("POST /api/autoresearch/chat 在 deterministic 下可流式响应", async (
   const model = new MockLanguageModelV4({
     doGenerate: [
       {
-        content: [{ type: "text", text: "Hello from coordinator mock." }],
+        content: [{ type: "text", text: "Lit mock." }],
+        finishReason: { unified: "stop", raw: undefined },
+        usage,
+        warnings: [],
+      },
+      {
+        content: [{ type: "text", text: "Web mock." }],
+        finishReason: { unified: "stop", raw: undefined },
+        usage,
+        warnings: [],
+      },
+      {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              verdict: "insufficient",
+              rationale: "no evidence",
+              gaps: ["none"],
+            }),
+          },
+        ],
         finishReason: { unified: "stop", raw: undefined },
         usage,
         warnings: [],
@@ -45,7 +66,11 @@ test("POST /api/autoresearch/chat 在 deterministic 下可流式响应", async (
     runtime: "deterministic",
     autoresearch: {
       resolveModel: () => model,
-      createAgents: createAutoresearchAgents,
+      createEngine: ({ model: m, browserRunner }) =>
+        createResearchRuntime({
+          model: m,
+          browserRunner: browserRunner ?? (async () => ({ ok: true, stdout: "", stderr: "", code: 0 })),
+        }),
       browserRunner: async () => ({ ok: true, stdout: "", stderr: "", code: 0 }),
     },
   });
@@ -65,6 +90,6 @@ test("POST /api/autoresearch/chat 在 deterministic 下可流式响应", async (
   assert.equal(res.status, 200);
   const text = await res.text();
   assert.ok(text.length > 0);
-  // 宿主硬闸：无证据时交付 FAIL-CLOSED，而不是裸 draft
-  assert.match(text, /host-gate|FAIL-CLOSED|no_evidence/i);
+  assert.match(text, /host-gate|FAIL-CLOSED|no_evidence|critique_insufficient/i);
+  assert.match(text, /engine-gated-delivery/);
 });
