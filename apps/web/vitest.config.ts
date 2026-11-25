@@ -16,6 +16,7 @@ export default defineConfig({
         "app/styles.ts",
         "app/layout.tsx",
         "app/page.tsx",
+        "app/autoresearch/page.tsx",
         "app/error.tsx",
         "app/global-error.tsx",
         "app/not-found.tsx",

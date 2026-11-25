@@ -14,9 +14,13 @@ node_modules/
 .turbo/
 .next/
 out/
+dist/
 coverage/
 *.tsbuildinfo
 next-env.d.ts
+
+# Electron 打包产物
+apps/desktop/release/
 
 # 运行期瞬态。边界纪律（architecture.md「存储裁决」）：
 # `memory/`、`data/` 是 source of truth，永不 ignore；只有「删掉重算即可」的瞬态才 ignore。

@@ -185,11 +185,40 @@ export type Artifact = {
   content: ArtifactContent;
 };
 
+export type ProviderId = "openai" | "deepseek" | "openai-compatible";
+
+export type ApiSurface = "responses" | "chat";
+
+export type SiwcStatus = {
+  signed_in: boolean;
+  email?: string | null;
+  expires_at?: string | null;
+  client_id_present?: boolean;
+};
+
+export type ProviderCredential = "override" | "siwc" | "environment" | "absent";
+
 export type ConfigStatus = {
   runtime: "live" | "deterministic";
   credential: "override" | "environment" | "absent";
   model_id: string;
   base_url: string;
+  /** ADR-0013：当前 provider；缺省时 UI 按 openai-compatible 展示。 */
+  provider?: ProviderId;
+  api_surface?: ApiSurface;
+  provider_credential?: ProviderCredential;
+  provider_model_id?: string;
+  provider_base_url?: string | null;
+  /** Sign in with ChatGPT；服务端 seam 未就绪时可能缺省。 */
+  siwc?: SiwcStatus;
+};
+
+export type ConfigSaveBody = {
+  api_key?: string;
+  model_id?: string;
+  base_url?: string;
+  provider?: ProviderId;
+  api_surface?: ApiSurface;
 };
 
 export type Science125Question = {

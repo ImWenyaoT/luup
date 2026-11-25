@@ -126,14 +126,33 @@ luup 反过来——**页面覆盖赢、只存进程内存、重启即忘**。�
 整个不存在，密钥也从不落盘。**不抄**：`.credentials.yaml` 持久层、文件锁、chokidar
 热重载、多 provider 的 ref 派生、设置弹层与 slot 注册。
 
+## Autoresearch 形制采纳（ADR-0015，2026-11-25）
+
+赛后产品路径重开：Science-125「体量小、重跑便宜」不再挡 harness OS。
+**搬形制不搬体量**——不引入 `@deepseek-ai/dsh` / Cordis 包树。
+
+| 形制 | dsh / superagent | luup Autoresearch |
+|---|---|---|
+| Runtime 组合根 | superagent Runtime | `apps/server/src/autoresearch/runtime.ts` |
+| Engine 唯一写者 | Ticket / Assignment / Report / Decision | `ResearchEngine`（`engine/engine.ts`） |
+| Session log + derive | durable events → `deriveMessages` | `session/log.ts` + `session/derive.ts` |
+| Worker 隔离 | Worker Session + Executor | `executor/workers.ts` + 角色 Session |
+| Assessor 硬闸 | Decision 聚合 | `engine/assessor.ts` → `evaluateAutoresearchGate` |
+| Effects / 崩溃续跑 | durable repair + effects queue | **第一刀未做**：进程内 emit；记账可闭合；续跑差距仍成立 |
+
+Science-125 流水线（五角色 `@openai/agents`）仍只保留本文件上半「已采用」的窄抄法；
+新能力只进 Autoresearch Engine。
+
 ## 明确不采用
 
 | 模式 | dsh 位置 | 不采用的理由 |
 |---|---|---|
-| compaction 全套 | `packages/compaction/`（compaction / compaction-basic / tool-result-pruner / command-compact 四个包） | luup 单个 Attempt 至多两次模型调用、角色之间不共享对话，上下文根本长不到需要压缩；真撞上了现在也有 `context_overflow` 这个可数的信号，等它出现再说 |
-| 并发调度池 | `packages/core/agent-loop/src/tool-calls.ts:113`（有界滚动池 + 独占屏障 + 启动前重分类） | luup 的编排是写死的五阶段串行，researcher 还显式关了 `parallelToolCalls`；一个没有并发的流水线不需要调度器 |
-| scope 分层 | `packages/core/scope/`（cordis Context 树，逐层 provider 覆盖） | 分层的价值在「多个 agent 同时活着、各自要不同的 provider」。luup 一个 run 一条流水线，每个接缝只有一个生产实现加一个离线替身 —— 两个实现撑不起一层作用域机制 |
-| guard 注册表 | `packages/core/tools/src/index.ts:1110` `tools.guard()`（全局层 + 作用域链、单调否决） | 注册表解决的是「多条守卫谁先谁后、谁能翻案」。luup 现在总共一条守卫（捕获后拒绝再上报），仲裁机制没有仲裁对象。deny-only 的**纪律**照收：守卫只拒绝或弃权，永不放行别人拒过的调用 —— 写成 `apps/server/src/agent/roles/structured-output.ts` 注册处的注释，不写成代码 |
+| Cordis 219 包树 / `@deepseek-ai/dsh` 运行时依赖 | 全仓库 | ADR-0005 / 0015：搬形制不搬体量；luup 自写窄实现 |
+| compaction 全套 | `packages/compaction/`（compaction / compaction-basic / tool-result-pruner / command-compact 四个包） | Science-125 Attempt 仍短；Autoresearch 第一刀靠步数上界，真撞 `context_overflow` 再开压缩 |
+| 并发调度池 | `packages/core/agent-loop/src/tool-calls.ts:113`（有界滚动池 + 独占屏障 + 启动前重分类） | Autoresearch 第一刀 Assignment 串行；Science-125 仍是五阶段串行。并行工人是后续里程碑，不是调度器抄写 |
+| scope 分层 | `packages/core/scope/`（cordis Context 树，逐层 provider 覆盖） | Provider 已收在 `seams/providers.ts`；工人共享同一 LanguageModel 实例即可，不需要 Context 树 |
+| guard 注册表 | `packages/core/tools/src/index.ts:1110` `tools.guard()`（全局层 + 作用域链、单调否决） | Science-125 仍一条捕获守卫；Autoresearch 硬闸在 Assessor，不在工具注册表。deny-only 纪律照收 |
+| Session 崩溃续跑（repair） | `packages/core/session/src/repair.ts` | Autoresearch 第一刀只保证 Session 事件可审计 + 进程内 Ticket 终态；续跑仍贵，台账保留差距（见上「已采用 §2」） |
 
 ## 复核
 

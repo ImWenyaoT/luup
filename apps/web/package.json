@@ -2,7 +2,7 @@
   "name": "@luup/frontend",
   "version": "0.1.0",
   "private": true,
-  "description": "Luup Next.js App Router UI over the Luup HTTP/SSE API.",
+  "description": "Luup Next.js UI: Autoresearch Mill + chat (AI SDK useChat, Astryx shell).",
   "type": "module",
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1 --port 3000",
@@ -14,14 +14,21 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@ai-sdk/react": "^4.0.186",
+    "@astryxdesign/core": "0.7.17",
+    "@astryxdesign/theme-neutral": "0.7.17",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
+    "@heroicons/react": "^2.2.0",
+    "@stylexjs/stylex": "^0.19.2",
     "@tanstack/react-query": "^5.102.8",
+    "ai": "^7.0.181",
     "next": "16.3.3",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
+    "@astryxdesign/cli": "0.7.17",
     "@playwright/test": "^1.62.1",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",

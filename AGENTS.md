@@ -1,8 +1,16 @@
 # luup Agent App
 
-Luup 是 TypeScript 全栈：`@openai/agents` 驱动 Qwen，走百炼的 OpenAI-compatible 端点。
+Luup 是 TypeScript 全栈。**产品主轴（ADR-0013 / ADR-0015）是 Autoresearch**：
+`ResearchEngine`（形制学 dsh / superagent）拥有 Ticket / Assignment / Decision；
+工人用 AI SDK `ToolLoopAgent` / `generateText` 做执行器适配；UI 用 `@ai-sdk/react`；
+多 Provider Responses（OpenAI / DeepSeek / openai-compatible）；浏览器工具走 `agent-browser`。
+森林语义（ADR-0012）由 Engine Assessor 硬闸拥有，不是模型自评。
+
+Science-125 五角色流水线（`@openai/agents` + 可选 Qwen/百炼）保留为 **legacy**。
+新功能以 `apps/server/src/autoresearch/` 与 `/autoresearch` UI 为准；改 AI SDK
+前先查安装版 `node_modules/ai/docs/`，不得凭记忆写旧 API。
+
 运行时要求 Node.js >=24.20.0，包管理器使用 pnpm，单体工作区编排使用 Turborepo。
-修改模型或 Agent 前先查 <https://openai.github.io/openai-agents-js/>，不得回退到默认 OpenAI 客户端。
 
 Python 栈已于 ADR-0004 退役，只存于 git 历史；源码注释里写着「Python 期」的路径都是历史坐标。
 
@@ -11,12 +19,13 @@ Python 栈已于 ADR-0004 退役，只存于 git 历史；源码注释里写着�
 正常 TS 全栈 monorepo（ADR-0006，形制学 dsh：根零源码，通过 Turborepo + pnpm workspace 编排）：
 
 ```text
-apps/server/ 后端 `@luup/server`：src/（harness 本体 + 领域 + 工具 + 评估，按子系统分目录）
-             + test/（vitest）+ tsconfig
-apps/web/    Next.js 16 App Router（`@luup/frontend`），独立 Web 应用；`next.config.ts` 将同源 `/api` rewrite 到 `apps/server`
-data/        science125.json，冻结题库，只读
-docs/        产品契约、架构、判据、ADR、赛题与报告材料
-memory/      跨 run 的战役记忆，文件事实源，append-only
+apps/server/  后端 `@luup/server`：src/（harness 本体 + 领域 + 工具 + 评估，按子系统分目录）
+              + test/（vitest）+ tsconfig
+apps/web/     Next.js 16 App Router（`@luup/frontend`）；`next.config.ts` 将同源 `/api` rewrite 到 API
+apps/desktop/ Electron 壳 `@luup/desktop`（ADR-0014）：窗口 + 本机进程监督，默认开 /autoresearch
+data/         science125.json，冻结题库，只读
+docs/         产品契约、架构、判据、ADR、赛题与报告材料
+memory/       跨 run 的战役记忆，文件事实源，append-only
 ```
 
 根目录脚本是唯一入口（`pnpm run dev:api` / `batch` / `canary` 等都从根起跑，
@@ -27,16 +36,22 @@ cwd 相对路径 `data/`、`memory/`、`outputs/` 因此稳定）。
 历史批次证据（pilot/v2/v3 部分批与 Python 期 `runs/`）在 git tag
 `archive/phase-a-evidence-20260816`，不在工作树（协议修订 #6）；正式批入库时重建 `runs-ts/`。
 
-`apps/server/src/` 下的分区：`agent/`（角色契约、工具、失败分类）、`api/`（对外投影）、`batch/`（125 题批跑）、
-`campaign/`（战役记忆读写）、`domain/`（题库）、`eval/`（离线指标）、`seams/`（可替换接线）、
+`apps/server/src/` 下的分区：`autoresearch/`（产品主轴：`runtime` / `engine` / `session` /
+`executor` / `mill`）、`agent/`（五角色契约/工具，Autoresearch 与 archive harness 共用）、
+`api/`（对外投影）、`batch/`（125 题批跑，archive）、`campaign/`（战役记忆读写）、
+`domain/`（题库）、`eval/`（离线指标）、`seams/`（可替换接线；`providers.ts` 是多 Provider
+唯一读取点，`siwc.ts` 是 ChatGPT 计划凭据通道，`model.ts` 仍服务 legacy Qwen）、
 `store/`（SQLite 事实存储，基于 Node 原生 `node:sqlite`）、`verify/`（B1–B4 确定性引用验收）。
-`harness.ts`/`server.ts`/`roles.ts` 是编排本体——harness 是运行时角色，不是子目录。
+`harness.ts`/`roles.ts` 是 archive 五角色编排；`server.ts` 同时挂 Autoresearch 与 archive HTTP。
 
 ## seam 纪律
 
-可替换的东西都收在 `apps/server/src/seams/`，宽度由类型系统兜底：模型接线（`seams/model.ts` 是
-`QWEN_*` / `LUUP_MODEL_ID` 的**唯一**读取点，别处不碰 `process.env.QWEN_*`）、验收器、
-Run 记账面、记忆通道。换 provider 只改 seam，不动编排。
+可替换的东西都收在 `apps/server/src/seams/`，宽度由类型系统兜底：
+- Autoresearch：`seams/providers.ts` 是 `LUUP_PROVIDER` / `OPENAI_*` / `DEEPSEEK_*` /
+  `LUUP_API_KEY` / `LUUP_BASE_URL` 的**唯一**读取点；`seams/siwc.ts` 是 Sign in with ChatGPT
+  凭据通道（`openai` 的 credential=`siwc`，ADR-0017），不是新 ProviderId
+- Legacy：`seams/model.ts` 仍独占 `QWEN_*`（过渡）
+- 另有验收器、Run 记账面、记忆通道。换 provider 只改 seam，不动编排。
 
 ## 验证
 
@@ -59,8 +74,11 @@ CI 是 `.github/workflows/ts.yml` 的 `check`（=`pnpm run ci`）与 `e2e` 两�
 
 ## 锚点
 
-- 验收判据：`docs/design/criteria.md`
-- 架构：`docs/design/architecture.md`
+- Autoresearch 产品/架构：`docs/design/autoresearch.md`（ADR-0013 / ADR-0015）
+- Harness 形制台账：`docs/design/dsh-borrowings.md` · `docs/adr/0015-autoresearch-dsh-superagent-harness.md`
+- 桌面客户端：`docs/adr/0014-electron-desktop-client.md` · `apps/desktop/README.md`
+- Legacy 验收判据：`docs/design/criteria.md`
+- Legacy 架构：`docs/design/architecture.md`
 - 预注册协议：`docs/design/experiment-protocol.json`（已注册内容不可改，改动必须走 amendment）
 - 已定案、不再重提的决策：`docs/adr/`
 - 领域词汇：`CONTEXT.md`
@@ -73,8 +91,14 @@ CI 是 `.github/workflows/ts.yml` 的 `check`（=`pnpm run ci`）与 `e2e` 两�
 - 多 agent / harness 协作按森林语义：默认真错、独立 critique、允许高拒收，仅 verified 有用才 merge 进共享知识面；拒绝公司式互相改稿
 - 大块工作倾向并行 subagents 提案、由父 agent 做核实与合并
 - 实质设计偏好自上而下：先 specs / 需求与架构接口，再往下分层；同类能力先想清模式再减少重复
+- **前端 UI 优先 Astryx**：新表面从 `pnpm exec astryx template`（如 `shell-nav`）起手；组件用 `@astryxdesign/core`，主题用 `theme-neutral`；少写自定义 CSS / emotion
 
 ## Learned Workspace Facts
 
 - 前端现行栈是 Next.js App Router（`apps/web`），不再以 Vite/Remix 为当前方向
+- Autoresearch UI 用 Astryx AppShell（`LuupShell`，形制学 shell-nav）；模板参考在 `apps/web/astryx-templates/`
 - Harness 方向已定案为森林理论（ADR-0012）：propose → critique → hard gate → merge；角色产出默认不信任
+- 赛题结束后产品主轴切到 Autoresearch（ADR-0013）：AI SDK 多 Provider + subagent，而非继续独占 Qwen
+- Autoresearch harness 形制学 dsh / dsh-superagent（ADR-0015）：Engine + Session log + Assessor；搬形制不搬体量
+- 连续产论文：ResearchMill（ADR-0016）；Science-125 退出产品主轴
+- 桌面形态走 Electron 壳监督本机 Web/API（ADR-0014），不把 Next 塞进 Electron 同上下文

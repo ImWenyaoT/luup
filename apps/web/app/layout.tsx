@@ -5,8 +5,8 @@ import "./globals.css";
 import { Providers } from "./providers";
 
 export const metadata: Metadata = {
-  title: "Luup",
-  description: "Luup research harness",
+  title: "Luup Autoresearch",
+  description: "Multi-agent autoresearch harness (AI SDK · forest critique)",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {

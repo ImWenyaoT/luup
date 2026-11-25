@@ -3,6 +3,7 @@ import { render, type RenderOptions } from "@testing-library/react";
 import type { ReactElement, ReactNode } from "react";
 
 import { ApiProvider } from "./providers/api";
+import { AstryxProvider } from "./providers/astryx";
 import type { ApiClient } from "./lib/api/client";
 import { createApiClient } from "./lib/api/client";
 
@@ -30,7 +31,9 @@ export function createTestWrapper(options: TestProvidersOptions = {}) {
   return function Wrapper({ children }: { children: ReactNode }) {
     return (
       <QueryClientProvider client={queryClient}>
-        <ApiProvider client={client}>{children}</ApiProvider>
+        <AstryxProvider>
+          <ApiProvider client={client}>{children}</ApiProvider>
+        </AstryxProvider>
       </QueryClientProvider>
     );
   };

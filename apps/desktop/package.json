@@ -1,0 +1,55 @@
+{
+  "name": "@luup/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Luup Autoresearch Electron desktop shell over local Web + API.",
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "dev": "pnpm run build && electron .",
+    "start": "pnpm run build && electron .",
+    "pack:dir": "pnpm run build && electron-builder --dir"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "electron": "^39.2.3",
+    "electron-builder": "^26.0.12",
+    "typescript": "7.0.2",
+    "vitest": "^4.1.11"
+  },
+  "build": {
+    "appId": "app.luup.autoresearch",
+    "productName": "Luup Autoresearch",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "extraMetadata": {
+      "main": "dist/main.js"
+    },
+    "linux": {
+      "target": [
+        "dir"
+      ],
+      "category": "Science"
+    },
+    "mac": {
+      "target": [
+        "dir"
+      ],
+      "category": "public.app-category.productivity"
+    },
+    "win": {
+      "target": [
+        "dir"
+      ]
+    }
+  }
+}
