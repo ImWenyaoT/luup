@@ -1,8 +1,8 @@
-/** Autoresearch 多 Provider 模型接线（ADR-0013）。
+/** Autoresearch 多 Provider 模型接线（ADR-0013 / ADR-0017）。
  *
  * 唯一读取 `LUUP_PROVIDER` / `OPENAI_*` / `DEEPSEEK_*` / `LUUP_API_KEY` /
  * `LUUP_BASE_URL` / `LUUP_MODEL_ID` 的点；legacy `QWEN_*` 仅作 openai-compatible
- * 过渡回退。换供应商只改本文件。
+ * 过渡回退。SIWC 是 `openai` 的凭据通道，不是新 ProviderId。换供应商只改本文件。
  */
 
 import { createDeepSeek } from "@ai-sdk/deepseek";
@@ -11,8 +11,11 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { LanguageModel } from "ai";
 
 import { StageError } from "../agent/failures.ts";
+import { createSiwcFetch, resolveSiwcAccessToken, siwcStatus } from "./siwc.ts";
 
 export type ProviderId = "openai" | "deepseek" | "openai-compatible";
+
+export type ProviderCredential = "override" | "siwc" | "environment" | "absent";
 
 export type ProviderOverride = {
   provider?: ProviderId;
@@ -88,20 +91,25 @@ function resolveApiSurface(provider: ProviderId): "responses" | "chat" {
   return provider === "openai" || provider === "deepseek" ? "responses" : "chat";
 }
 
+function resolveCredential(provider: ProviderId): ProviderCredential {
+  if (override.apiKey) return "override";
+  if (provider === "openai" && siwcStatus().signed_in) return "siwc";
+  if (resolveApiKey(provider)) return "environment";
+  return "absent";
+}
+
 /** 给设置面 / readyz 的只读状态。密钥本体永不离开本模块。 */
 export function providerConfigStatus(): {
   provider: ProviderId;
-  credential: "override" | "environment" | "absent";
+  credential: ProviderCredential;
   model_id: string;
   base_url: string | null;
   api_surface: "responses" | "chat";
 } {
   const provider = envProvider();
-  const apiKey = resolveApiKey(provider);
-  const credential = override.apiKey ? "override" : apiKey ? "environment" : "absent";
   return {
     provider,
-    credential,
+    credential: resolveCredential(provider),
     model_id: resolveModelId(provider),
     base_url: resolveBaseUrl(provider) ?? null,
     api_surface: resolveApiSurface(provider),
@@ -111,11 +119,11 @@ export function providerConfigStatus(): {
 /** 构造 AI SDK LanguageModel。缺凭据抛 `missing_credential`。 */
 export function createLanguageModel(options?: { modelId?: string }): LanguageModel {
   const provider = envProvider();
-  const apiKey = resolveApiKey(provider);
-  if (!apiKey) {
+  const credential = resolveCredential(provider);
+  if (credential === "absent") {
     throw new StageError(
       "missing_credential",
-      `missing API key for provider=${provider} (set OPENAI_API_KEY / DEEPSEEK_API_KEY / LUUP_API_KEY)`,
+      `missing API key for provider=${provider} (set OPENAI_API_KEY / DEEPSEEK_API_KEY / LUUP_API_KEY, or Sign in with ChatGPT)`,
     );
   }
   const modelId = options?.modelId || resolveModelId(provider);
@@ -123,6 +131,7 @@ export function createLanguageModel(options?: { modelId?: string }): LanguageMod
   const surface = resolveApiSurface(provider);
 
   if (provider === "deepseek") {
+    const apiKey = resolveApiKey(provider)!;
     const deepseek = createDeepSeek({
       apiKey,
       ...(baseURL ? { baseURL } : {}),
@@ -131,6 +140,7 @@ export function createLanguageModel(options?: { modelId?: string }): LanguageMod
   }
 
   if (provider === "openai-compatible") {
+    const apiKey = resolveApiKey(provider)!;
     if (surface === "responses") {
       const openai = createOpenAI({
         apiKey,
@@ -146,7 +156,24 @@ export function createLanguageModel(options?: { modelId?: string }): LanguageMod
     return compatible.chatModel(modelId);
   }
 
-  // openai
+  // openai — SIWC 或 API key
+  if (credential === "siwc") {
+    const openai = createOpenAI({
+      apiKey: async () => {
+        const token = await resolveSiwcAccessToken();
+        if (!token) {
+          throw new StageError("missing_credential", "SIWC session missing or refresh failed");
+        }
+        return token;
+      },
+      fetch: createSiwcFetch(),
+      ...(baseURL ? { baseURL } : {}),
+    });
+    // SIWC 协议要求 Responses；chat 表面不可用 plan usage。
+    return openai.responses(modelId);
+  }
+
+  const apiKey = resolveApiKey(provider)!;
   const openai = createOpenAI({
     apiKey,
     ...(baseURL ? { baseURL } : {}),

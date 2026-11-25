@@ -13,13 +13,27 @@ import { handleAutoresearchChat, type AutoresearchChatDeps } from "./autoresearc
 import { MillRegistry, type MillRegistryDeps } from "./autoresearch/mill/registry.ts";
 import type { StartMillInput } from "./autoresearch/mill/types.ts";
 import {
+  logoutSiwc,
   modelConfigStatus,
   providerConfigStatus,
   setModelOverride,
   setProviderOverride,
+  siwcStatus,
+  startSiwcLogin,
   type ProviderId,
 } from "./seams/index.ts";
 import { FeedbackSubmissionError, MAX_QUESTION_LENGTH, normalizeQuestion, SqliteStore } from "./store/store.ts";
+
+/** 对外投影：expires_at 用 ISO；永不带 token。 */
+function projectSiwcStatus() {
+  const status = siwcStatus();
+  return {
+    signed_in: status.signed_in,
+    email: status.email,
+    expires_at: status.expires_at != null ? new Date(status.expires_at).toISOString() : null,
+    client_id_present: status.client_id_present,
+  };
+}
 
 const TERMINAL = new Set(["completed", "review_rejected", "failed"]);
 const POLL_MS = 100;
@@ -321,7 +335,56 @@ function createElysiaApp(options: ServerOptions) {
         provider_credential: provider.credential,
         provider_model_id: provider.model_id,
         provider_base_url: provider.base_url,
+        siwc: projectSiwcStatus(),
       });
+    })
+    // Sign in with ChatGPT（ADR-0017）：loopback OAuth；token 永不进响应
+    .get("/api/auth/siwc/status", ({ request }) => {
+      if (!authorized(request)) return unauthorized("/api/auth/siwc/status", request);
+      return json(200, projectSiwcStatus());
+    })
+    .post("/api/auth/siwc/start", async ({ request }) => {
+      if (!authorized(request)) return unauthorized("/api/auth/siwc/start", request);
+      try {
+        let resolveEarly!: (info: { authorize_url: string; redirect_uri: string }) => void;
+        let rejectEarly!: (err: unknown) => void;
+        const early = new Promise<{ authorize_url: string; redirect_uri: string }>((resolve, reject) => {
+          resolveEarly = resolve;
+          rejectEarly = reject;
+        });
+        const login = startSiwcLogin({
+          openAuthorize: async () => {
+            /* 浏览器由前端 window.open；本机桌面可另注 openAuthorize */
+          },
+          onAuthorizeUrl: (info) => {
+            resolveEarly(info);
+          },
+        });
+        void login.catch((err) => {
+          rejectEarly(err);
+          reportError("siwc login failed", err);
+        });
+        const info = await Promise.race([
+          early,
+          sleep(15_000).then(() => {
+            throw new Error("SIWC authorize URL timed out");
+          }),
+        ]);
+        return json(200, { authorize_url: info.authorize_url, redirect_uri: info.redirect_uri });
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        return errorProblem(request, 502, {
+          code: "siwc_start_failed",
+          title: "Bad Gateway",
+          detail,
+          instance: "/api/auth/siwc/start",
+        });
+      }
+    })
+    .post("/api/auth/siwc/logout", ({ request }) => {
+      if (!authorized(request)) return unauthorized("/api/auth/siwc/logout", request);
+      logoutSiwc();
+      return json(200, projectSiwcStatus());
     })
     .put("/api/config", async ({ body, request }) => {
       if (!authorized(request)) return unauthorized("/api/config", request);
@@ -466,6 +529,7 @@ function createElysiaApp(options: ServerOptions) {
         provider_credential: provider.credential,
         provider_model_id: provider.model_id,
         provider_base_url: provider.base_url,
+        siwc: projectSiwcStatus(),
       });
     })
     .post("/api/autoresearch/chat", async ({ request, body }) => {

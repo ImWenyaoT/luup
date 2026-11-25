@@ -6,7 +6,7 @@
 | **ResearchEngine**   | Ticket / Assignment / Report / Decision 的唯一写者；chat 交付只认 Decision（形制学 superagent Engine）                               | `autoresearch/engine/engine.ts`           |
 | **Session log**      | append-only 事件流；模型历史只经 `deriveMessages` 投影（形制学 dsh）                                                                  | `autoresearch/session/`                   |
 | **Desktop**          | Electron 壳：窗口 + 本机 API/Web 进程监督；默认开 `/autoresearch`（ADR-0014）                                                        | `apps/desktop/`                           |
-| **Provider seam**    | 多供应商 Responses/Chat 唯一读取点（openai / deepseek / openai-compatible）                                                          | `apps/server/src/seams/providers.ts`      |
+| **Provider seam**    | 多供应商 Responses/Chat 唯一读取点（openai / deepseek / openai-compatible）；SIWC 是 openai 凭据通道（ADR-0017）                          | `apps/server/src/seams/providers.ts` + `siwc.ts` |
 | **run**              | legacy：一次 `question → 五角色串行 → 确定性验收`；全部事实落在 SQLite 单库里                                                         | `apps/server/src/harness.ts`              |
 | **Harness**          | legacy：确定性调度器；Autoresearch 侧等价物是 ResearchEngine + Assessor                                                             | `apps/server/src/harness.ts`              |
 | **五角色**           | legacy：researcher → … → reviewer；OpenAI Agents SDK；赛题路径保留                                                                   | `apps/server/src/agent/roles/`            |

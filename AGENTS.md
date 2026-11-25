@@ -48,7 +48,8 @@ cwd 相对路径 `data/`、`memory/`、`outputs/` 因此稳定）。
 
 可替换的东西都收在 `apps/server/src/seams/`，宽度由类型系统兜底：
 - Autoresearch：`seams/providers.ts` 是 `LUUP_PROVIDER` / `OPENAI_*` / `DEEPSEEK_*` /
-  `LUUP_API_KEY` / `LUUP_BASE_URL` 的**唯一**读取点
+  `LUUP_API_KEY` / `LUUP_BASE_URL` 的**唯一**读取点；`seams/siwc.ts` 是 Sign in with ChatGPT
+  凭据通道（`openai` 的 credential=`siwc`，ADR-0017），不是新 ProviderId
 - Legacy：`seams/model.ts` 仍独占 `QWEN_*`（过渡）
 - 另有验收器、Run 记账面、记忆通道。换 provider 只改 seam，不动编排。
 
