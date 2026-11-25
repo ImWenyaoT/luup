@@ -1,9 +1,10 @@
 # luup
 
-面向《Science》125 前沿科学问题的科研 Agent：五个角色串行接力检索证据、生成假说、审阅证据、
-形成研究计划并独立复审，最后由确定性 verifier 决定是否交付。
+**Autoresearch（主轴，ADR-0013）**：Vercel AI SDK 多 agent / sub-agent 自动科研系统——
+Coordinator 委派 literature / web（agent-browser）/ critique，森林硬闸后产出可引用报告；
+支持 OpenAI / DeepSeek / openai-compatible 的 Responses（或 Chat）接线。
 
-赛题：挑战杯揭榜挂帅 XH-202619，赛道一·方向一·维度 A。
+**Science-125（legacy）**：原挑战杯五角色流水线仍可跑；默认产品入口转向 `/autoresearch`。
 
 ## 设计边界
 
@@ -34,15 +35,27 @@ memory/       跨 run 的战役记忆（事实数据）
 pnpm install --frozen-lockfile
 ```
 
-live 模式通过部署环境或 secret manager 注入变量；仓库不隐式加载 `.env`：
+live 模式通过部署环境或 secret manager 注入变量；仓库不隐式加载 `.env`。
+
+Autoresearch（推荐）：
+
+```sh
+export LUUP_PROVIDER='openai'          # 或 deepseek / openai-compatible
+export OPENAI_API_KEY='...'            # DeepSeek 用 DEEPSEEK_API_KEY
+export LUUP_MODEL_ID='gpt-5.4'         # DeepSeek 例：deepseek-v4-flash
+export LUUP_API_TOKEN='use-a-long-random-value'
+# 可选：agent-browser CLI 装在 PATH 上，供 web 子代理使用
+```
+
+Legacy Science-125 / 兼容端点仍可读：
 
 ```sh
 export QWEN_API_KEY='your-key'
 export QWEN_BASE_URL='your-openai-compatible-base-url'
-export LUUP_API_TOKEN='use-a-long-random-value'
 ```
 
 `LUUP_RUNTIME=deterministic` 用内置替身跑完整条流水线，不发一次模型请求，也不需要凭据。
+UI 入口：`http://127.0.0.1:3000/autoresearch`（主轴）与 `/`（legacy 工作台）。
 
 ### 起服务
 
@@ -75,7 +88,8 @@ pnpm run dev       # 前端 http://127.0.0.1:3000 + API :8000（确定性 runtim
 | GET  | `/readyz` 或 `/api/readyz`     | 部署就绪检查（SQLite、live 凭据、API token） | 否               |
 | GET  | `/api/config`                  | 查看 runtime、模型与凭据三态（不返回密钥）   | 否               |
 | PUT  | `/api/config`                  | 设置本进程的 Qwen key/model/base URL 覆盖    | 后续 Run 会触发  |
-| POST | `/api/runs`                    | 创建 Run，返回 `202` 与 `id`                 | 是（live 模式）  |
+| POST | `/api/autoresearch/chat`       | Autoresearch UI message stream（AI SDK）   | 是（live 模式）  |
+| POST | `/api/runs`                    | legacy：创建 Run，返回 `202` 与 `id`         | 是（live 模式）  |
 | POST | `/api/runs/:id/feedback`       | 首轮 Reviewer 执行期间提交一次研究者反馈     | 否               |
 | GET  | `/api/runs/:id`                | 读取 Run、Attempt、Artifact 摘要与反馈状态   | 否               |
 | GET  | `/api/runs/:id/events?after=0` | SSE 事件流，可用 `Last-Event-ID` 续读        | 否               |

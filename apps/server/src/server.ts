@@ -9,7 +9,14 @@ import { findQuestion, readScience125, science125Text } from "./domain/science12
 import { createDeterministicRuntime, createDeterministicVerifier } from "./executor-deterministic.ts";
 import { createQwenExecutor } from "./executor.ts";
 import { Harness } from "./harness.ts";
-import { modelConfigStatus, setModelOverride } from "./seams/index.ts";
+import { handleAutoresearchChat, type AutoresearchChatDeps } from "./autoresearch/chat.ts";
+import {
+  modelConfigStatus,
+  providerConfigStatus,
+  setModelOverride,
+  setProviderOverride,
+  type ProviderId,
+} from "./seams/index.ts";
 import { FeedbackSubmissionError, MAX_QUESTION_LENGTH, normalizeQuestion, SqliteStore } from "./store/store.ts";
 
 const TERMINAL = new Set(["completed", "review_rejected", "failed"]);
@@ -70,6 +77,8 @@ export type ServerOptions = {
   reportError?: (message: string, error: unknown) => void;
   hostname?: string;
   port?: number;
+  /** Autoresearch chat 注入点（测试用 mock model / browser）。 */
+  autoresearch?: AutoresearchChatDeps;
 };
 
 export type LuupServer = {
@@ -87,6 +96,7 @@ function createElysiaApp(options: ServerOptions) {
   const { store, harness } = options;
   const mode = options.runtime ?? runtimeMode();
   const reportError = options.reportError ?? ((message, error) => console.error(message, error));
+  const autoresearchDeps: AutoresearchChatDeps = { runtime: mode, ...options.autoresearch };
   const maxConcurrentRuns = 2;
   const apiToken = process.env.LUUP_API_TOKEN?.trim() || null;
   const configuredQueueLimit = Number(process.env.LUUP_MAX_QUEUED_RUNS ?? 8);
@@ -289,9 +299,18 @@ function createElysiaApp(options: ServerOptions) {
       }
       return json(200, { question: q, formattedText: science125Text(q) });
     })
-    // 配置端点
+    // 配置端点（legacy Qwen 字段 + ADR-0013 provider 字段并存）
     .get("/api/config", () => {
-      return json(200, { runtime: mode, ...modelConfigStatus() });
+      const provider = providerConfigStatus();
+      return json(200, {
+        runtime: mode,
+        ...modelConfigStatus(),
+        provider: provider.provider,
+        api_surface: provider.api_surface,
+        provider_credential: provider.credential,
+        provider_model_id: provider.model_id,
+        provider_base_url: provider.base_url,
+      });
     })
     .put("/api/config", async ({ body, request }) => {
       if (!authorized(request)) return unauthorized("/api/config", request);
@@ -314,8 +333,21 @@ function createElysiaApp(options: ServerOptions) {
           instance: "/api/config",
         });
       }
-      const parsedBody = body as { api_key?: unknown; model_id?: unknown; base_url?: unknown };
+      const parsedBody = body as {
+        api_key?: unknown;
+        model_id?: unknown;
+        base_url?: unknown;
+        provider?: unknown;
+        api_surface?: unknown;
+      };
       const next: { apiKey?: string; modelId?: string; baseUrl?: string } = {};
+      const providerNext: {
+        apiKey?: string;
+        modelId?: string;
+        baseUrl?: string;
+        provider?: ProviderId;
+        apiSurface?: "responses" | "chat";
+      } = {};
       if (parsedBody.api_key !== undefined) {
         if (typeof parsedBody.api_key !== "string" || parsedBody.api_key.trim() === "") {
           return errorProblem(request, 422, {
@@ -343,6 +375,7 @@ function createElysiaApp(options: ServerOptions) {
           });
         }
         next.apiKey = apiKey;
+        providerNext.apiKey = apiKey;
       }
       if (parsedBody.model_id !== undefined) {
         if (typeof parsedBody.model_id !== "string" || parsedBody.model_id.trim() === "") {
@@ -354,6 +387,7 @@ function createElysiaApp(options: ServerOptions) {
           });
         }
         next.modelId = parsedBody.model_id.trim();
+        providerNext.modelId = parsedBody.model_id.trim();
       }
       if (parsedBody.base_url !== undefined) {
         if (typeof parsedBody.base_url !== "string" || !/^https?:\/\//.test(parsedBody.base_url.trim())) {
@@ -375,24 +409,67 @@ function createElysiaApp(options: ServerOptions) {
           });
         }
         next.baseUrl = parsedBody.base_url.trim();
+        providerNext.baseUrl = parsedBody.base_url.trim();
       }
-      if (Object.keys(next).length === 0) {
+      if (parsedBody.provider !== undefined) {
+        if (
+          typeof parsedBody.provider !== "string" ||
+          !["openai", "deepseek", "openai-compatible"].includes(parsedBody.provider)
+        ) {
+          return errorProblem(request, 422, {
+            code: "invalid_provider",
+            title: "Unprocessable Entity",
+            detail: "provider 必须是 openai | deepseek | openai-compatible。",
+            instance: "/api/config",
+          });
+        }
+        providerNext.provider = parsedBody.provider as ProviderId;
+      }
+      if (parsedBody.api_surface !== undefined) {
+        if (parsedBody.api_surface !== "responses" && parsedBody.api_surface !== "chat") {
+          return errorProblem(request, 422, {
+            code: "invalid_api_surface",
+            title: "Unprocessable Entity",
+            detail: "api_surface 必须是 responses | chat。",
+            instance: "/api/config",
+          });
+        }
+        providerNext.apiSurface = parsedBody.api_surface;
+      }
+      if (Object.keys(next).length === 0 && Object.keys(providerNext).length === 0) {
         return errorProblem(request, 422, {
           code: "empty_configuration_payload",
           title: "Unprocessable Entity",
-          detail: "没有可设置的字段（api_key / model_id / base_url）。",
+          detail: "没有可设置的字段（api_key / model_id / base_url / provider / api_surface）。",
           instance: "/api/config",
         });
       }
-      setModelOverride(next);
-      return json(200, { runtime: mode, ...modelConfigStatus() });
+      if (Object.keys(next).length > 0) setModelOverride(next);
+      if (Object.keys(providerNext).length > 0) setProviderOverride(providerNext);
+      const provider = providerConfigStatus();
+      return json(200, {
+        runtime: mode,
+        ...modelConfigStatus(),
+        provider: provider.provider,
+        api_surface: provider.api_surface,
+        provider_credential: provider.credential,
+        provider_model_id: provider.model_id,
+        provider_base_url: provider.base_url,
+      });
+    })
+    .post("/api/autoresearch/chat", async ({ request, body }) => {
+      if (!authorized(request)) return unauthorized("/api/autoresearch/chat", request);
+      return handleAutoresearchChat(request, autoresearchDeps, body);
     })
     // 探针端点
     .get("/api/health", () => json(200, { status: "ok" }))
     .get("/health", () => json(200, { status: "ok" }))
     .get("/api/readyz", () => {
       const databaseReady = store.isReady();
-      const modelConfigured = mode === "deterministic" || modelConfigStatus().credential !== "absent";
+      const modelConfigured =
+        mode === "deterministic" ||
+        modelConfigStatus().credential !== "absent" ||
+        providerConfigStatus().credential !== "absent";
       const authConfigured = mode === "deterministic" || apiToken !== null;
       const ready = databaseReady && modelConfigured && authConfigured;
       return json(ready ? 200 : 503, {
@@ -406,7 +483,10 @@ function createElysiaApp(options: ServerOptions) {
     })
     .get("/readyz", () => {
       const databaseReady = store.isReady();
-      const modelConfigured = mode === "deterministic" || modelConfigStatus().credential !== "absent";
+      const modelConfigured =
+        mode === "deterministic" ||
+        modelConfigStatus().credential !== "absent" ||
+        providerConfigStatus().credential !== "absent";
       const authConfigured = mode === "deterministic" || apiToken !== null;
       const ready = databaseReady && modelConfigured && authConfigured;
       return json(ready ? 200 : 503, {

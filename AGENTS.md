@@ -1,8 +1,15 @@
 # luup Agent App
 
-Luup 是 TypeScript 全栈：`@openai/agents` 驱动 Qwen，走百炼的 OpenAI-compatible 端点。
+Luup 是 TypeScript 全栈。**产品主轴（ADR-0013）是 Autoresearch**：Vercel AI SDK
+（`ToolLoopAgent` + `@ai-sdk/react`）多 agent / sub-agent，多 Provider Responses
+（OpenAI / DeepSeek / openai-compatible），浏览器工具走 `agent-browser`。
+森林语义（ADR-0012）仍由宿主 Harness 硬闸拥有。
+
+Science-125 五角色流水线（`@openai/agents` + 可选 Qwen/百炼）保留为 **legacy**。
+新功能以 `apps/server/src/autoresearch/` 与 `/autoresearch` UI 为准；改 AI SDK
+前先查安装版 `node_modules/ai/docs/`，不得凭记忆写旧 API。
+
 运行时要求 Node.js >=24.20.0，包管理器使用 pnpm，单体工作区编排使用 Turborepo。
-修改模型或 Agent 前先查 <https://openai.github.io/openai-agents-js/>，不得回退到默认 OpenAI 客户端。
 
 Python 栈已于 ADR-0004 退役，只存于 git 历史；源码注释里写着「Python 期」的路径都是历史坐标。
 
@@ -27,16 +34,21 @@ cwd 相对路径 `data/`、`memory/`、`outputs/` 因此稳定）。
 历史批次证据（pilot/v2/v3 部分批与 Python 期 `runs/`）在 git tag
 `archive/phase-a-evidence-20260816`，不在工作树（协议修订 #6）；正式批入库时重建 `runs-ts/`。
 
-`apps/server/src/` 下的分区：`agent/`（角色契约、工具、失败分类）、`api/`（对外投影）、`batch/`（125 题批跑）、
-`campaign/`（战役记忆读写）、`domain/`（题库）、`eval/`（离线指标）、`seams/`（可替换接线）、
+`apps/server/src/` 下的分区：`autoresearch/`（AI SDK 多 agent 编排，产品主轴）、
+`agent/`（legacy 五角色契约/工具）、`api/`（对外投影）、`batch/`（125 题批跑，legacy）、
+`campaign/`（战役记忆读写）、`domain/`（题库）、`eval/`（离线指标）、`seams/`（可替换接线；
+`providers.ts` 是多 Provider 唯一读取点，`model.ts` 仍服务 legacy Qwen）、
 `store/`（SQLite 事实存储，基于 Node 原生 `node:sqlite`）、`verify/`（B1–B4 确定性引用验收）。
-`harness.ts`/`server.ts`/`roles.ts` 是编排本体——harness 是运行时角色，不是子目录。
+`harness.ts`/`server.ts`/`roles.ts` 是 legacy 编排本体；autoresearch 的 coordinator/subagent
+在 `autoresearch/orchestrator.ts`。
 
 ## seam 纪律
 
-可替换的东西都收在 `apps/server/src/seams/`，宽度由类型系统兜底：模型接线（`seams/model.ts` 是
-`QWEN_*` / `LUUP_MODEL_ID` 的**唯一**读取点，别处不碰 `process.env.QWEN_*`）、验收器、
-Run 记账面、记忆通道。换 provider 只改 seam，不动编排。
+可替换的东西都收在 `apps/server/src/seams/`，宽度由类型系统兜底：
+- Autoresearch：`seams/providers.ts` 是 `LUUP_PROVIDER` / `OPENAI_*` / `DEEPSEEK_*` /
+  `LUUP_API_KEY` / `LUUP_BASE_URL` 的**唯一**读取点
+- Legacy：`seams/model.ts` 仍独占 `QWEN_*`（过渡）
+- 另有验收器、Run 记账面、记忆通道。换 provider 只改 seam，不动编排。
 
 ## 验证
 
@@ -59,8 +71,9 @@ CI 是 `.github/workflows/ts.yml` 的 `check`（=`pnpm run ci`）与 `e2e` 两�
 
 ## 锚点
 
-- 验收判据：`docs/design/criteria.md`
-- 架构：`docs/design/architecture.md`
+- Autoresearch 产品/架构：`docs/design/autoresearch.md`（ADR-0013）
+- Legacy 验收判据：`docs/design/criteria.md`
+- Legacy 架构：`docs/design/architecture.md`
 - 预注册协议：`docs/design/experiment-protocol.json`（已注册内容不可改，改动必须走 amendment）
 - 已定案、不再重提的决策：`docs/adr/`
 - 领域词汇：`CONTEXT.md`
@@ -78,3 +91,4 @@ CI 是 `.github/workflows/ts.yml` 的 `check`（=`pnpm run ci`）与 `e2e` 两�
 
 - 前端现行栈是 Next.js App Router（`apps/web`），不再以 Vite/Remix 为当前方向
 - Harness 方向已定案为森林理论（ADR-0012）：propose → critique → hard gate → merge；角色产出默认不信任
+- 赛题结束后产品主轴切到 Autoresearch（ADR-0013）：AI SDK 多 Provider + subagent，而非继续独占 Qwen

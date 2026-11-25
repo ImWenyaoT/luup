@@ -20,6 +20,17 @@ export {
   sharedModelSettings,
 } from "./model.ts";
 
+export {
+  clearProviderOverride,
+  createLanguageModel,
+  providerConfigStatus,
+  providerConfigVersion,
+  resolveModelId,
+  setProviderOverride,
+  type ProviderId,
+  type ProviderOverride,
+} from "./providers.ts";
+
 /** 终局引用验收。
  *
  * 现有 provider：`createReferenceVerifier()`（打 arXiv 官方 API），

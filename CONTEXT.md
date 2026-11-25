@@ -2,9 +2,11 @@
 
 | 术语                 | 含义                                                                                                                                 | 代码锚点                                  |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------- |
-| **run**              | 一次 `question → 五角色串行 → 确定性验收` 的执行；全部事实落在 SQLite 单库里                                                         | `apps/server/src/harness.ts`              |
+| **Autoresearch**     | 产品主轴：AI SDK Coordinator + literature/web/critique subagent；森林硬闸后出报告（ADR-0013）                                        | `apps/server/src/autoresearch/`           |
+| **Provider seam**    | 多供应商 Responses/Chat 唯一读取点（openai / deepseek / openai-compatible）                                                          | `apps/server/src/seams/providers.ts`      |
+| **run**              | legacy：一次 `question → 五角色串行 → 确定性验收`；全部事实落在 SQLite 单库里                                                         | `apps/server/src/harness.ts`              |
 | **Harness**          | 确定性调度器（循环引擎），运行时角色而非子目录；拥有工具执行、预算、状态、证据和验证，不是另一个 LLM Agent                           | `apps/server/src/harness.ts`              |
-| **五角色**           | researcher → hypothesis-generation → evidence-review → research-plan → reviewer；由 Harness 显式编排，角色执行使用 OpenAI Agents SDK | `apps/server/src/agent/roles/`            |
+| **五角色**           | legacy：researcher → … → reviewer；OpenAI Agents SDK；赛题路径保留                                                                   | `apps/server/src/agent/roles/`            |
 | **上界**             | 补证 ≤2 轮；修订环按 ADR-0012 拆除/硬化前仍 ≤2 轮过渡。写成 `for` 循环而不是依赖图；顺序由代码决定不由数据决定                         | `apps/server/src/harness.ts`              |
 | **propose**          | 多候选贡献：hypothesis-generation 等角色产出待验主张；默认不视为正确，不单独决定晋升（Propose ≠ Select）                            | ADR-0012；`agent/roles/hypothesis-generation` |
 | **critique**         | 独立压力测试 / 评审：默认假定上游为错；evidence-review assessment 与 reviewer 新检索表态属此类                                     | ADR-0012；`agent/roles/evidence-review`   |

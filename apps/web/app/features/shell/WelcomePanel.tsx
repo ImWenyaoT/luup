@@ -34,6 +34,15 @@ const Intro = styled.div`
     font-size: 14px;
     line-height: 1.7;
   }
+  a.autoresearch {
+    display: inline-block;
+    margin-top: 14px;
+    color: ${colors.ink};
+    font-size: 13px;
+    font-weight: 700;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
 `;
 
 const Suggestions = styled.div`
@@ -59,7 +68,10 @@ export function WelcomePanel({ onStartResearch, disabled, selectedQuestion }: We
     <Wrap data-testid="welcome-panel">
       <Intro>
         <h2>AI Scientist</h2>
-        <p>面向《Science》125 个前沿科学问题的科研 Agent 流水线。证据由代码冻结，模型只能引用。</p>
+        <p>Science-125 legacy 流水线：证据由代码冻结，模型只能引用。新产品主轴是多 agent Autoresearch。</p>
+        <a className="autoresearch" href="/autoresearch">
+          打开 Autoresearch →
+        </a>
       </Intro>
       <Suggestions>
         {SUGGESTIONS.map((s) => (

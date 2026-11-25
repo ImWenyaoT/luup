@@ -2,7 +2,7 @@
   "name": "@luup/frontend",
   "version": "0.1.0",
   "private": true,
-  "description": "Luup Next.js App Router UI over the Luup HTTP/SSE API.",
+  "description": "Luup Next.js UI: Autoresearch (AI SDK useChat) + legacy Science-125 workspace.",
   "type": "module",
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1 --port 3000",
@@ -14,9 +14,11 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@ai-sdk/react": "^4.0.186",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
     "@tanstack/react-query": "^5.102.8",
+    "ai": "^7.0.181",
     "next": "16.3.3",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
