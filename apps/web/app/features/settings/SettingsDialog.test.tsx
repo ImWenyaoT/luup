@@ -24,7 +24,7 @@ function respond(status: number, body: unknown, ok = status < 400): Response {
   } as unknown as Response;
 }
 
-function mockFetch(config: ConfigStatus = mockConfig, siwc = { signed_in: false }) {
+function mockFetch(config: ConfigStatus = mockConfig, siwc = { signed_in: false }): typeof fetch {
   return vi.fn(async (url: string, init?: RequestInit) => {
     const path = String(url);
     if (path.includes("/api/auth/siwc/start") && init?.method === "POST") {
@@ -41,7 +41,7 @@ function mockFetch(config: ConfigStatus = mockConfig, siwc = { signed_in: false 
       return respond(200, { ...config, ...body, credential: "override" });
     }
     return respond(200, config);
-  });
+  }) as unknown as typeof fetch;
 }
 
 describe("SettingsDialog", () => {
@@ -105,7 +105,7 @@ describe("SettingsDialog", () => {
       if (String(url).includes("/api/auth/siwc")) return respond(200, { signed_in: false });
       if (init?.method === "PUT") return respond(401, { detail: "API token 无效" }, false);
       return respond(200, mockConfig);
-    });
+    }) as unknown as typeof fetch;
     const client = createApiClient({ fetchImpl });
     renderWithProviders(<SettingsDialog open onOpenChange={vi.fn()} />, { client });
 
