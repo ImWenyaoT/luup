@@ -24,7 +24,10 @@ function respond(status: number, body: unknown, ok = status < 400): Response {
   } as unknown as Response;
 }
 
-function mockFetch(config: ConfigStatus = mockConfig, siwc = { signed_in: false }): typeof fetch {
+function mockFetch(
+  config: ConfigStatus = mockConfig,
+  siwc: { signed_in: boolean; email?: string | null; expires_at?: string | null } = { signed_in: false },
+) {
   return vi.fn(async (url: string, init?: RequestInit) => {
     const path = String(url);
     if (path.includes("/api/auth/siwc/start") && init?.method === "POST") {
@@ -37,11 +40,16 @@ function mockFetch(config: ConfigStatus = mockConfig, siwc = { signed_in: false 
       return respond(200, siwc);
     }
     if (init?.method === "PUT") {
-      const body = JSON.parse(String(init.body)) as ConfigStatus;
+      const raw = typeof init.body === "string" ? init.body : "{}";
+      const body = JSON.parse(raw) as ConfigStatus;
       return respond(200, { ...config, ...body, credential: "override" });
     }
     return respond(200, config);
-  }) as unknown as typeof fetch;
+  });
+}
+
+function clientFrom(fetchImpl: ReturnType<typeof mockFetch> | typeof fetch) {
+  return createApiClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
 }
 
 describe("SettingsDialog", () => {
@@ -51,7 +59,7 @@ describe("SettingsDialog", () => {
 
   test("打开时展示配置状态与 provider 控件", async () => {
     const fetchImpl = mockFetch();
-    const client = createApiClient({ fetchImpl });
+    const client = clientFrom(fetchImpl);
     renderWithProviders(<SettingsDialog open onOpenChange={vi.fn()} />, { client });
 
     await waitFor(() => expect(screen.getByText(/deterministic/)).toBeInTheDocument());
@@ -74,7 +82,7 @@ describe("SettingsDialog", () => {
 
   test("保存调用 PUT 并带上 provider / api_surface", async () => {
     const fetchImpl = mockFetch();
-    const client = createApiClient({ fetchImpl });
+    const client = clientFrom(fetchImpl);
     renderWithProviders(<SettingsDialog open onOpenChange={vi.fn()} />, { client });
 
     await waitFor(() => expect(screen.getByTestId("settings-model-id")).toHaveValue("qwen-test"));
@@ -116,14 +124,14 @@ describe("SettingsDialog", () => {
   });
 
   test("关闭时不渲染", () => {
-    const client = createApiClient({ fetchImpl: vi.fn() });
+    const client = clientFrom(vi.fn());
     renderWithProviders(<SettingsDialog open={false} onOpenChange={vi.fn()} />, { client });
     expect(screen.queryByTestId("settings-dialog")).not.toBeInTheDocument();
   });
 
   test("按 Escape 关闭并通过公开回调同步状态", async () => {
     const fetchImpl = mockFetch();
-    const client = createApiClient({ fetchImpl });
+    const client = clientFrom(fetchImpl);
     const onOpenChange = vi.fn();
     renderWithProviders(<SettingsDialog open onOpenChange={onOpenChange} />, { client });
 
@@ -137,12 +145,14 @@ describe("SettingsDialog", () => {
     const openSpy = vi.fn();
     vi.stubGlobal("open", openSpy);
     const fetchImpl = mockFetch();
-    const client = createApiClient({ fetchImpl });
+    const client = clientFrom(fetchImpl);
     renderWithProviders(<SettingsDialog open onOpenChange={vi.fn()} />, { client });
 
     await waitFor(() => expect(screen.getByTestId("siwc-sign-in")).toBeInTheDocument());
     fireEvent.click(screen.getByTestId("siwc-sign-in"));
-    await waitFor(() => expect(openSpy).toHaveBeenCalledWith("https://auth.example/siwc", "_blank", "noopener,noreferrer"));
+    await waitFor(() =>
+      expect(openSpy).toHaveBeenCalledWith("https://auth.example/siwc", "_blank", "noopener,noreferrer"),
+    );
     expect(await screen.findByRole("status")).toHaveTextContent(/已打开 ChatGPT 登录窗口/);
   });
 
@@ -152,7 +162,7 @@ describe("SettingsDialog", () => {
       email: "user@example.com",
       expires_at: "2026-12-01",
     });
-    const client = createApiClient({ fetchImpl });
+    const client = clientFrom(fetchImpl);
     renderWithProviders(<SettingsDialog open onOpenChange={vi.fn()} />, { client });
 
     expect(await screen.findByText(/已登录 · user@example.com/)).toBeInTheDocument();
@@ -163,7 +173,7 @@ describe("SettingsDialog", () => {
 
   test("SettingsTrigger 在有 config 时渲染", async () => {
     const fetchImpl = mockFetch();
-    const client = createApiClient({ fetchImpl });
+    const client = clientFrom(fetchImpl);
     const onOpen = vi.fn();
     renderWithProviders(<SettingsTrigger onOpen={onOpen} />, { client });
     await waitFor(() => expect(screen.getByTestId("open-settings")).toBeInTheDocument());
@@ -173,7 +183,7 @@ describe("SettingsDialog", () => {
 
   test("点击遮罩关闭", async () => {
     const fetchImpl = mockFetch();
-    const client = createApiClient({ fetchImpl });
+    const client = clientFrom(fetchImpl);
     const onOpenChange = vi.fn();
     renderWithProviders(<SettingsDialog open onOpenChange={onOpenChange} />, { client });
     await waitFor(() => expect(screen.getByTestId("settings-dialog")).toBeInTheDocument());
@@ -183,7 +193,7 @@ describe("SettingsDialog", () => {
 
   test("OpenAI provider 展示 SIWC 提示文案", async () => {
     const fetchImpl = mockFetch({ ...mockConfig, provider: "openai", api_surface: "responses" });
-    const client = createApiClient({ fetchImpl });
+    const client = clientFrom(fetchImpl);
     renderWithProviders(<SettingsDialog open onOpenChange={vi.fn()} />, { client });
     await waitFor(() => expect(screen.getByTestId("settings-provider")).toHaveValue("openai"));
     expect(screen.getByTestId("siwc-sign-in")).toHaveTextContent("Sign in with ChatGPT");
@@ -200,8 +210,8 @@ describe("SettingsDialog", () => {
         return respond(200, { signed_in: true, email: "a@b.c" });
       }
       return respond(200, mockConfig);
-    }) as unknown as typeof fetch;
-    const client = createApiClient({ fetchImpl });
+    });
+    const client = clientFrom(fetchImpl);
     renderWithProviders(<SettingsDialog open onOpenChange={vi.fn()} />, { client });
     expect(await screen.findByText(/已登录 · a@b.c/)).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("siwc-logout"));
@@ -215,12 +225,11 @@ describe("SettingsDialog", () => {
       }
       if (String(url).includes("/api/auth/siwc")) return respond(200, { signed_in: false });
       return respond(200, mockConfig);
-    }) as unknown as typeof fetch;
-    const client = createApiClient({ fetchImpl });
+    });
+    const client = clientFrom(fetchImpl);
     renderWithProviders(<SettingsDialog open onOpenChange={vi.fn()} />, { client });
     await waitFor(() => expect(screen.getByTestId("siwc-sign-in")).toBeInTheDocument());
     fireEvent.click(screen.getByTestId("siwc-sign-in"));
     expect(await screen.findByRole("alert")).toHaveTextContent("siwc_unavailable");
   });
 });
-

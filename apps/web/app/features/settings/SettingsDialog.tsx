@@ -5,7 +5,7 @@ import { Button, colors, IconButton, Input, Label, mono, Select } from "../../st
 import { useConfig } from "../../hooks/useConfig";
 import { useFocusTrap } from "../../hooks/useFocusTrap";
 import { fetchSiwcStatus, logoutSiwc, startSiwc } from "../../lib/api/siwc";
-import type { ApiSurface, ConfigSaveBody, ConfigStatus, ProviderId, SiwcStatus } from "../../lib/types/wire";
+import type { ApiSurface, ConfigSaveBody, ProviderId, SiwcStatus } from "../../lib/types/wire";
 import { useApiClient } from "../../providers/api";
 
 export type SettingsDialogProps = { open: boolean; onOpenChange: (open: boolean) => void };

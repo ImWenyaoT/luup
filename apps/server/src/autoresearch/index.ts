@@ -1,8 +1,3 @@
-export {
-  createAutoresearchAgents,
-  type AutoresearchAgents,
-  type CreateAutoresearchAgentsOptions,
-} from "./orchestrator.ts";
 export { createResearchRuntime, ResearchEngine, type RunResearchResult } from "./runtime.ts";
 export { ResearchMill } from "./mill/mill.ts";
 export { MillRegistry, type MillRegistryDeps } from "./mill/registry.ts";

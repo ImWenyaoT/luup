@@ -72,6 +72,24 @@ export const Input = styled.input`
   }
 `;
 
+export const Select = styled.select`
+  width: 100%;
+  height: 40px;
+  border: 1px solid ${colors.border};
+  border-radius: 8px;
+  background: ${colors.surface};
+  color: ${colors.ink};
+  padding: 0 12px;
+  font-size: 13px;
+  &:focus {
+    border-color: ${colors.accent};
+    outline: 3px solid rgba(44, 44, 44, 0.1);
+  }
+  &:disabled {
+    background: #f2f4f7;
+  }
+`;
+
 export const Textarea = styled.textarea`
   width: 100%;
   border: 1px solid ${colors.border};

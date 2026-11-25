@@ -24,9 +24,10 @@ import {
   FolderIcon,
   MagnifyingGlassIcon as SearchIcon,
 } from "@heroicons/react/24/outline";
-import { useRouter } from "next/navigation";
 
-export type LuupShellNavId = "mill" | "chat" | "papers" | "legacy";
+import { SettingsDialog, SettingsTrigger } from "../settings/SettingsDialog";
+
+export type LuupShellNavId = "mill" | "chat" | "papers";
 
 export type LuupShellProps = {
   children: ReactNode;
@@ -46,7 +47,6 @@ const MENUS: { label: string; groups: MenuEntry[][] }[] = [
         ["Autoresearch", ""],
         ["Research Mill", ""],
       ],
-      [["Legacy workspace", ""]],
     ],
   },
   {
@@ -62,22 +62,21 @@ const MENUS: { label: string; groups: MenuEntry[][] }[] = [
   },
 ];
 
-/** Autoresearch 产品壳：形制学 Astryx `shell-nav`（TopNav + SideNav + CommandPalette）。 */
+/** Autoresearch 产品壳：形制学 Astryx `shell-nav`。 */
 export function LuupShell({ children, active = "mill", paperTitles = [] }: LuupShellProps) {
-  const router = useRouter();
   const showToast = useToast();
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [nav, setNav] = useState<LuupShellNavId>(active);
 
   const go = (id: string) => {
-    if (id === "legacy") {
-      router.push("/legacy");
-      return;
-    }
     if (id === "docs") {
-      showToast({ body: "产品主轴：Autoresearch Mill · UI 用 Astryx", uniqueID: "docs" });
+      showToast({ body: "Autoresearch Mill · Astryx shell · Engine 硬闸", uniqueID: "docs" });
       return;
     }
-    router.push("/autoresearch");
+    if (id === "mill" || id === "chat" || id === "papers") {
+      setNav(id);
+    }
     setIsPaletteOpen(false);
   };
 
@@ -99,43 +98,35 @@ export function LuupShell({ children, active = "mill", paperTitles = [] }: LuupS
             id: "mill",
             label: <Text maxLines={1}>Mill · 永动机</Text>,
             startContent: <Icon icon={BeakerIcon} size="xsm" />,
-            isSelected: active === "mill",
+            isSelected: nav === "mill",
             onClick: () => go("mill"),
           },
           {
             id: "chat",
             label: <Text maxLines={1}>Single chat</Text>,
             startContent: <Icon icon={SearchIcon} size="xsm" />,
-            isSelected: active === "chat",
+            isSelected: nav === "chat",
             onClick: () => go("chat"),
           },
           {
             id: "papers",
             label: <Text maxLines={1}>Papers</Text>,
             startContent: <Icon icon={DocumentTextIcon} size="xsm" />,
-            isSelected: active === "papers",
+            isSelected: nav === "papers",
             isExpanded: true,
             children:
               papers.length > 0 ? papers : [{ id: "papers-empty", label: <Text maxLines={1}>(none yet)</Text> }],
           },
         ],
       },
-      {
-        id: "legacy",
-        label: <Text maxLines={1}>Legacy Science-125</Text>,
-        startContent: <Icon icon={FolderIcon} size="xsm" />,
-        isSelected: active === "legacy",
-        onClick: () => go("legacy"),
-      },
     ];
-  }, [active, paperTitles]);
+  }, [nav, paperTitles]);
 
   const commands = useMemo(
     () => [
-      { id: "mill", label: "Open Research Mill" },
-      { id: "chat", label: "Open single-question chat" },
+      { id: "mill", label: "Focus Research Mill" },
+      { id: "chat", label: "Focus single-question chat" },
       { id: "papers", label: "Show papers" },
-      { id: "legacy", label: "Legacy Science-125 workspace" },
       { id: "docs", label: "About Luup Autoresearch" },
     ],
     [],
@@ -172,9 +163,10 @@ export function LuupShell({ children, active = "mill", paperTitles = [] }: LuupS
                             key={label}
                             label={label}
                             onClick={() => {
-                              if (label.includes("Legacy")) go("legacy");
-                              else if (label.includes("Mill")) go("mill");
+                              if (label.includes("Mill")) go("mill");
                               else if (label.includes("Palette")) openPalette();
+                              else if (label.includes("Chat")) go("chat");
+                              else if (label.includes("Papers")) go("papers");
                               else go("mill");
                             }}
                             endContent={shortcut ? <Kbd keys={shortcut} /> : undefined}
@@ -208,7 +200,10 @@ export function LuupShell({ children, active = "mill", paperTitles = [] }: LuupS
                   onClick={() => go("mill")}
                 />
                 <StackItem>
-                  <Button label="Legacy" variant="secondary" onClick={() => go("legacy")} />
+                  <SettingsTrigger onOpen={() => setSettingsOpen(true)} />
+                </StackItem>
+                <StackItem>
+                  <Button label="Mill" variant="secondary" onClick={() => go("mill")} />
                 </StackItem>
               </>
             }
@@ -232,6 +227,7 @@ export function LuupShell({ children, active = "mill", paperTitles = [] }: LuupS
           setIsPaletteOpen(false);
         }}
       />
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </>
   );
 }

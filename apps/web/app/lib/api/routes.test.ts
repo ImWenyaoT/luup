@@ -112,11 +112,7 @@ describe("mill API", () => {
     });
     await stopMill(client);
     const urls = spy.mock.calls.map((c) => String(c[0]));
-    expect(urls).toEqual([
-      "/api/autoresearch/mill",
-      "/api/autoresearch/mill/start",
-      "/api/autoresearch/mill/stop",
-    ]);
+    expect(urls).toEqual(["/api/autoresearch/mill", "/api/autoresearch/mill/start", "/api/autoresearch/mill/stop"]);
   });
 
   test("startMill 错误路径", async () => {

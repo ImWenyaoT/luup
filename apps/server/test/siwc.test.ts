@@ -103,9 +103,9 @@ test("resolveSiwcAccessToken 过期则 refresh（串行）", async () => {
     credentialPath,
     hostIdPath,
     fetch: async (input, init) => {
-      const url = String(input);
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       assert.ok(url.includes("/oauth/token"));
-      const body = String(init?.body || "");
+      const body = typeof init?.body === "string" ? init.body : "";
       assert.ok(body.includes("grant_type=refresh_token"));
       refreshCalls += 1;
       await new Promise((r) => setTimeout(r, 20));
@@ -134,7 +134,7 @@ test("startSiwcLogin 完成 PKCE 回调并落盘", async () => {
     hostIdPath,
     openAuthorize: async () => {},
     fetch: async (_input, init) => {
-      tokenBodies.push(String(init?.body || ""));
+      tokenBodies.push(typeof init?.body === "string" ? init.body : "");
       return new Response(
         JSON.stringify({
           access_token: "access-1",
@@ -255,7 +255,7 @@ test("normalizeSiwcResponsesBody / createSiwcFetch 强制 store:false", async ()
   });
   let seen = "";
   const wrapped = createSiwcFetch(async (_input, init) => {
-    seen = String(init?.body || "");
+    seen = typeof init?.body === "string" ? init.body : "";
     return new Response("{}", { status: 200 });
   });
   await wrapped("https://api.openai.com/v1/responses", {
