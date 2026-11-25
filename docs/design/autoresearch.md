@@ -48,8 +48,8 @@ question
 | 连续战役 | `ResearchMill`（ADR-0016）：Agenda → Ticket 流水 → Paper → 产量门 |
 | Paper 落盘 | `outputs/papers/<id>.md`（`createFsPaperStore`） |
 | Desktop | `apps/desktop` Electron 壳（ADR-0014），默认开 `/autoresearch` |
-| Legacy Science-125 | `/legacy` + `harness.ts` / `POST /api/runs`；`/` 重定向到 Autoresearch |
-| Legacy thin ToolLoopAgent 编排 | `orchestrator.ts`（deprecated；对照测试用） |
+| Archive Science-125 | 题库 / `POST /api/runs` / `pnpm batch` 仍在服务端，供正式批与协议测试；**无**产品 UI 入口 |
+| SIWC / DeepSeek | ADR-0017：ChatGPT 计划走 SIWC；DeepSeek 走 `deepseek` provider |
 
 ## Provider
 

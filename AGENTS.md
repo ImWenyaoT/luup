@@ -37,12 +37,12 @@ cwd 相对路径 `data/`、`memory/`、`outputs/` 因此稳定）。
 `archive/phase-a-evidence-20260816`，不在工作树（协议修订 #6）；正式批入库时重建 `runs-ts/`。
 
 `apps/server/src/` 下的分区：`autoresearch/`（产品主轴：`runtime` / `engine` / `session` /
-`executor`；`orchestrator.ts` 为 deprecated 薄对照）、`agent/`（legacy 五角色契约/工具）、
-`api/`（对外投影）、`batch/`（125 题批跑，legacy）、`campaign/`（战役记忆读写）、
+`executor` / `mill`）、`agent/`（五角色契约/工具，Autoresearch 与 archive harness 共用）、
+`api/`（对外投影）、`batch/`（125 题批跑，archive）、`campaign/`（战役记忆读写）、
 `domain/`（题库）、`eval/`（离线指标）、`seams/`（可替换接线；`providers.ts` 是多 Provider
-唯一读取点，`model.ts` 仍服务 legacy Qwen）、`store/`（SQLite 事实存储，基于 Node 原生
-`node:sqlite`）、`verify/`（B1–B4 确定性引用验收）。
-`harness.ts`/`server.ts`/`roles.ts` 是 legacy 编排本体。
+唯一读取点，`siwc.ts` 是 ChatGPT 计划凭据通道，`model.ts` 仍服务 legacy Qwen）、
+`store/`（SQLite 事实存储，基于 Node 原生 `node:sqlite`）、`verify/`（B1–B4 确定性引用验收）。
+`harness.ts`/`roles.ts` 是 archive 五角色编排；`server.ts` 同时挂 Autoresearch 与 archive HTTP。
 
 ## seam 纪律
 
