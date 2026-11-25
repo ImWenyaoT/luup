@@ -9,8 +9,31 @@ import { findQuestion, readScience125, science125Text } from "./domain/science12
 import { createDeterministicRuntime, createDeterministicVerifier } from "./executor-deterministic.ts";
 import { createQwenExecutor } from "./executor.ts";
 import { Harness } from "./harness.ts";
-import { modelConfigStatus, setModelOverride } from "./seams/index.ts";
+import { handleAutoresearchChat, type AutoresearchChatDeps } from "./autoresearch/chat.ts";
+import { MillRegistry, type MillRegistryDeps } from "./autoresearch/mill/registry.ts";
+import type { StartMillInput } from "./autoresearch/mill/types.ts";
+import {
+  logoutSiwc,
+  modelConfigStatus,
+  providerConfigStatus,
+  setModelOverride,
+  setProviderOverride,
+  siwcStatus,
+  startSiwcLogin,
+  type ProviderId,
+} from "./seams/index.ts";
 import { FeedbackSubmissionError, MAX_QUESTION_LENGTH, normalizeQuestion, SqliteStore } from "./store/store.ts";
+
+/** 对外投影：expires_at 用 ISO；永不带 token。 */
+function projectSiwcStatus() {
+  const status = siwcStatus();
+  return {
+    signed_in: status.signed_in,
+    email: status.email,
+    expires_at: status.expires_at != null ? new Date(status.expires_at).toISOString() : null,
+    client_id_present: status.client_id_present,
+  };
+}
 
 const TERMINAL = new Set(["completed", "review_rejected", "failed"]);
 const POLL_MS = 100;
@@ -70,6 +93,10 @@ export type ServerOptions = {
   reportError?: (message: string, error: unknown) => void;
   hostname?: string;
   port?: number;
+  /** Autoresearch chat 注入点（测试用 mock model / browser）。 */
+  autoresearch?: AutoresearchChatDeps;
+  /** ResearchMill 注册表注入（测试用假 Engine）。 */
+  mill?: MillRegistryDeps & { registry?: MillRegistry };
 };
 
 export type LuupServer = {
@@ -87,6 +114,14 @@ function createElysiaApp(options: ServerOptions) {
   const { store, harness } = options;
   const mode = options.runtime ?? runtimeMode();
   const reportError = options.reportError ?? ((message, error) => console.error(message, error));
+  const autoresearchDeps: AutoresearchChatDeps = { runtime: mode, ...options.autoresearch };
+  const millRegistry =
+    options.mill?.registry ??
+    new MillRegistry({
+      runtime: mode,
+      browserRunner: options.autoresearch?.browserRunner,
+      createMill: options.mill?.createMill,
+    });
   const maxConcurrentRuns = 2;
   const apiToken = process.env.LUUP_API_TOKEN?.trim() || null;
   const configuredQueueLimit = Number(process.env.LUUP_MAX_QUEUED_RUNS ?? 8);
@@ -289,9 +324,67 @@ function createElysiaApp(options: ServerOptions) {
       }
       return json(200, { question: q, formattedText: science125Text(q) });
     })
-    // 配置端点
+    // 配置端点（legacy Qwen 字段 + ADR-0013 provider 字段并存）
     .get("/api/config", () => {
-      return json(200, { runtime: mode, ...modelConfigStatus() });
+      const provider = providerConfigStatus();
+      return json(200, {
+        runtime: mode,
+        ...modelConfigStatus(),
+        provider: provider.provider,
+        api_surface: provider.api_surface,
+        provider_credential: provider.credential,
+        provider_model_id: provider.model_id,
+        provider_base_url: provider.base_url,
+        siwc: projectSiwcStatus(),
+      });
+    })
+    // Sign in with ChatGPT（ADR-0017）：loopback OAuth；token 永不进响应
+    .get("/api/auth/siwc/status", ({ request }) => {
+      if (!authorized(request)) return unauthorized("/api/auth/siwc/status", request);
+      return json(200, projectSiwcStatus());
+    })
+    .post("/api/auth/siwc/start", async ({ request }) => {
+      if (!authorized(request)) return unauthorized("/api/auth/siwc/start", request);
+      try {
+        let resolveEarly!: (info: { authorize_url: string; redirect_uri: string }) => void;
+        let rejectEarly!: (err: unknown) => void;
+        const early = new Promise<{ authorize_url: string; redirect_uri: string }>((resolve, reject) => {
+          resolveEarly = resolve;
+          rejectEarly = reject;
+        });
+        const login = startSiwcLogin({
+          openAuthorize: async () => {
+            /* 浏览器由前端 window.open；本机桌面可另注 openAuthorize */
+          },
+          onAuthorizeUrl: (info) => {
+            resolveEarly(info);
+          },
+        });
+        void login.catch((err) => {
+          rejectEarly(err);
+          reportError("siwc login failed", err);
+        });
+        const info = await Promise.race([
+          early,
+          sleep(15_000).then(() => {
+            throw new Error("SIWC authorize URL timed out");
+          }),
+        ]);
+        return json(200, { authorize_url: info.authorize_url, redirect_uri: info.redirect_uri });
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        return errorProblem(request, 502, {
+          code: "siwc_start_failed",
+          title: "Bad Gateway",
+          detail,
+          instance: "/api/auth/siwc/start",
+        });
+      }
+    })
+    .post("/api/auth/siwc/logout", ({ request }) => {
+      if (!authorized(request)) return unauthorized("/api/auth/siwc/logout", request);
+      logoutSiwc();
+      return json(200, projectSiwcStatus());
     })
     .put("/api/config", async ({ body, request }) => {
       if (!authorized(request)) return unauthorized("/api/config", request);
@@ -314,8 +407,21 @@ function createElysiaApp(options: ServerOptions) {
           instance: "/api/config",
         });
       }
-      const parsedBody = body as { api_key?: unknown; model_id?: unknown; base_url?: unknown };
+      const parsedBody = body as {
+        api_key?: unknown;
+        model_id?: unknown;
+        base_url?: unknown;
+        provider?: unknown;
+        api_surface?: unknown;
+      };
       const next: { apiKey?: string; modelId?: string; baseUrl?: string } = {};
+      const providerNext: {
+        apiKey?: string;
+        modelId?: string;
+        baseUrl?: string;
+        provider?: ProviderId;
+        apiSurface?: "responses" | "chat";
+      } = {};
       if (parsedBody.api_key !== undefined) {
         if (typeof parsedBody.api_key !== "string" || parsedBody.api_key.trim() === "") {
           return errorProblem(request, 422, {
@@ -343,6 +449,7 @@ function createElysiaApp(options: ServerOptions) {
           });
         }
         next.apiKey = apiKey;
+        providerNext.apiKey = apiKey;
       }
       if (parsedBody.model_id !== undefined) {
         if (typeof parsedBody.model_id !== "string" || parsedBody.model_id.trim() === "") {
@@ -354,6 +461,7 @@ function createElysiaApp(options: ServerOptions) {
           });
         }
         next.modelId = parsedBody.model_id.trim();
+        providerNext.modelId = parsedBody.model_id.trim();
       }
       if (parsedBody.base_url !== undefined) {
         if (typeof parsedBody.base_url !== "string" || !/^https?:\/\//.test(parsedBody.base_url.trim())) {
@@ -375,24 +483,119 @@ function createElysiaApp(options: ServerOptions) {
           });
         }
         next.baseUrl = parsedBody.base_url.trim();
+        providerNext.baseUrl = parsedBody.base_url.trim();
       }
-      if (Object.keys(next).length === 0) {
+      if (parsedBody.provider !== undefined) {
+        if (
+          typeof parsedBody.provider !== "string" ||
+          !["openai", "deepseek", "openai-compatible"].includes(parsedBody.provider)
+        ) {
+          return errorProblem(request, 422, {
+            code: "invalid_provider",
+            title: "Unprocessable Entity",
+            detail: "provider 必须是 openai | deepseek | openai-compatible。",
+            instance: "/api/config",
+          });
+        }
+        providerNext.provider = parsedBody.provider as ProviderId;
+      }
+      if (parsedBody.api_surface !== undefined) {
+        if (parsedBody.api_surface !== "responses" && parsedBody.api_surface !== "chat") {
+          return errorProblem(request, 422, {
+            code: "invalid_api_surface",
+            title: "Unprocessable Entity",
+            detail: "api_surface 必须是 responses | chat。",
+            instance: "/api/config",
+          });
+        }
+        providerNext.apiSurface = parsedBody.api_surface;
+      }
+      if (Object.keys(next).length === 0 && Object.keys(providerNext).length === 0) {
         return errorProblem(request, 422, {
           code: "empty_configuration_payload",
           title: "Unprocessable Entity",
-          detail: "没有可设置的字段（api_key / model_id / base_url）。",
+          detail: "没有可设置的字段（api_key / model_id / base_url / provider / api_surface）。",
           instance: "/api/config",
         });
       }
-      setModelOverride(next);
-      return json(200, { runtime: mode, ...modelConfigStatus() });
+      if (Object.keys(next).length > 0) setModelOverride(next);
+      if (Object.keys(providerNext).length > 0) setProviderOverride(providerNext);
+      const provider = providerConfigStatus();
+      return json(200, {
+        runtime: mode,
+        ...modelConfigStatus(),
+        provider: provider.provider,
+        api_surface: provider.api_surface,
+        provider_credential: provider.credential,
+        provider_model_id: provider.model_id,
+        provider_base_url: provider.base_url,
+        siwc: projectSiwcStatus(),
+      });
+    })
+    .post("/api/autoresearch/chat", async ({ request, body }) => {
+      if (!authorized(request)) return unauthorized("/api/autoresearch/chat", request);
+      return handleAutoresearchChat(request, autoresearchDeps, body);
+    })
+    .get("/api/autoresearch/mill", ({ request }) => {
+      if (!authorized(request)) return unauthorized("/api/autoresearch/mill", request);
+      return json(200, millRegistry.status());
+    })
+    .post("/api/autoresearch/mill/start", async ({ request, body }) => {
+      if (!authorized(request)) return unauthorized("/api/autoresearch/mill/start", request);
+      const raw = (body ?? {}) as Partial<StartMillInput>;
+      const topic = typeof raw.topic === "string" ? raw.topic : "";
+      const seedQuestions = Array.isArray(raw.seedQuestions)
+        ? raw.seedQuestions.filter((q): q is string => typeof q === "string")
+        : [];
+      const targetPapers = typeof raw.targetPapers === "number" ? raw.targetPapers : Number(raw.targetPapers);
+      const maxTickets = typeof raw.maxTickets === "number" ? raw.maxTickets : Number(raw.maxTickets);
+      try {
+        const snapshot = millRegistry.start({
+          topic,
+          seedQuestions,
+          targetPapers: Number.isFinite(targetPapers) ? targetPapers : 1,
+          maxTickets: Number.isFinite(maxTickets) ? maxTickets : 8,
+        });
+        return json(202, snapshot);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message === "missing_model_credentials") {
+          return problemResponse(503, {
+            code: message,
+            title: "Model credentials missing",
+            detail: "Configure OPENAI_API_KEY / DEEPSEEK_API_KEY / LUUP_API_KEY or PUT /api/config.",
+            instance: "/api/autoresearch/mill/start",
+          });
+        }
+        if (message === "mill_already_running") {
+          return problemResponse(409, {
+            code: message,
+            title: "Mill already running",
+            detail: "Stop the current campaign before starting another.",
+            instance: "/api/autoresearch/mill/start",
+          });
+        }
+        return problemResponse(422, {
+          code: "invalid_mill_start",
+          title: "Invalid mill start",
+          detail: message,
+          instance: "/api/autoresearch/mill/start",
+        });
+      }
+    })
+    .post("/api/autoresearch/mill/stop", async ({ request }) => {
+      if (!authorized(request)) return unauthorized("/api/autoresearch/mill/stop", request);
+      return json(200, await millRegistry.stop());
     })
     // 探针端点
     .get("/api/health", () => json(200, { status: "ok" }))
     .get("/health", () => json(200, { status: "ok" }))
     .get("/api/readyz", () => {
       const databaseReady = store.isReady();
-      const modelConfigured = mode === "deterministic" || modelConfigStatus().credential !== "absent";
+      const modelConfigured =
+        mode === "deterministic" ||
+        modelConfigStatus().credential !== "absent" ||
+        providerConfigStatus().credential !== "absent";
       const authConfigured = mode === "deterministic" || apiToken !== null;
       const ready = databaseReady && modelConfigured && authConfigured;
       return json(ready ? 200 : 503, {
@@ -406,7 +609,10 @@ function createElysiaApp(options: ServerOptions) {
     })
     .get("/readyz", () => {
       const databaseReady = store.isReady();
-      const modelConfigured = mode === "deterministic" || modelConfigStatus().credential !== "absent";
+      const modelConfigured =
+        mode === "deterministic" ||
+        modelConfigStatus().credential !== "absent" ||
+        providerConfigStatus().credential !== "absent";
       const authConfigured = mode === "deterministic" || apiToken !== null;
       const ready = databaseReady && modelConfigured && authConfigured;
       return json(ready ? 200 : 503, {

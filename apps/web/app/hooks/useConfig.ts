@@ -4,6 +4,7 @@ import { useCallback } from "react";
 import { toApiError } from "../lib/api/client";
 import type { ApiClient } from "../lib/api/client";
 import { fetchConfig, saveConfig } from "../lib/api/config";
+import type { ConfigSaveBody } from "../lib/types/wire";
 import { useApiClient } from "../providers/api";
 
 export const CONFIG_QUERY_KEY = ["config"] as const;
@@ -27,7 +28,7 @@ export function useConfig(options?: UseConfigOptions) {
   const query = useQuery(configQueryOptions(client));
 
   const mutation = useMutation({
-    mutationFn: (next: { api_key?: string; model_id?: string; base_url?: string }) => saveConfig(client, next),
+    mutationFn: (next: ConfigSaveBody) => saveConfig(client, next),
     onSuccess: (data) => {
       queryClient.setQueryData(CONFIG_QUERY_KEY, data);
     },
@@ -36,7 +37,7 @@ export function useConfig(options?: UseConfigOptions) {
   const { mutateAsync, isPending: saving, error: mutationError } = mutation;
 
   const save = useCallback(
-    async (next: { api_key?: string; model_id?: string; base_url?: string }) => {
+    async (next: ConfigSaveBody) => {
       try {
         return await mutateAsync(next);
       } catch (cause) {

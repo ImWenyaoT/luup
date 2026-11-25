@@ -1,20 +1,8 @@
 "use client";
 
-import dynamic from "next/dynamic";
+import { AutoresearchChat } from "./features/autoresearch/AutoresearchChat";
 
-function Loading() {
-  return (
-    <main style={{ minHeight: "100dvh", display: "grid", placeItems: "center", padding: 32 }}>
-      <p style={{ color: "#667085", fontSize: 14 }}>Loading…</p>
-    </main>
-  );
-}
-
-const ResearchWorkspace = dynamic(() => import("./research-workspace"), {
-  ssr: false,
-  loading: Loading,
-});
-
+/** 产品唯一入口：Autoresearch Mill（Science-125 UI 已移除）。 */
 export default function Page() {
-  return <ResearchWorkspace />;
+  return <AutoresearchChat />;
 }
