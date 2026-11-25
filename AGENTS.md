@@ -18,12 +18,13 @@ Python 栈已于 ADR-0004 退役，只存于 git 历史；源码注释里写着�
 正常 TS 全栈 monorepo（ADR-0006，形制学 dsh：根零源码，通过 Turborepo + pnpm workspace 编排）：
 
 ```text
-apps/server/ 后端 `@luup/server`：src/（harness 本体 + 领域 + 工具 + 评估，按子系统分目录）
-             + test/（vitest）+ tsconfig
-apps/web/    Next.js 16 App Router（`@luup/frontend`），独立 Web 应用；`next.config.ts` 将同源 `/api` rewrite 到 `apps/server`
-data/        science125.json，冻结题库，只读
-docs/        产品契约、架构、判据、ADR、赛题与报告材料
-memory/      跨 run 的战役记忆，文件事实源，append-only
+apps/server/  后端 `@luup/server`：src/（harness 本体 + 领域 + 工具 + 评估，按子系统分目录）
+              + test/（vitest）+ tsconfig
+apps/web/     Next.js 16 App Router（`@luup/frontend`）；`next.config.ts` 将同源 `/api` rewrite 到 API
+apps/desktop/ Electron 壳 `@luup/desktop`（ADR-0014）：窗口 + 本机进程监督，默认开 /autoresearch
+data/         science125.json，冻结题库，只读
+docs/         产品契约、架构、判据、ADR、赛题与报告材料
+memory/       跨 run 的战役记忆，文件事实源，append-only
 ```
 
 根目录脚本是唯一入口（`pnpm run dev:api` / `batch` / `canary` 等都从根起跑，
@@ -72,6 +73,7 @@ CI 是 `.github/workflows/ts.yml` 的 `check`（=`pnpm run ci`）与 `e2e` 两�
 ## 锚点
 
 - Autoresearch 产品/架构：`docs/design/autoresearch.md`（ADR-0013）
+- 桌面客户端：`docs/adr/0014-electron-desktop-client.md` · `apps/desktop/README.md`
 - Legacy 验收判据：`docs/design/criteria.md`
 - Legacy 架构：`docs/design/architecture.md`
 - 预注册协议：`docs/design/experiment-protocol.json`（已注册内容不可改，改动必须走 amendment）
@@ -92,3 +94,4 @@ CI 是 `.github/workflows/ts.yml` 的 `check`（=`pnpm run ci`）与 `e2e` 两�
 - 前端现行栈是 Next.js App Router（`apps/web`），不再以 Vite/Remix 为当前方向
 - Harness 方向已定案为森林理论（ADR-0012）：propose → critique → hard gate → merge；角色产出默认不信任
 - 赛题结束后产品主轴切到 Autoresearch（ADR-0013）：AI SDK 多 Provider + subagent，而非继续独占 Qwen
+- 桌面形态走 Electron 壳监督本机 Web/API（ADR-0014），不把 Next 塞进 Electron 同上下文

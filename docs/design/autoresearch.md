@@ -39,8 +39,9 @@ question
 | --- | --- |
 | Provider seam | `apps/server/src/seams/providers.ts` |
 | Autoresearch 编排 | `apps/server/src/autoresearch/` |
-| 流式 HTTP | `POST /api/autoresearch/chat` → `toUIMessageStreamResponse` |
+| 流式 HTTP | `POST /api/autoresearch/chat` → 宿主硬闸后的 UI message stream |
 | UI | `apps/web` + `@ai-sdk/react` `useChat` |
+| Desktop | `apps/desktop` Electron 壳（ADR-0014），默认开 `/autoresearch` |
 | Legacy Science-125 | 既有 `harness.ts` / `POST /api/runs`，默认不再作为产品入口 |
 
 ## Provider

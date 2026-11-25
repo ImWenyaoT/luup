@@ -4,6 +4,8 @@
 Coordinator 委派 literature / web（agent-browser）/ critique，森林硬闸后产出可引用报告；
 支持 OpenAI / DeepSeek / openai-compatible 的 Responses（或 Chat）接线。
 
+**Desktop（ADR-0014）**：`apps/desktop` Electron 壳，本机监督 API/Web，默认打开 `/autoresearch`。
+
 **Science-125（legacy）**：原挑战杯五角色流水线仍可跑；默认产品入口转向 `/autoresearch`。
 
 ## 设计边界
@@ -56,6 +58,14 @@ export QWEN_BASE_URL='your-openai-compatible-base-url'
 
 `LUUP_RUNTIME=deterministic` 用内置替身跑完整条流水线，不发一次模型请求，也不需要凭据。
 UI 入口：`http://127.0.0.1:3000/autoresearch`（主轴）与 `/`（legacy 工作台）。
+
+桌面客户端（会按需拉起 API + Web）：
+
+```sh
+pnpm run dev:desktop
+# 或已手动起服务时：
+LUUP_DESKTOP_MANAGE_SERVICES=0 pnpm run dev:desktop
+```
 
 ### 起服务
 

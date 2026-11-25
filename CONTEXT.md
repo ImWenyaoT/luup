@@ -3,6 +3,7 @@
 | 术语                 | 含义                                                                                                                                 | 代码锚点                                  |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------- |
 | **Autoresearch**     | 产品主轴：AI SDK Coordinator + literature/web/critique subagent；森林硬闸后出报告（ADR-0013）                                        | `apps/server/src/autoresearch/`           |
+| **Desktop**          | Electron 壳：窗口 + 本机 API/Web 进程监督；默认开 `/autoresearch`（ADR-0014）                                                        | `apps/desktop/`                           |
 | **Provider seam**    | 多供应商 Responses/Chat 唯一读取点（openai / deepseek / openai-compatible）                                                          | `apps/server/src/seams/providers.ts`      |
 | **run**              | legacy：一次 `question → 五角色串行 → 确定性验收`；全部事实落在 SQLite 单库里                                                         | `apps/server/src/harness.ts`              |
 | **Harness**          | 确定性调度器（循环引擎），运行时角色而非子目录；拥有工具执行、预算、状态、证据和验证，不是另一个 LLM Agent                           | `apps/server/src/harness.ts`              |
