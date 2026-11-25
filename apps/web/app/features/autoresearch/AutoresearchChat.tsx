@@ -5,6 +5,7 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { useMemo, useState, type FormEvent } from "react";
 
+import { useApiClient } from "../../providers/api";
 import { Button, colors, Input } from "../../styles";
 
 const Shell = styled.main`
@@ -92,12 +93,17 @@ function messageText(parts: Array<{ type: string; text?: string }>): string {
 }
 
 export function AutoresearchChat() {
+  const api = useApiClient();
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
         api: "/api/autoresearch/chat",
+        headers: (): Record<string, string> => {
+          const token = api.getToken();
+          return token ? { Authorization: `Bearer ${token}` } : {};
+        },
       }),
-    [],
+    [api],
   );
   const { messages, sendMessage, status, error, stop } = useChat({ transport });
   const [draft, setDraft] = useState("");

@@ -9,7 +9,7 @@ const usage = {
   outputTokens: { total: 5, text: 5, reasoning: undefined },
 };
 
-test("coordinator 可委派 literature_research 并写入证据台账钩子", async () => {
+test("coordinator 可委派 literature_research；宿主 gate 在无证据时 fail-closed", async () => {
   const model = new MockLanguageModelV4({
     doGenerate: [
       // coordinator: call literature_research
@@ -47,16 +47,25 @@ test("coordinator 可委派 literature_research 并写入证据台账钩子", as
         usage,
         warnings: [],
       },
-      // critic subagent
+      // structured critique (Output.object)
       {
-        content: [{ type: "text", text: "Verdict: insufficient\n- no evidence frozen" }],
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              verdict: "insufficient",
+              rationale: "no evidence frozen",
+              gaps: ["no evidence frozen"],
+            }),
+          },
+        ],
         finishReason: { unified: "stop", raw: undefined },
         usage,
         warnings: [],
       },
-      // coordinator final
+      // coordinator final draft (will be rejected by host gate in chat path)
       {
-        content: [{ type: "text", text: "Fail-closed: insufficient evidence." }],
+        content: [{ type: "text", text: "Draft report that must not merge." }],
         finishReason: { unified: "stop", raw: undefined },
         usage,
         warnings: [],
@@ -69,16 +78,16 @@ test("coordinator 可委派 literature_research 并写入证据台账钩子", as
     browserRunner: async () => ({ ok: true, stdout: "", stderr: "", code: 0 }),
     coordinatorSteps: 6,
     literatureSteps: 2,
-    criticSteps: 2,
   });
 
   const result = await coordinator.generate({
     prompt: "How are pulsars formed?",
   });
 
-  assert.match(result.text, /Fail-closed|insufficient/i);
+  assert.match(result.text, /Draft report|must not merge/i);
   assert.equal(runtime.critiques.length, 1);
   assert.equal(runtime.critiques[0]?.verdict, "insufficient");
   const gate = evaluateGate();
   assert.equal(gate.ok, false);
+  assert.ok(gate.reason === "no_evidence" || gate.reason === "critique_insufficient");
 });

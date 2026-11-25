@@ -11,6 +11,17 @@ vi.mock("@ai-sdk/react", () => ({
   }),
 }));
 
+vi.mock("../../providers/api", () => ({
+  useApiClient: () => ({
+    getToken: () => "test-token",
+    baseUrl: "",
+    snapshotTimeoutMs: 10_000,
+    get: vi.fn(),
+    post: vi.fn(),
+    put: vi.fn(),
+  }),
+}));
+
 import { AutoresearchChat } from "./AutoresearchChat";
 
 describe("AutoresearchChat", () => {

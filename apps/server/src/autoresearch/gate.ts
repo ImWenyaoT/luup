@@ -1,4 +1,4 @@
-import type { AutoresearchGate, AutoresearchRuntime, CritiqueResult } from "./types.ts";
+import type { AutoresearchGate, AutoresearchRuntime, CritiqueResult, CritiqueVerdict } from "./types.ts";
 
 /** 森林硬闸：无证据或 critique 否决则 fail-closed。 */
 export function evaluateAutoresearchGate(runtime: AutoresearchRuntime): AutoresearchGate {
@@ -43,19 +43,22 @@ export function evaluateAutoresearchGate(runtime: AutoresearchRuntime): Autorese
   };
 }
 
+const VERDICT_LINE = /^\s*verdict\s*:\s*(supports|contradicts|insufficient)\b/im;
+
+/** 只认显式 `verdict:` 行；rationale 正文不参与判定（避免「does not support」误判）。 */
 export function parseCritiqueText(text: string): CritiqueResult {
-  const lower = text.toLowerCase();
-  let verdict: CritiqueResult["verdict"] = "insufficient";
-  if (/\bcontradict/.test(lower) || /\b否决\b/.test(text) || /\breject/.test(lower)) {
-    verdict = "contradicts";
-  } else if (/\bsupports?\b/.test(lower) || /\b支持\b/.test(text) || /\bverified\b/.test(lower)) {
-    verdict = "supports";
-  }
+  const match = text.match(VERDICT_LINE);
+  const verdict = (match?.[1]?.toLowerCase() as CritiqueVerdict | undefined) ?? "insufficient";
   const gaps: string[] = [];
   for (const line of text.split(/\n+/)) {
     const trimmed = line.trim();
-    if (/^[-*•]\s+/.test(trimmed) || /gap/i.test(trimmed)) {
-      gaps.push(trimmed.replace(/^[-*•]\s+/, "").slice(0, 240));
+    if (/^[-*•]\s+/.test(trimmed) || /^gaps?\s*:/i.test(trimmed)) {
+      gaps.push(
+        trimmed
+          .replace(/^[-*•]\s+/, "")
+          .replace(/^gaps?\s*:\s*/i, "")
+          .slice(0, 240),
+      );
     }
   }
   return {
@@ -63,4 +66,28 @@ export function parseCritiqueText(text: string): CritiqueResult {
     rationale: text.slice(0, 4000),
     gaps: gaps.slice(0, 12),
   };
+}
+
+/** 宿主拥有的交付文本：gate 不过则不交出 coordinator draft。 */
+export function formatGateDelivery(gate: AutoresearchGate, draftText: string): string {
+  if (gate.ok) {
+    return [
+      draftText.trim(),
+      "",
+      "---",
+      `[host-gate] verified · evidence=${gate.evidenceCount} · verdict=${gate.critique?.verdict ?? "n/a"}`,
+    ].join("\n");
+  }
+  return [
+    "[host-gate] FAIL-CLOSED",
+    `reason: ${gate.reason}`,
+    `evidence_count: ${gate.evidenceCount}`,
+    gate.critique ? `critique: ${gate.critique.verdict}` : "critique: (missing)",
+    gate.critique?.rationale ? `rationale: ${gate.critique.rationale.slice(0, 800)}` : null,
+    gate.critique?.gaps?.length ? `gaps: ${gate.critique.gaps.join("; ")}` : null,
+    "",
+    "Coordinator draft was not delivered. Forest hard gate rejected merge.",
+  ]
+    .filter((line): line is string => line !== null)
+    .join("\n");
 }

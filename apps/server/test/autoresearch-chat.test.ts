@@ -65,4 +65,6 @@ test("POST /api/autoresearch/chat 在 deterministic 下可流式响应", async (
   assert.equal(res.status, 200);
   const text = await res.text();
   assert.ok(text.length > 0);
+  // 宿主硬闸：无证据时交付 FAIL-CLOSED，而不是裸 draft
+  assert.match(text, /host-gate|FAIL-CLOSED|no_evidence/i);
 });

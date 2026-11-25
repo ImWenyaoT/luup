@@ -1,11 +1,17 @@
-import { ToolLoopAgent, isStepCount, tool, type LanguageModel } from "ai";
+import { Output, ToolLoopAgent, generateText, isStepCount, tool, type LanguageModel } from "ai";
 import { z } from "zod";
 
 import { COORDINATOR_INSTRUCTIONS, CRITIC_INSTRUCTIONS, LITERATURE_INSTRUCTIONS, WEB_INSTRUCTIONS } from "./prompts.ts";
-import { evaluateAutoresearchGate, parseCritiqueText } from "./gate.ts";
+import { evaluateAutoresearchGate } from "./gate.ts";
 import { createBrowserTools, type BrowserRunner } from "./tools/browser.ts";
 import { createLiteratureTools } from "./tools/literature.ts";
-import type { AutoresearchGate, AutoresearchRuntime } from "./types.ts";
+import type { AutoresearchGate, AutoresearchRuntime, CritiqueResult } from "./types.ts";
+
+const critiqueSchema = z.object({
+  verdict: z.enum(["supports", "contradicts", "insufficient"]),
+  rationale: z.string().min(1),
+  gaps: z.array(z.string()).default([]),
+});
 
 export type AutoresearchAgents = {
   runtime: AutoresearchRuntime;
@@ -21,7 +27,6 @@ export type CreateAutoresearchAgentsOptions = {
   coordinatorSteps?: number;
   literatureSteps?: number;
   webSteps?: number;
-  criticSteps?: number;
 };
 
 /** 组装 parent + literature / web / critique subagents（ADR-0013）。
@@ -51,12 +56,6 @@ export function createAutoresearchAgents(options: CreateAutoresearchAgentsOption
     instructions: WEB_INSTRUCTIONS,
     tools: browserTools,
     stopWhen: isStepCount(options.webSteps ?? 10),
-  });
-
-  const criticAgent = new ToolLoopAgent({
-    model: options.model,
-    instructions: CRITIC_INSTRUCTIONS,
-    stopWhen: isStepCount(options.criticSteps ?? 4),
   });
 
   const literature_research = tool({
@@ -116,10 +115,21 @@ export function createAutoresearchAgents(options: CreateAutoresearchAgentsOption
         "Claim to critique:",
         claim,
         "",
-        "Respond with verdict (supports | contradicts | insufficient), rationale, and gaps as bullets.",
+        "Return structured output only: verdict ∈ supports|contradicts|insufficient, rationale, gaps[].",
       ].join("\n");
-      const result = await criticAgent.generate({ prompt, abortSignal });
-      const parsed = parseCritiqueText(result.text);
+      // 结构化 verdict：不从 rationale 正文猜词，避免「does not support」翻转判定。
+      const result = await generateText({
+        model: options.model,
+        system: CRITIC_INSTRUCTIONS,
+        prompt,
+        output: Output.object({ schema: critiqueSchema }),
+        abortSignal,
+      });
+      const parsed: CritiqueResult = {
+        verdict: result.output.verdict,
+        rationale: result.output.rationale,
+        gaps: result.output.gaps ?? [],
+      };
       runtime.critiques.push(parsed);
       return parsed;
     },

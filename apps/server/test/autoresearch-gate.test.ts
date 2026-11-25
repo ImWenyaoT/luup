@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
 
-import { evaluateAutoresearchGate, parseCritiqueText } from "../src/autoresearch/gate.ts";
+import { evaluateAutoresearchGate, formatGateDelivery, parseCritiqueText } from "../src/autoresearch/gate.ts";
 import type { AutoresearchRuntime } from "../src/autoresearch/types.ts";
 
 function runtime(partial: Partial<AutoresearchRuntime> = {}): AutoresearchRuntime {
@@ -76,8 +76,39 @@ test("supports 才 ok", () => {
   assert.equal(gate.reason, "verified");
 });
 
-test("parseCritiqueText 识别 verdict", () => {
+test("parseCritiqueText 只认显式 verdict 行，不扫 rationale", () => {
   assert.equal(parseCritiqueText("Verdict: supports\n- gap a").verdict, "supports");
-  assert.equal(parseCritiqueText("This contradicts the claim").verdict, "contradicts");
-  assert.equal(parseCritiqueText("insufficient evidence").verdict, "insufficient");
+  assert.equal(
+    parseCritiqueText("Verdict: insufficient\nThe available evidence does not support the claim.").verdict,
+    "insufficient",
+  );
+  assert.equal(parseCritiqueText("Verdict: supports\nNo contradictions were found.").verdict, "supports");
+  // 无显式行 → fail-closed 默认 insufficient
+  assert.equal(parseCritiqueText("This contradicts the claim").verdict, "insufficient");
+});
+
+test("formatGateDelivery 否决时不交出 draft", () => {
+  const rejected = formatGateDelivery(
+    {
+      ok: false,
+      reason: "critique_insufficient",
+      critique: { verdict: "insufficient", rationale: "thin", gaps: ["need more"] },
+      evidenceCount: 1,
+    },
+    "SECRET DRAFT that must not leak",
+  );
+  assert.doesNotMatch(rejected, /SECRET DRAFT/);
+  assert.match(rejected, /FAIL-CLOSED/);
+
+  const accepted = formatGateDelivery(
+    {
+      ok: true,
+      reason: "verified",
+      critique: { verdict: "supports", rationale: "ok", gaps: [] },
+      evidenceCount: 2,
+    },
+    "Deliverable report",
+  );
+  assert.match(accepted, /Deliverable report/);
+  assert.match(accepted, /host-gate.*verified/);
 });

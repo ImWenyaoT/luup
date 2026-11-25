@@ -1,6 +1,7 @@
-import { createAgentUIStreamResponse, type UIMessage } from "ai";
+import { convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, type UIMessage } from "ai";
 
 import { createLanguageModel, providerConfigStatus } from "../seams/providers.ts";
+import { formatGateDelivery } from "./gate.ts";
 import { createAutoresearchAgents, type BrowserRunner } from "./index.ts";
 
 export type AutoresearchChatDeps = {
@@ -11,7 +12,7 @@ export type AutoresearchChatDeps = {
   runtime?: "live" | "deterministic";
 };
 
-/** 处理 AI SDK UI chat 请求 → coordinator agent stream。 */
+/** 处理 AI SDK UI chat 请求 → coordinator 跑完后由宿主硬闸决定交付文本。 */
 export async function handleAutoresearchChat(
   request: Request,
   deps: AutoresearchChatDeps = {},
@@ -48,14 +49,32 @@ export async function handleAutoresearchChat(
   const resolveModel = deps.resolveModel ?? createLanguageModel;
   const buildAgents = deps.createAgents ?? createAutoresearchAgents;
   const model = resolveModel();
-  const { coordinator } = buildAgents({
+  const { coordinator, evaluateGate } = buildAgents({
     model,
     browserRunner: deps.browserRunner,
   });
 
-  return createAgentUIStreamResponse({
-    agent: coordinator,
-    uiMessages: messages as UIMessage[],
-    abortSignal: request.signal,
+  const stream = createUIMessageStream({
+    execute: async ({ writer }) => {
+      writer.write({ type: "start" });
+
+      const result = await coordinator.generate({
+        messages: await convertToModelMessages(messages as UIMessage[], {
+          ignoreIncompleteToolCalls: true,
+        }),
+        abortSignal: request.signal,
+      });
+
+      // 宿主硬闸：gate 不过则不交付 coordinator draft（ADR-0012 / ADR-0013）。
+      const gate = evaluateGate();
+      const delivery = formatGateDelivery(gate, result.text);
+      const textId = "host-gated-delivery";
+      writer.write({ type: "text-start", id: textId });
+      writer.write({ type: "text-delta", id: textId, delta: delivery });
+      writer.write({ type: "text-end", id: textId });
+      writer.setOutcome({ status: gate.ok ? "completed" : "failed" });
+    },
   });
+
+  return createUIMessageStreamResponse({ stream });
 }
