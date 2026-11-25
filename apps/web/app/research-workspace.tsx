@@ -76,7 +76,8 @@ export default function Home() {
       const values = writeRunSearchParams(id);
       if (values.run) next.set("run", values.run);
       else next.delete("run");
-      router.replace(next.size > 0 ? `/?${next.toString()}` : "/");
+      // Legacy 工作台挂在 /legacy；勿写 `/`（产品入口已重定向到 /autoresearch）。
+      router.replace(next.size > 0 ? `/legacy?${next.toString()}` : "/legacy");
     },
     [resetRunScopedState, router, runId, searchParams],
   );

@@ -99,7 +99,7 @@ describe("Home sticky artifact errors", () => {
     const client = createApiClient({ fetchImpl });
 
     render(<Home />, {
-      wrapper: createTestWrapper({ client, initialEntries: ["/?run=run-1"] }),
+      wrapper: createTestWrapper({ client, initialEntries: ["/legacy?run=run-1"] }),
     });
 
     await screen.findAllByText("first question");
@@ -151,7 +151,7 @@ describe("Home sticky artifact errors", () => {
     }) as typeof fetch;
 
     render(<Home />, {
-      wrapper: createTestWrapper({ client: createApiClient({ fetchImpl }), initialEntries: ["/?run=run-1"] }),
+      wrapper: createTestWrapper({ client: createApiClient({ fetchImpl }), initialEntries: ["/legacy?run=run-1"] }),
     });
 
     await screen.findAllByText("first question");
@@ -195,7 +195,7 @@ describe("Home sticky artifact errors", () => {
     }) as typeof fetch;
 
     render(<Home />, {
-      wrapper: createTestWrapper({ client: createApiClient({ fetchImpl }), initialEntries: ["/?run=run-1"] }),
+      wrapper: createTestWrapper({ client: createApiClient({ fetchImpl }), initialEntries: ["/legacy?run=run-1"] }),
     });
 
     await screen.findAllByText("first question");
@@ -269,7 +269,7 @@ describe("Home shell flows", () => {
     render(<Home />, {
       wrapper: createTestWrapper({
         client: createApiClient({ fetchImpl }),
-        initialEntries: ["/?run=missing"],
+        initialEntries: ["/legacy?run=missing"],
       }),
     });
 
@@ -304,7 +304,7 @@ describe("Home shell flows", () => {
     render(<Home />, {
       wrapper: createTestWrapper({
         client: createApiClient({ fetchImpl }),
-        initialEntries: ["/?run=run-1"],
+        initialEntries: ["/legacy?run=run-1"],
       }),
     });
 
@@ -394,7 +394,7 @@ describe("Home shell flows", () => {
       render(<Home />, {
         wrapper: createTestWrapper({
           client: createApiClient({ fetchImpl }),
-          initialEntries: ["/?run=run-1"],
+          initialEntries: ["/legacy?run=run-1"],
         }),
       });
 
